@@ -37,8 +37,12 @@ async function attachPrivateUBlock(ses, getBackground, webContents) {
  }
  ses.webRequest.onBeforeRequest({urls:['http://*/*','https://*/*','ws://*/*','wss://*/*']},(details,callback)=>{
   if(queue.length>=2048){callback({cancel:true});return;}
-  const wc=webContents.fromId(details.webContentsId);
-  const top=details.resourceType==='mainFrame'?details.url:wc?.getURL()||details.referrer||details.url;
+  // Service-worker and session-owned requests can have no WebContents ID.
+  // Electron's native fromId binding rejects undefined before returning null.
+  const id=details.webContentsId;
+  const wc=Number.isInteger(id)&&id>0?webContents.fromId(id):null;
+  const pageUrl=wc&&!wc.isDestroyed()?wc.getURL():'';
+  const top=details.resourceType==='mainFrame'?details.url:pageUrl||details.referrer||details.url;
   const document=details.frame?.url||details.referrer||top;
   queue.push({callback,data:{url:details.url,type:types[details.resourceType]||details.resourceType||'other',document:details.resourceType==='mainFrame'?details.url:document,top}});
   if(!scheduled){scheduled=true;setImmediate(flush);}

@@ -24,6 +24,7 @@ m._compile(fs.readFileSync(entry,'utf8')+`\nmodule.exports.test={sleepTab,activa
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  try {
   const origin='http://calcium-fixture.test:'+server.address().port;
+  const ownerless=await w.ses.fetch(origin+'/ownerless');assert(ownerless.ok,'session-owned request completes without a WebContents');assert((await ownerless.text()).includes('<script'),'ownerless fetch retains its response');
   const bg=m.exports.test.uboBackground();
   await bg.executeJavaScript(`(async()=>{await µBlock.appendUserFilters('||tracking.calcium-test.invalid^');})()`);
   for(const [stage,native,ubo,expected] of [[0,false,false,true],[1,true,false,false],[2,false,true,false]]){
