@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' file:; style-src 'unsafe-inline'; img-src https: http: data: crx: chrome-extension:">
-<script src="i18n.js"></script>
+<script src="i18n.js"></script><script src="browser-font.js"></script>
 <title>Calcium</title>
 <style>
   :root {
@@ -263,6 +263,7 @@
   .panel.sub { width:280px; animation:none; }
   @keyframes pin { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:none; } }
   .mi { height:32px; display:flex; align-items:center; gap:14px; padding:0 14px 0 16px; cursor:default; position:relative; white-space:nowrap; }
+  .mi:focus-visible{outline:none;background:var(--hover)}
   .mi:hover, .mi.open { background:var(--hover); }
   .mi.dis { opacity:.45; pointer-events:none; }
   .mi .ic { width:20px; height:20px; flex:none; color:var(--dim); display:flex; align-items:center; justify-content:center; }
@@ -981,6 +982,7 @@ const PI = {
   incognito: '<svg viewBox="0 0 24 24"><path d="M17.5 12c-1.7 0-3.13 1.15-3.56 2.71a3.47 3.47 0 00-3.88 0A3.7 3.7 0 006.5 12 3.5 3.5 0 1010 15.5c0-.07 0-.14-.01-.21a2.07 2.07 0 014.02 0c-.01.07-.01.14-.01.21A3.5 3.5 0 1017.5 12zm-11 5.5a2 2 0 110-4 2 2 0 010 4zm11 0a2 2 0 110-4 2 2 0 010 4zM22 10.5H2V12h20v-1.5zm-6.47-7.87c-.22-.49-.78-.75-1.31-.58L12 2.79l-2.23-.74-.05-.01c-.53-.15-1.09.13-1.29.64L6 9h12l-2.44-6.32-.03-.05z"/></svg>'
 };
 const pop = $('pop');
+let contextFocusReturn=null;
 let menu = null;         // { kind, anchor, data }
 let subTimer = null;
 
@@ -1028,20 +1030,24 @@ function menuModel(d, kind) {
 
 function menuAct(id, arg, keep) {
   if (!id) return;
+  if(id==='context-action'){closeMenu(false);send('context-action',arg);return;}
   if (!keep) closeMenu();
   send('menu-action', { id, arg });
 }
 
-function closeMenu() {
+function closeMenu(notify=true) {
   if (!menu && !chooser) return;
+  const restoreFocus=contextFocusReturn;contextFocusReturn=null;
   menu = null;
   chooser = null;
   clearTimeout(subTimer);
   pop.hidden = true;
   pop.replaceChildren();
-  send('menu-close');
+  if(restoreFocus?.isConnected)restoreFocus.focus({preventScroll:true});
+  if(notify)send('menu-close');
 }
 
+function contextModel(items){return items.map(item=>({...item,...(item.children?{sub:()=>contextModel(item.children)}:{})}));}
 function buildPanel(items, isSub) {
   const panel = document.createElement('div');
   panel.className = 'panel' + (isSub ? ' sub' : '');
@@ -1052,8 +1058,11 @@ function buildPanel(items, isSub) {
     if (it.zoom) { panel.appendChild(zoomRow()); continue; }
     const row = document.createElement('div');
     row.className = 'mi' + (it.dis ? ' dis' : '');
+    row.tabIndex=it.dis?-1:0;row.setAttribute('role',it.checked===undefined?'menuitem':'menuitemcheckbox');if(it.checked!==undefined)row.setAttribute('aria-checked',String(it.checked));
+    row.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();row.click();}};
     const ic = document.createElement('span'); ic.className = 'ic';
     if (it.img) { const im = document.createElement('img'); im.src = it.img; im.alt = ''; im.onerror = () => { ic.innerHTML = it.icon || ''; }; ic.appendChild(im); }
+    else if(it.checked!==undefined)ic.textContent=it.checked?'✓':'';
     else ic.innerHTML = it.icon || '';
     const lb = document.createElement('span'); lb.className = 'lb'; lb.textContent = it.label;
     row.append(ic, lb);
@@ -1069,7 +1078,7 @@ function buildPanel(items, isSub) {
       row.onclick = () => { clearTimeout(subTimer); openSub(row, it.sub()); };
     } else {
       if (!isSub) row.onmouseenter = () => { clearTimeout(subTimer); subTimer = setTimeout(closeSub, 200); };
-      row.onclick = () => menuAct(it.act, it.arg, it.keep);
+      row.onclick = () => {if(!it.dis)menuAct(it.act, it.arg, it.keep);};
     }
     panel.appendChild(row);
   }
@@ -1184,9 +1193,10 @@ function closeSub() {
 }
 
 function openSub(row, items) {
-  closeSub();
+  const main=row.closest('.panel');
+  let next=main.nextElementSibling;while(next){const following=next.nextElementSibling;next.remove();next=following;}
+  main.querySelectorAll('.mi.open').forEach(el=>el.classList.remove('open'));
   row.classList.add('open');
-  const main = pop.querySelector('.panel:not(.sub)');
   const sub = buildPanel(items, true);
   pop.appendChild(sub);
   const mr = main.getBoundingClientRect(), rr = row.getBoundingClientRect();
@@ -1209,9 +1219,10 @@ function drawMenu() {
   backdrop.onmousedown = closeMenu;
   backdrop.oncontextmenu = (e) => { e.preventDefault(); closeMenu(); };
   pop.appendChild(backdrop);
-  const panel = menu.kind === 'volume' ? volumePanel(menu.data) : menu.kind === 'extensions' ? extensionsPanel(menu.data) : buildPanel(menuModel(menu.data, menu.kind), false);
+  const panel = menu.kind === 'volume' ? volumePanel(menu.data) : menu.kind === 'extensions' ? extensionsPanel(menu.data) : menu.kind === 'context' ? buildPanel(contextModel(menu.data.items),false) : buildPanel(menuModel(menu.data, menu.kind), false);
   pop.appendChild(panel);
   const a = menu.anchor;
+  if(menu.kind==='context'){panel.style.maxHeight=(innerHeight-12)+'px';panel.style.overflowY='auto';panel.style.left=Math.max(6,Math.min(a.x||6,innerWidth-panel.offsetWidth-6))+'px';panel.style.top=Math.max(6,Math.min(a.y||6,innerHeight-panel.offsetHeight-6))+'px';panel.querySelector('.mi:not(.dis)')?.focus();return;}
   const right = Math.min(innerWidth - 6, (a.right || a.x + 34) + 2);
   panel.style.left = Math.max(6, right - panel.offsetWidth) + 'px';
   panel.style.top = ((a.y || 80) + 2) + 'px';
@@ -1221,8 +1232,8 @@ function drawMenu() {
   }
 }
 
-browserApi.onMenuOpen((m) => { chooser = null; menu = m; pop.hidden = false; drawMenu(); });
-browserApi.onMenuData((d) => { if (menu && menu.kind !== 'volume') { menu.data = d; drawMenu(); } });
+browserApi.onMenuOpen((m) => { if(m.kind==='context')contextFocusReturn=document.activeElement;chooser = null; menu = m; pop.hidden = false; drawMenu(); });
+browserApi.onMenuData((d) => { if (menu && menu.kind !== 'volume' && menu.kind !== 'context') { menu.data = d; drawMenu(); } });
 let promptRows = [], promptSelected = 0, promptTyped = '';
 function selectPromptResult(index, fill = false) {
   promptSelected = (index + promptRows.length) % Math.max(1,promptRows.length);
@@ -1272,6 +1283,11 @@ browserApi.onMenuClosed(() => {
 browserApi.onOpenMenu(() => $('menu').click());
 browserApi.onFindStep((forward) => { if (findq.value) send('find', { text: findq.value, next: true, forward }); else { findq.focus(); } });
 window.addEventListener('keydown', (e) => {
+  if(menu?.kind==='context'&&e.key==='ArrowRight'){const row=document.activeElement;if(row?.classList.contains('mi')&&row.querySelector('.ar')){e.preventDefault();row.click();[...pop.querySelectorAll('.panel')].at(-1)?.querySelector('.mi:not(.dis)')?.focus();}return;}
+  if(menu?.kind==='context'&&e.key==='ArrowLeft'){const panel=document.activeElement?.closest('.panel.sub');if(panel){e.preventDefault();const parent=panel.previousElementSibling;panel.remove();parent?.querySelector('.mi.open')?.focus();}return;}
+  if(menu?.kind==='context'&&['ArrowDown','ArrowUp','Home','End'].includes(e.key)){
+   e.preventDefault();const panel=document.activeElement?.closest('.panel')||pop.querySelector('.panel');const rows=[...panel.querySelectorAll('.mi:not(.dis)')];let i=rows.indexOf(document.activeElement);i=e.key==='Home'?0:e.key==='End'?rows.length-1:(i+(e.key==='ArrowDown'?1:-1)+rows.length)%rows.length;rows[i]?.focus();return;
+  }
   if (e.key === 'Escape' && prompt) { e.preventDefault(); answerPrompt('dismiss'); return; }
   if (e.key === 'Escape' && (menu || chooser)) { e.preventDefault(); closeMenu(); }
   if (e.key === 'Enter' && chooser && chooser.selected) { e.preventDefault(); send('chooser-select', chooser.selected); }

@@ -7,6 +7,9 @@
 // Strings built from several parts are translated where they are built (see L() in the pages).
 (function (root) {
   const EN = {
+    'Varsayılan': 'Default',
+    'Tarayıcı yazı tipi': 'Browser font',
+    'Yalnızca tarayıcı arayüzünü değiştirir; web sayfalarını etkilemez.': 'Changes only the browser interface; does not affect websites.',
     'Bellek baskısında erken uyut': 'Sleep tabs early under memory pressure',
     'RAM azaldığında eski arka plan sekmelerini kademeli uyut.': 'Gradually sleep older background tabs when memory runs low.',
     'Bu siteyi otomatik uyutma': 'Keep this site awake',

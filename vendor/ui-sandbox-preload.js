@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('browserApi', {
   platform: process.platform,
+    getFont:()=>ipcRenderer.invoke('calcium-ui-font'),
+    onFont:fn=>ipcRenderer.on('calcium-ui-font',(_e,font)=>fn(font)),
   lang: ipcRenderer.sendSync('mondium-lang'),
   send: (cmd, arg) => ipcRenderer.send('ui', cmd, arg),
   onState: (fn) => ipcRenderer.on('state', (_e, s) => fn(s)),

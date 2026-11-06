@@ -1,6 +1,7 @@
 // Run with Electron: electron tools/test-taskmanager.cjs
 const {app,BrowserWindow,ipcMain}=require('electron');
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');const root=path.join(__dirname,'..');
+ipcMain.handle('calcium-ui-font',()=>null);
 ipcMain.on('mondium-lang',e=>e.returnValue='tr');ipcMain.on('mondium-edge-px',e=>e.returnValue=60);
 app.whenReady().then(async()=>{
  const source=fs.readFileSync(path.join(root,'main.js'),'utf8');

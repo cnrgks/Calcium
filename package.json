@@ -1,7 +1,7 @@
 {
   "name": "calcium",
   "productName": "Calcium",
-  "version": "1.3.5",
+  "version": "1.3.6",
   "description": "Calcium — a bare bones browser.",
   "main": "main.js",
   "license": "GPL-3.0",
@@ -76,7 +76,10 @@
       "device-policy.js",
       "memory-policy.js",
       "bounded-work-queue.js",
-      "bounded-json.js"
+      "bounded-json.js",
+      "ui-fonts.js",
+      "browser-font.js",
+      "context-menu-model.js"
     ],
     "win": {
       "target": [

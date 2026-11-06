@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline' file:; img-src data:">
-<script src="i18n.js"></script>
+<script src="i18n.js"></script><script src="browser-font.js"></script>
 <title>Ayarlar</title>
 <style>
   :root { --bg:#f8fafd; --card:#ffffff; --text:#1f1f1f; --dim:#5f6368; --border:#e3e3e3; --hover:rgba(31,31,31,.06);
@@ -103,6 +103,7 @@
   .more { display:block; margin:8px auto 12px; }
   /* Clear browsing data dialog */
   .modal { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:50; padding:16px; }
+  #siteDeleteConfirm .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .modal[hidden] { display:none !important; }
   .dlg { width:540px; max-width:100%; max-height:calc(100vh - 32px); overflow-y:auto; background:var(--card); color:var(--text); border-radius:16px;
     box-shadow:0 8px 32px rgba(0,0,0,.35); display:flex; flex-direction:column; }
@@ -228,7 +229,7 @@ function render() {
   const themes=el('div','themes');
   for(const t of d.themes){const b=el('button','th'+(d.theme===t.key?' on':''));const preview=el('div','pv');const top=el('i'),body=el('b');const dark=t.mode==='dark',system=t.mode==='system';top.style.background=system?'linear-gradient(90deg,#e3e3e3 50%,#111 50%)':dark?'#111':'#e3e3e3';body.style.background=system?'linear-gradient(90deg,#fff 50%,#292929 50%)':dark?'#292929':'#fff';preview.append(top,body);b.append(preview,el('div','nm',t.name));b.setAttribute('aria-pressed',String(d.theme===t.key));b.onclick=()=>set('theme',t.key);themes.append(b);}
   const advanced=(title,...rows)=>{const box=el('details','advanced');box.append(el('summary',null,title),...rows.filter(Boolean));return box;};
-  const themeCard=el('div','card');themeCard.append(row('Tema','',themes),select('language',[['tr','Türkçe'],['en','English']],'Dil',''),toggle('pitchBlack','Tam siyah','Koyu temada siyah zemin kullan.'),toggle('forceDarkPages','Web sitelerini koyu göster','Yeniden başlatma gerekir.'));
+  const themeCard=el('div','card');themeCard.append(row('Tema','',themes),select('language',[['tr','Türkçe'],['en','English']],'Dil',''),select('uiFont',d.uiFonts.map(f=>[f.key,f.name]),'Tarayıcı yazı tipi','Yalnızca tarayıcı arayüzünü değiştirir; web sayfalarını etkilemez.'),toggle('pitchBlack','Tam siyah','Koyu temada siyah zemin kullan.'),toggle('forceDarkPages','Web sitelerini koyu göster','Yeniden başlatma gerekir.'));
   const appearance=el('h2',null,'Görünüm');appearance.id='gorunum';
   const sleepNames={5:'5 dakika',10:'10 dakika',30:'30 dakika',60:'1 saat'};
   $('root').replaceChildren(
@@ -440,9 +441,7 @@ function sdDraw() {
     });
     pr.classList.add('sm'); pr.setAttribute('aria-pressed', String(!!x.protected)); pr.setAttribute('aria-label', (x.protected ? 'Korumayı kaldır: ' : 'Koru: ') + x.display);
     const del = button('Sil', async () => {
-      if (!confirm(L(`${x.display} sitesinin çerezleri ve site verileri silinsin mi?`, `Delete ${x.display}'s cookies and site data?`)
-        + (x.protected ? L('\n\nBu site korunuyor; bu işlem korumaya rağmen bu sitenin verilerini siler.', '\n\nThis site is protected; this deletes its data anyway.') : '')
-        + (x.open ? L('\n\nSitenin açık sekmesi var; sayfa bazı verileri yeniden oluşturabilir.', '\n\nThe site has an open tab; the page may recreate some data.') : ''))) return;
+      if(!await confirmSiteDeletion(x))return;
       del.disabled = true; pr.disabled = true;
       const res = await api.call('sd-delete-site', x.site);
       if (res.error) toast(res.error);
@@ -458,6 +457,29 @@ function sdDraw() {
   const out = [...warn, ...rows];
   if (list.length > shown.length) { const m = button(`Daha fazla göster (${list.length - shown.length})`, () => { sd.limit += 200; sdDraw(); }); m.classList.add('more'); out.push(m); }
   sd.lst.replaceChildren(...out);
+}
+
+let dismissSiteDeletion=null;
+function confirmSiteDeletion(site){
+ if(dismissSiteDeletion)dismissSiteDeletion(false);
+ const previous=document.activeElement;
+ return new Promise(resolve=>{
+  const modal=el('div','modal');modal.id='siteDeleteConfirm';
+  const dialog=el('div','dlg');dialog.style.width='480px';dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-labelledby','siteDeleteTitle');dialog.setAttribute('aria-describedby','siteDeleteDescription');
+  const title=el('h3',null,L('Site verilerini sil','Delete site data'));title.id='siteDeleteTitle';
+  const body=el('div','bd');body.id='siteDeleteDescription';
+  const description=el('p',null,L(site.display+' sitesinin çerezleri ve site verileri silinsin mi?',"Delete "+site.display+"'s cookies and site data?"));description.style.cssText='line-height:1.6;margin:8px 0;overflow-wrap:anywhere';body.append(description);
+  if(site.protected)body.append(el('div','note warn',L('Bu site korunuyor; bu işlem korumaya rağmen bu sitenin verilerini siler.','This site is protected; this deletes its data anyway.')));
+  if(site.open)body.append(el('div','note',L('Sitenin açık sekmesi var; sayfa bazı verileri yeniden oluşturabilir.','The site has an open tab; the page may recreate some data.')));
+  const footer=el('div','ft');const cancel=button(L('İptal','Cancel'),()=>finish(false));const remove=button(L('Sil','Delete'),()=>finish(true));remove.classList.add('pri');footer.append(cancel,remove);dialog.append(title,body,footer);modal.append(dialog);document.body.append(modal);
+  const inert=[...document.body.children].filter(node=>node!==modal).map(node=>[node,node.inert]);for(const [node] of inert)node.inert=true;
+  let settled=false;
+  function finish(confirmed){if(settled)return;settled=true;if(dismissSiteDeletion===finish)dismissSiteDeletion=null;modal.remove();for(const [node,value] of inert)node.inert=value;if(previous?.isConnected)previous.focus({preventScroll:true});resolve(confirmed);}
+  dismissSiteDeletion=finish;
+  modal.onmousedown=e=>{if(e.target===modal)finish(false);};
+  modal.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();finish(false);}else if(e.key==='Tab'){e.preventDefault();(document.activeElement===cancel?remove:cancel).focus();}};
+  cancel.focus({preventScroll:true});
+ });
 }
 
 // ================================================================ Clear browsing data (Ctrl+Shift+Delete)

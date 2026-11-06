@@ -31,6 +31,8 @@ const {memoryPressure,chooseSleepTabs}=require('./memory-policy');
 const os=require('os');
 const {createWorkQueue}=require('./bounded-work-queue');
 const {readBoundedJson}=require('./bounded-json');
+const {UI_FONTS,validUiFont,uiFontFamily}=require('./ui-fonts');
+const {contextMenuModel}=require('./context-menu-model');
 
 // Separate profile folder for tests: does not touch the user's running Calcium or data (single-instance lock is per folder too)
 if (process.env.MONDIUM_PROFILE) app.setPath('userData', process.env.MONDIUM_PROFILE);
@@ -60,6 +62,7 @@ const DEFAULTS = {
   clearGoogleOnExit: false,  // when on, Google cookies/site data are cleared on exit (signs out of Google)
   keepLogins: true,          // keep site logins across restarts (session cookies are made persistent)
   theme: 'sistem',
+  uiFont:'default',
   firstRunDone: false,
   shortcuts: [],             // favorites on the new tab page {title, url, icon}
   bookmarksEnabled: false,
@@ -91,6 +94,7 @@ let settings = { ...DEFAULTS };
 {const stored=readBoundedJson(SETTINGS_FILE,8*1024*1024,null);if(stored&&typeof stored==='object'&&!Array.isArray(stored))settings={...DEFAULTS,...stored};}
 // Follow the OS language until the user explicitly changes it in Settings.
 if(!['auto','tr','en'].includes(settings.language))settings.language='auto';
+if(!validUiFont(settings.uiFont))settings.uiFont='default';
 if (!settings.isolationSecurityMigration) { settings.strictIsolation=true;settings.isolationSecurityMigration=true; }
 if(!Array.isArray(settings.calciumAllowedSites))settings.calciumAllowedSites=[];
 if(!Array.isArray(settings.sleepExcludedSites))settings.sleepExcludedSites=[];
@@ -222,6 +226,18 @@ function uiLang() {
 const T = (text) => I18N.translate(text, uiLang());
 // UI text in scripts injected into pages (reader mode, image zoom): single-quoted strings are translated
 const localizeSrc = (src) => (uiLang() === 'tr' ? src : src.replace(/'([^'\\\n]*)'/g, (m, x) => { const t = T(x); return t === x ? m : JSON.stringify(t); }));
+ipcMain.handle('calcium-ui-font',(e)=>{
+ const from=e.senderFrame?.url||'';
+ const trusted=!!pageKind(from)||windows.some(w=>w.ui?.webContents===e.sender);
+ return trusted?uiFontFamily(settings.uiFont):null;
+});
+function broadcastUiFont(){
+ const family=uiFontFamily(settings.uiFont);
+ for(const wc of webContents.getAllWebContents()){
+  if(wc.isDestroyed())continue;
+  if(pageKind(wc.getURL())||windows.some(w=>w.ui?.webContents===wc))wc.send('calcium-ui-font',family);
+ }
+}
 ipcMain.on('mondium-lang', (e) => { e.returnValue = uiLang(); });
 app.commandLine.appendSwitch('lang',uiLang()==='tr'?'tr':'en-US');
 // Native menus, dialogs and notifications in the chosen language
@@ -1644,6 +1660,7 @@ ipcMain.on('ui', (e, cmd, arg) => {
     case 'menu': openOverlay(arg); break;
     case 'menu-close': closeOverlay(); break;
     case 'chooser-select': finishChooser(arg); break;
+    case 'context-action': runContextAction(arg); break;
     case 'menu-action': menuAction(arg && arg.id, arg && arg.arg); break;
     case 'shield': showShieldMenu(arg); break;
     case 'site-menu': showSiteMenu(arg); break;
@@ -1750,7 +1767,30 @@ function bindMenu(items) {
   }));
   return wrap(items);
 }
-const popAt = (items, pos) => Menu.buildFromTemplate(bindMenu(items)).popup({ window: win, x: Math.round((pos && pos.x) || 0), y: Math.round((pos && pos.y) || 0) });
+let contextMenuToken=0;
+function popupBrowserMenu(items,pos,target=ui?.webContents){
+ const native=Menu.buildFromTemplate(bindMenu(items));
+ if(settings.uiFont==='default')return native.popup({window:win,...(pos?{x:Math.round(pos.x||0),y:Math.round(pos.y||0)}:{})});
+ const owner=W,token=++contextMenuToken,actions=new Map();let id=0;
+ const model=contextMenuModel(native,item=>{const key=++id;actions.set(key,item);return {token,id:key};});
+ if(!pos){const point=screen.getCursorScreenPoint(),bounds=win.getContentBounds();pos={x:point.x-bounds.x,y:point.y-bounds.y};}
+ openOverlay({kind:'context',...pos,data:{items:model}});
+ owner.contextMenu={token,actions,target,native};
+}
+function runContextAction(arg){
+ const context=W?.contextMenu;if(!context||context.token!==arg?.token)return;
+ const item=context.actions.get(arg.id);if(!item||!item.enabled)return;
+ const owner=W,target=context.target;
+ closeOverlay(false);if(!target||target.isDestroyed())return;
+ target.focus();
+ const roles={undo:'undo',redo:'redo',cut:'cut',copy:'copy',paste:'paste',pasteandmatchstyle:'pasteAndMatchStyle',selectall:'selectAll',delete:'delete'};
+ const role=roles[String(item.role).toLowerCase()];
+ if(role&&typeof target[role]==='function'){target[role]();return;}
+ if(item.type==='checkbox')item.checked=!item.checked;
+ if(item.type==='radio')item.checked=true;
+ if(typeof item.click==='function')item.click(item,owner.win,{shiftKey:false,ctrlKey:false,altKey:false,metaKey:false,triggeredByAccelerator:false});
+}
+const popAt=(items,pos)=>popupBrowserMenu(items,pos);
 const acc = (s) => (isMac ? s.replace('Ctrl', 'Cmd') : s);
 const hint = (s) => ({ accelerator: acc(s), registerAccelerator: false });
 
@@ -1774,12 +1814,13 @@ function openOverlay(arg) {
   raiseUi();
   layout();
   ui.webContents.focus();
-  send('menu-open', { kind: (arg && arg.kind) || 'main', anchor: arg || {}, data: menuData() });
+  send('menu-open', { kind: (arg && arg.kind) || 'main', anchor: arg || {}, data: arg?.kind==='context'?arg.data:menuData() });
 }
 function closeOverlay(refocus = true) {
   if (!overlayOpen) return;
   overlayOpen = false;
   const kind = overlayKind;
+  if(W)W.contextMenu=null;
   overlayKind = null;
   if (kind === 'chooser' && chooser) finishChooser(null);   // clicked outside: cancel
   if (kind === 'side') {
@@ -1866,7 +1907,7 @@ function menuAction(id, arg) {
     case 'update-filters': forceUpdateFilters(); break;
     case 'engine': if (SEARCH_ENGINES[arg]) { setSetting('searchEngine', arg); broadcastPages(); } break;
     case 'theme': if (THEMES[arg]) { settings.theme = arg; saveSettings(); applyTheme(); refresh(); } break;
-    case 'web-store': openUrl('https://chromewebstore.google.com/category/extensions', 'tab'); break;
+    case 'web-store': newTab('https://chromewebstore.google.com/category/extensions', false); break;
     case 'ext-load': loadUnpackedDialog(); break;
     case 'ext-options': { const e = listExtensions().find((x) => x.id === arg); if (e && e.optionsUrl) newTab(e.optionsUrl); break; }
     case 'ext-remove': removeExtension(arg); break;
@@ -2462,7 +2503,8 @@ function showContextMenu(wc, p) {
   }
   if(calciumSite(wc.getURL()))items.push({type:'separator'},{label:'Bu sitede Calcium koruması',type:'checkbox',checked:calciumEnabledFor(wc.getURL()),click:()=>{toggleCalciumSite(wc.getURL());wc.reload();}});
   items.push({ type: 'separator' }, { label: 'İncele', click: () => wc.inspectElement(p.x, p.y) });
-  Menu.buildFromTemplate(bindMenu(items)).popup({ window: win });
+  const bounds=byWcId.get(wc.id)?.view?.getBounds()||{x:0,y:0};
+  popupBrowserMenu(items,{x:bounds.x+p.x,y:bounds.y+p.y},wc);
 }
 
 // ---------------------------------------------------------------- Video: picture-in-picture
@@ -2660,6 +2702,7 @@ function settingsData() {
     askDownloadLocation:settings.askDownloadLocation!==false,
     newTabPrompt: settings.newTabPrompt !== false,
     bookmarksEnabled: settings.bookmarksEnabled !== false,
+    uiFont:settings.uiFont,uiFonts:UI_FONTS.map(({key,name})=>({key,name})),
     theme: settings.theme, themes: Object.entries(THEMES).map(([key, t]) => ({ key, name: t.name, mode: t.mode, frame: t.frame || null, accent: t.accent || null })),
     engine: settings.searchEngine, engines: Object.entries(SEARCH_ENGINES).map(([key, x]) => ({ key, name: x.name })),
     bookmarksBar: hasBookmarks(), fullUrl: true, forceDarkPages: settings.forceDarkPages, strictIsolation: settings.strictIsolation, language: uiLang(),
@@ -2699,6 +2742,7 @@ function settingsSet(key, value) {
     case 'newTabPrompt': return bool(key);
     case 'sleepTabs': case 'memorySaver': return bool(key);
     case 'verticalTabs': if (typeof value !== 'boolean') return false; setVerticalTabs(value); return true;
+    case 'uiFont': if(!validUiFont(value))return false;settings.uiFont=value;saveSettings(true);broadcastUiFont();return true;
     case 'language': if (!['tr', 'en'].includes(value)) return false; setLanguage(value); return true;
     case 'pitchBlack': if (typeof value !== 'boolean') return false; settings.pitchBlack = value; saveSettings(); applyTheme(); return true;
 
@@ -2754,7 +2798,7 @@ ipcMain.handle('page', async (e, cmd, arg) => {
       case 'update-filters': return forceUpdateFilters();
       case 'ubo-dashboard': if (uboId) newTab(uboPage('dashboard.html')); return { ok: true };
       case 'open-downloads-folder': shell.openPath(app.getPath('downloads')); return { ok: true };
-      case 'web-store': openUrl('https://chromewebstore.google.com/category/extensions', 'tab'); return { ok: true };
+      case 'web-store': newTab('https://chromewebstore.google.com/category/extensions', false); return { ok: true };
       case 'ext-load': await loadUnpackedDialog(); notifyPages('settings'); return { ok: true };
       case 'ext-remove': await removeExtension(String(arg)); notifyPages('settings'); return { ok: true };
       case 'open-page': openPage(arg === 'downloads' ? DOWNLOADS_URL : arg === 'extensions' ? EXTENSIONS_URL : HISTORY_URL); return { ok: true };
@@ -2780,7 +2824,7 @@ ipcMain.handle('page', async (e, cmd, arg) => {
       case 'ext-options': { const x = listExtensions().find((e) => e.id === id && e.enabled); if (x && x.optionsUrl) newTab(x.optionsUrl); return { ok: true }; }
       case 'ext-load': await loadUnpackedDialog(); return { ok: true };
       case 'ext-devmode': settings.extDevMode = !!arg; saveSettings(); notifyPages('extensions'); return { ok: true };
-      case 'web-store': openUrl('https://chromewebstore.google.com/category/extensions', 'tab'); return { ok: true };
+      case 'web-store': newTab('https://chromewebstore.google.com/category/extensions', false); return { ok: true };
       case 'open-page': openPage(arg === 'settings' ? SETTINGS_URL : HISTORY_URL); return { ok: true };
     }
     return null;
@@ -2953,6 +2997,7 @@ function createWindow(opts = {}) {
     if (ctrl && !input.shift && ['c', 'v', 'x', 'a', 'z', 'y'].includes(k)) return;
     if (handleShortcut(input)) e.preventDefault();
   });
+  uw.on('context-menu',(_e,p)=>{if(p.isEditable||p.selectionText)inWin(w,()=>showContextMenu(uw,p));});
   uw.on('did-finish-load', () => { useWin(w); pushState(); });
   uw.setWindowOpenHandler(() => ({ action: 'deny' }));
   uw.on('will-navigate', (e) => e.preventDefault());
