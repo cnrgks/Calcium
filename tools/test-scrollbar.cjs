@@ -1,0 +1,19 @@
+'use strict';
+const {app,BrowserWindow,session}=require('electron');
+const path=require('path'),http=require('http'),assert=require('assert');
+app.disableHardwareAcceleration();
+app.whenReady().then(async()=>{
+ const server=http.createServer((_q,r)=>{r.setHeader('Content-Type','text/html');r.end('<!doctype html><style>body{margin:0;height:3600px;background:white}</style><p>Scrollbar fixture</p>');});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const ses=session.fromPartition('calcium-scroll-test');ses.registerPreloadScript({id:'scroll',type:'frame',filePath:path.join(__dirname,'..','overlay-scrollbar.js')});
+ const win=new BrowserWindow({show:false,width:800,height:600,useContentSize:true,webPreferences:{session:ses,sandbox:true,offscreen:true}});
+ await win.loadURL('http://127.0.0.1:'+server.address().port);await new Promise(r=>setTimeout(r,150));
+ const geometry=await win.webContents.executeJavaScript(`({width:document.documentElement.clientWidth,viewport:innerWidth,bars:document.querySelectorAll('[data-calcium-scrollbar]').length})`);
+ assert.equal(geometry.width,geometry.viewport,'overlay takes no layout width');assert.equal(geometry.bars,1);
+ const sample=async()=>{const image=await win.webContents.capturePage(),{width}=image.getSize(),pixels=image.toBitmap();let dark=0;for(let x=width-10;x<width;x++){const i=(30*width+x)*4;if(pixels[i]<230)dark++;}return dark;};
+ assert.equal(await sample(),1,'idle thumb is one pixel');
+ win.webContents.sendInputEvent({type:'mouseMove',x:798,y:30});await new Promise(r=>setTimeout(r,200));assert.equal(await sample(),4,'hover expands the thumb');
+ win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,x:798,y:30});win.webContents.sendInputEvent({type:'mouseMove',x:798,y:300});win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,x:798,y:300});await new Promise(r=>setTimeout(r,100));
+ assert(await win.webContents.executeJavaScript('document.scrollingElement.scrollTop>500'),'thumb dragging scrolls the page');
+ win.destroy();server.close();console.log('PASS: overlay scrollbar uses no layout width, grows from 1 to 4 pixels on hover, and supports dragging.');app.quit();
+}).catch(e=>{console.error(e);app.exit(1)});

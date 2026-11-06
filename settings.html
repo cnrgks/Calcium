@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline' file:; img-src data:">
+<script src="i18n.js"></script>
+<title>Ayarlar</title>
+<style>
+  :root { --bg:#f8fafd; --card:#ffffff; --text:#1f1f1f; --dim:#5f6368; --border:#e3e3e3; --hover:rgba(31,31,31,.06);
+    --accent:#0b57d0; --accent-fg:#fff; --sel:#d3e3fd; --field:#e9eef6; --off:#c4c7c5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1f1f1f; --card:#282828; --text:#e3e3e3; --dim:#a8abaf; --border:#3c3c3c; --hover:rgba(227,227,227,.08);
+      --accent:#a8c7fa; --accent-fg:#062e6f; --sel:#004a77; --field:#333537; --off:#5f6368; }
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  [hidden] { display:none !important; }
+  html, body { min-height:100%; background:var(--bg); color:var(--text); font:13px "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; }
+  html { scroll-behavior:smooth; scroll-padding-top:64px; }
+  svg { width:20px; height:20px; fill:currentColor; flex:none; }
+  button, select { font:inherit; color:inherit; cursor:pointer; }
+
+  header { position:sticky; top:0; z-index:5; height:56px; display:flex; align-items:center; background:var(--bg); }
+  header.scrolled { box-shadow:0 1px 2px rgba(0,0,0,.12), 0 1px 3px 1px rgba(0,0,0,.06); }
+  .brand { width:256px; flex:none; padding-left:24px; font-size:22px; display:flex; align-items:center; gap:14px; }
+  .brand svg { color:var(--accent); width:24px; height:24px; }
+
+  nav { position:fixed; top:56px; left:0; width:256px; padding:8px 12px 0 0; }
+  nav a, nav button { width:100%; height:40px; display:flex; align-items:center; gap:16px; padding:0 24px; border:0; background:none;
+    border-radius:0 20px 20px 0; font-size:14px; text-align:left; color:inherit; text-decoration:none; }
+  nav a:hover, nav button:hover { background:var(--hover); }
+  nav .on { background:var(--sel); font-weight:600; }
+  nav svg { color:var(--dim); }
+  nav .on svg { color:var(--accent); }
+  nav .sep { height:1px; background:var(--border); margin:8px 0 8px 24px; }
+  @media (max-width: 900px) { nav { display:none; } main { margin-left:0 !important; } }
+
+  main { margin-left:256px; padding:8px 24px 64px; }
+  .wrap { max-width:680px; margin:0 auto; }
+  h2 { font-size:15px; font-weight:600; margin:24px 4px 10px; }
+  .card { background:var(--card); border-radius:12px; box-shadow:0 1px 2px rgba(0,0,0,.06); }
+  .row { min-height:56px; display:flex; align-items:center; gap:16px; padding:10px 20px; }
+  .row + .row { border-top:1px solid var(--border); }
+  .row .tx { flex:1; min-width:0; }
+  .row .lb { font-size:14px; }
+  .row .ds { color:var(--dim); margin-top:3px; line-height:1.4; }
+  .row.click:hover { background:var(--hover); }
+  .row.click { cursor:default; }
+  .row:first-child { border-radius:12px 12px 0 0; } .row:last-child { border-radius:0 0 12px 12px; } .row:only-child { border-radius:12px; }
+
+  /* Toggle switch */
+  .sw { position:relative; width:36px; height:20px; flex:none; border-radius:10px; background:var(--off); border:0; transition:background .15s; }
+  .sw::after { content:""; position:absolute; top:3px; left:3px; width:14px; height:14px; border-radius:50%; background:#fff; transition:transform .15s; }
+  .sw.on { background:var(--accent); }
+  .sw.on::after { transform:translateX(16px); background:var(--accent-fg); }
+  .txt { height:32px; width:200px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); padding:0 10px; font:inherit; outline:none; }
+  .txt:focus { border-color:var(--accent); }
+  select { height:32px; border-radius:8px; border:1px solid var(--border); background:var(--card); padding:0 8px; min-width:150px; }
+  .btn { height:32px; padding:0 16px; border-radius:16px; border:1px solid var(--border); background:none; color:var(--accent); font-weight:500; white-space:nowrap; }
+  .btn:hover { background:var(--hover); }
+  .chev { color:var(--dim); }
+
+  /* Theme picker */
+  .themes { display:grid; grid-template-columns:repeat(auto-fill, minmax(92px, 1fr)); gap:12px; padding:16px 20px 20px; }
+  .th { border:2px solid transparent; border-radius:12px; padding:0; background:none; text-align:center; }
+  .th .pv { height:52px; border-radius:10px; overflow:hidden; display:flex; flex-direction:column; border:1px solid var(--border); }
+  .th .pv i { height:16px; display:block; } .th .pv b { flex:1; display:block; }
+  .th .nm { margin:6px 0 4px; font-size:12px; color:var(--dim); }
+  .th.on { border-color:var(--accent); }
+  .th.on .nm { color:var(--text); font-weight:600; }
+  .ext { display:flex; align-items:center; gap:12px; }
+  .about { display:flex; align-items:center; gap:16px; }
+  .logo { width:44px; height:44px; border-radius:11px; background:linear-gradient(135deg,#4a4a50,#1c1c1f); display:flex; align-items:center; justify-content:center; flex:none; }
+  .logo span { width:22px; height:22px; border-radius:50%; border:5px solid #fff; border-right-color:transparent; transform:rotate(-30deg); }
+  .toast { position:fixed; left:24px; bottom:24px; z-index:25; display:flex; align-items:center; gap:16px; padding:0 8px 0 16px; height:48px;
+    border-radius:8px; background:#303030; color:#f2f2f2; box-shadow:0 2px 8px rgba(0,0,0,.3); transform:translateY(120px); transition:transform .2s; }
+  .toast.show { transform:none; }
+  .toast button { height:36px; padding:0 12px; border:0; border-radius:18px; background:none; color:#a8c7fa; font-weight:600; }
+  /* Protected sites + site data */
+  .intro { padding:14px 20px 4px; color:var(--dim); line-height:1.5; }
+  .ps-add { display:flex; gap:8px; padding:12px 20px; align-items:center; flex-wrap:wrap; }
+  .ps-add .txt { flex:1 1 220px; width:auto; min-width:0; }
+  .msg { padding:0 20px 10px; color:var(--dim); line-height:1.45; }
+  .card > .sub { padding:14px 20px 4px; font-size:12px; font-weight:600; color:var(--dim); text-transform:uppercase; letter-spacing:.4px; }
+  .msg:empty { display:none; }
+  .msg.err { color:#d93025; } .msg.ok { color:var(--text); }
+  @media (prefers-color-scheme: dark) { .msg.err { color:#f28b82; } .btn.danger { color:#f28b82 !important; } }
+  .deps { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+  .tools { display:flex; gap:8px; padding:10px 20px; border-top:1px solid var(--border); align-items:center; flex-wrap:wrap; }
+  .tools .txt { flex:1 1 180px; width:auto; min-width:0; }
+  .tools .cnt { color:var(--dim); white-space:nowrap; }
+  .lst { max-height:420px; overflow-y:auto; border-top:1px solid var(--border); }
+  .li { display:flex; align-items:center; gap:10px; padding:8px 12px 8px 20px; min-height:48px; }
+  .li + .li { border-top:1px solid var(--border); }
+  .li .nm { flex:1; min-width:0; }
+  .li .nm b { font-weight:500; font-size:14px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .li .nm > span { color:var(--dim); font-size:12px; display:block; line-height:1.45; overflow-wrap:anywhere; }
+  .li .acts { display:flex; gap:6px; flex:none; flex-wrap:wrap; justify-content:flex-end; }
+  .tag, .li .nm .tag { display:inline-block; line-height:1.5; font-size:11px; font-weight:500; padding:1px 7px; border-radius:9px; background:var(--sel); color:var(--accent); margin-left:6px; vertical-align:1px; }
+  .tag.gray { background:var(--field); color:var(--dim); }
+  .empty { padding:16px 20px; color:var(--dim); line-height:1.5; }
+  .btn.sm { height:28px; padding:0 12px; font-size:12px; }
+  .btn.danger { color:#d93025; }
+  .btn.pri { background:var(--accent); border-color:var(--accent); color:var(--accent-fg); }
+  .btn:disabled { opacity:.45; }
+  .more { display:block; margin:8px auto 12px; }
+  /* Clear browsing data dialog */
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:50; padding:16px; }
+  .modal[hidden] { display:none !important; }
+  .dlg { width:540px; max-width:100%; max-height:calc(100vh - 32px); overflow-y:auto; background:var(--card); color:var(--text); border-radius:16px;
+    box-shadow:0 8px 32px rgba(0,0,0,.35); display:flex; flex-direction:column; }
+  .dlg h3 { font-size:18px; font-weight:500; padding:20px 24px 6px; }
+  .dlg .bd { padding:4px 24px; }
+  .dlg .rg { display:flex; align-items:center; gap:12px; padding:8px 0 4px; flex-wrap:wrap; }
+  .ck { display:flex; gap:12px; align-items:flex-start; padding:8px 0; cursor:default; }
+  .ck input { margin-top:2px; width:16px; height:16px; flex:none; accent-color:var(--accent); }
+  .ck b { font-weight:500; font-size:14px; }
+  .ck span { display:block; color:var(--dim); font-size:12px; margin-top:2px; line-height:1.45; }
+  .ck.off { opacity:.5; }
+  .pinfo { margin:0 0 4px 28px; color:var(--dim); font-size:12px; line-height:1.5; }
+  .pinfo a { color:var(--accent); text-decoration:none; cursor:pointer; }
+  .pinfo a:hover { text-decoration:underline; }
+  .note { background:var(--field); border-radius:8px; padding:8px 12px; margin:6px 0; font-size:12px; line-height:1.5; }
+  .note.warn { background:color-mix(in srgb, #d93025 15%, var(--card)); }
+  .dlg .ft { display:flex; justify-content:flex-end; gap:8px; padding:14px 24px 20px; flex-wrap:wrap; }
+  .bar { height:6px; border-radius:3px; background:var(--field); overflow:hidden; margin:12px 0 6px; }
+  .bar i { display:block; height:100%; width:0; background:var(--accent); transition:width .2s; }
+  .res h4 { font-size:13px; font-weight:600; margin:12px 0 4px; }
+  .res ul { margin:0 0 4px 18px; color:var(--dim); font-size:12px; line-height:1.55; }
+  .res p { font-size:13px; line-height:1.5; margin:2px 0; }
+  .wrap { max-width:780px; }
+  header { height:64px; }
+  .brand { width:auto; padding-left:28px; font-size:20px; font-weight:600; }
+  .brand::before { content:'Calcium';margin-right:8px;color:var(--text); }
+  .brand svg { display:none; }
+  nav { top:76px;width:232px;padding:0 12px; }
+  nav a,nav button { border-radius:8px;padding:0 16px;height:38px;font-size:13px; }
+  main { margin-left:232px;padding-top:4px; }
+  h2 { margin-top:28px;font-size:15px; }
+  .card { border:1px solid color-mix(in srgb,var(--border) 45%,transparent);box-shadow:none;overflow:hidden; }
+  .row { padding:14px 20px;min-height:66px; }
+  .row .ds { font-size:12px;line-height:1.5;max-width:460px; }
+  .themes { display:grid;grid-template-columns:repeat(3,90px);gap:10px;padding:0; }
+  .th { width:90px;padding:6px;border-radius:8px; }
+  .th .pv { height:46px;border-radius:5px; }
+  .th .nm { font-size:12px;margin-top:6px; }
+  .advanced { border-top:1px solid var(--border); }
+  .advanced summary { cursor:pointer;padding:14px 20px;color:var(--dim);font-size:13px; }
+  .intro { padding:14px 20px;font-size:12px;line-height:1.5; }
+  .lst:empty { display:none; }
+  .ps-add { gap:10px; }
+  @media(max-width:600px){.row{padding:12px 14px;gap:12px}.themes{grid-template-columns:repeat(3,70px);gap:4px}.th{width:70px}.txt{max-width:100%}main{padding:0 12px 40px}}
+.site-filters{display:flex;gap:8px;padding:12px 20px 0}.site-filters button{border:0;border-radius:6px;padding:8px 12px;background:transparent;color:var(--dim)}.site-filters .selected{background:var(--hover);color:var(--text)}.deps{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:8px}.deps>span{flex-basis:100%}.msg:empty{display:none}.ps-add{border-bottom:1px solid var(--border)}
+
+  .site-card>.intro{padding:18px 20px 0;line-height:1.5}
+  .site-card>.ps-add{padding:12px 20px 16px;border:0;gap:10px;flex-wrap:nowrap}
+  .site-card .ps-add .txt{height:36px}.site-card .ps-add>.btn{height:36px;flex:none}
+  .site-card>.msg{margin:0 20px 16px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:var(--hover);line-height:1.6}
+  .site-card .deps{margin-top:8px;gap:8px;align-items:center}.site-card .deps>span{flex-basis:auto;color:var(--dim);font-size:12px}
+  .site-toolbar{padding:16px 20px;border-top:1px solid var(--border);display:grid;gap:12px}
+  .site-filter-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .site-card .site-filters{display:flex;gap:4px;padding:4px;background:var(--hover);border-radius:8px}
+  .site-card .site-filters button{height:32px;padding:0 12px;border-radius:5px;white-space:nowrap}
+  .site-card .site-filters .selected{background:var(--card);box-shadow:0 1px 3px #0002;color:var(--text)}
+  .site-filter-row>.cnt{font-size:12px;color:var(--dim);white-space:nowrap}
+  .site-card .tools{padding:0;border:0;gap:8px;flex-wrap:nowrap}.site-card .tools .txt{height:36px;flex:1;min-width:0}
+  .site-card .tools select{height:36px;width:150px;flex:none}.site-card .tools>.btn{height:36px;flex:none}
+  .site-card>.lst{border-top:1px solid var(--border)}.site-card .li{padding:12px 20px;gap:16px;min-height:62px}
+  .site-card .li .nm>span{margin-top:3px}.site-card .li .acts{gap:8px}
+  @media(max-width:620px){.site-card .tools{flex-wrap:wrap}.site-card .tools .txt{flex-basis:100%}.site-card .tools select{flex:1;min-width:0}.site-card .li{padding:12px 16px;gap:10px;flex-wrap:wrap}.site-card .li .nm{flex-basis:100%}.site-card .li .acts{justify-content:flex-start}}
+.dlg:focus{outline:none}
+button:disabled,select:disabled{cursor:default}
+</style>
+</head>
+<body>
+  <header id="hdr">
+    <div class="brand"><svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>Ayarlar</div>
+  </header>
+
+  <nav id="nav" aria-label="Ayarlar">
+    <a href="#gorunum" class="on">Görünüm</a><a href="#sekmeler">Sekmeler ve arama</a><a href="#performans">Performans</a><a href="#gizlilik">Gizlilik ve güvenlik</a><a href="#siteler">Siteler ve çerezler</a><a href="#araclar">Araçlar</a><a href="#indirmeler">İndirmeler</a><a href="#uzantilar">Uzantılar</a><a href="#hakkinda">Calcium hakkında</a><div class="sep"></div><button id="toHist">Geçmiş</button>
+  </nav>
+
+  <main><div class="wrap" id="root"></div></main>
+  <div class="toast" id="toast"><span id="toastT"></span><button id="toastB" hidden></button></div>
+
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const api = window.pageApi;
+let d = null;
+
+function applyTheme(t) {
+  const st = document.documentElement.style;
+  for (const n of ['--bg', '--accent', '--card', '--field', '--sel']) st.removeProperty(n);
+  if (!t) return;
+  st.setProperty('--bg', t.page); st.setProperty('--accent', t.accent);
+  st.setProperty('--sel', `color-mix(in srgb, ${t.accent} 28%, transparent)`);
+  if (t.mode === 'dark') { st.setProperty('--card', t.card || t.toolbar); st.setProperty('--field', t.card || t.toolbar); }
+}
+
+// ---------- Small building blocks
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+function row(label, desc, control, onClick) {
+  const r = el('div', 'row' + (onClick ? ' click' : ''));
+  const tx = el('div', 'tx'); tx.append(el('div', 'lb', label)); if (desc) tx.append(el('div', 'ds', desc));
+  r.append(tx); if (control) r.append(control);
+  if (onClick) r.onclick = onClick;
+  return r;
+}
+const set = (key, value) => api.call('settings-set', { key, value }).then(load);
+function toggle(key, label, desc) {
+  const b = el('button', 'sw' + (d[key] ? ' on' : '')); b.setAttribute('role', 'switch'); b.setAttribute('aria-checked', String(!!d[key]));
+  b.onclick=e=>{e.stopPropagation();set(key,!d[key]);};
+  const r = row(label, desc, b);
+  return r;
+}
+function select(key, options, label, desc) {
+  const s = el('select');
+  for (const [v, t] of options) { const o = el('option', null, t); o.value = String(v); if (String(d[key]) === String(v)) o.selected = true; s.append(o); }
+  s.onchange = () => set(key, typeof d[key] === 'number' ? Number(s.value) : s.value);
+  return row(label, desc, s);
+}
+const button = (text, fn) => { const b = el('button', 'btn', text); b.onclick = (e) => { e.stopPropagation(); fn(); }; return b; };
+const section = (id, title, ...rows) => { const h = el('h2', null, title); h.id = id; const c = el('div', 'card'); c.append(...rows.filter(Boolean)); return [h, c]; };
+let toastTimer = null;
+function toast(msg) { $('toastT').textContent = msg; $('toast').classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('show'), 3000); }
+
+// ---------- Rendering
+function render() {
+  const themes=el('div','themes');
+  for(const t of d.themes){const b=el('button','th'+(d.theme===t.key?' on':''));const preview=el('div','pv');const top=el('i'),body=el('b');const dark=t.mode==='dark',system=t.mode==='system';top.style.background=system?'linear-gradient(90deg,#e3e3e3 50%,#111 50%)':dark?'#111':'#e3e3e3';body.style.background=system?'linear-gradient(90deg,#fff 50%,#292929 50%)':dark?'#292929':'#fff';preview.append(top,body);b.append(preview,el('div','nm',t.name));b.setAttribute('aria-pressed',String(d.theme===t.key));b.onclick=()=>set('theme',t.key);themes.append(b);}
+  const advanced=(title,...rows)=>{const box=el('details','advanced');box.append(el('summary',null,title),...rows.filter(Boolean));return box;};
+  const themeCard=el('div','card');themeCard.append(row('Tema','',themes),select('language',[['tr','Türkçe'],['en','English']],'Dil',''),toggle('pitchBlack','Tam siyah','Koyu temada siyah zemin kullan.'),toggle('forceDarkPages','Web sitelerini koyu göster','Yeniden başlatma gerekir.'));
+  const appearance=el('h2',null,'Görünüm');appearance.id='gorunum';
+  const sleepNames={5:'5 dakika',10:'10 dakika',30:'30 dakika',60:'1 saat'};
+  $('root').replaceChildren(
+    appearance,themeCard,
+    ...section('sekmeler','Sekmeler ve arama',
+      toggle('verticalTabs','Dikey sekmeler','Sekmeleri pencerenin solunda göster.'),
+      d.verticalTabs?toggle('verticalAutoHide','Kenar çubuğunu gizle','Sol kenara gelince açılır. Ctrl+S ile değiştir.'):null,
+      toggle('newTabPrompt','Yeni sekmede arama kutusu','Ctrl+T ile önce arama veya adres kutusunu aç.'),
+      select('engine',d.engines.map(x=>[x.key,x.name]),'Arama motoru','')),
+    ...section('performans','Performans',
+      toggle('sleepTabs','Kullanılmayan sekmeleri uyut','Ses çalan sekmeler açık kalır.'),
+      d.sleepTabs?select('sleepMinutes',d.sleepChoices.map(m=>[m,sleepNames[m]]),'Uyutma süresi',''):null,
+      row('Görev yöneticisi','Sekmelerin bellek ve CPU kullanımı. Shift+Esc',button('Aç',()=>api.call('task-manager')))),
+    ...section('gizlilik','Gizlilik ve güvenlik',
+      row('Gezinti verilerini temizle','Korunan siteleri saklayarak temizlik yap.',button('Temizle',()=>openClear())),
+      toggle('keepLogins','Oturumları koru','Tarayıcı kapanınca hesaplarından çıkış yapma.'),
+      advanced('Gelişmiş',
+        toggle('strictIsolation','Tam site izolasyonu','Siteleri ayrı süreçlerde tut. Yeniden başlatma gerekir.'),
+        toggle('clearGoogleOnExit','Google oturumunu kapat','Çıkışta Google ve YouTube verilerini sil.'),
+        row('Site izinleri','Kamera, mikrofon, konum ve bildirim izinleri.',button('Sıfırla',()=>api.call('site-perms').then(()=>{toast('Site izinleri sıfırlandı');load()}))),
+        row('Cihaz izinleri','USB, Bluetooth ve diğer cihazlar.',button('Göster',()=>api.call('device-grants'))))),
+    ...siteSection(),
+    ...section('araclar','Araçlar',row('Ses yükseltme','Her sekmenin sesini ayrı ayarla. En fazla %600.',null),toggle('hoverZoom','Resim büyütme','Resmin üzerine gel. Z ile sabitle, S ile indir.')),
+    ...section('indirmeler','İndirmeler',row('Kayıt konumu',d.downloadsDir,button('Klasörü aç',()=>api.call('open-downloads-folder'))),toggle('askDownloadLocation','İndirirken nereye kaydedileceğini sor','Her indirmede kayıt konumunu seç.')),
+    ...section('uzantilar','Uzantılar ve reklam engelleme',
+      row('uBlock Origin',d.uboError?'Başlatılamadı. Tarayıcıyı yeniden başlatın.':!d.ubo?'Yükleniyor…':'Her zaman açık.',button('uBlock ayarları',()=>api.call('ubo-dashboard'))),
+      row('Uzantılar','Yüklü uzantıları yönet.',button('Yönet',()=>api.call('open-page','extensions')))),
+    ...section('hakkinda','Calcium hakkında',row('Calcium '+d.version,'Chromium '+d.chrome+' · Electron '+d.electron,null))
+  );
+  spy();
+}
+
+// ================================================================ Protected sites
+const pl = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+const dec = (v) => (window.LANG === 'en' ? v : v.replace('.', ','));
+const fmtBytes = (n) => (n == null ? L('ölçülemedi', 'not measurable') : n < 1024 ? n + ' B' : n < 1048576 ? dec((n / 1024).toFixed(1)) + ' KB' : dec((n / 1048576).toFixed(1)) + ' MB');
+function ago(t) {
+  if (!t) return null;
+  const s = (Date.now() - t) / 1000;
+  if (s < 90) return L('az önce', 'just now');
+  if (s < 3600) return L(Math.round(s / 60) + ' dk önce', Math.round(s / 60) + ' min ago');
+  if (s < 86400) return L(Math.round(s / 3600) + ' saat önce', pl(Math.round(s / 3600), 'hour', 'hours') + ' ago');
+  return L(Math.round(s / 86400) + ' gün önce', pl(Math.round(s / 86400), 'day', 'days') + ' ago');
+}
+// ---------------------------------------------------------------- Import bookmarks
+const bm = { box: null, busy: false };
+function bmSection() {
+  if (d.bookmarksEnabled === false) { bm.box = null; return section('yer-isaretleri', 'Yer işaretleri', toggle('bookmarksEnabled', 'Yer işaretlerini etkinleştir', 'Kapalıyken Ctrl+D sekmeyi sabitler.')); }
+
+  if (!bm.box) {
+    const hh = el('h2', null, 'Yer işaretleri'); hh.id = 'yer-isaretleri';
+    const c = el('div', 'card');
+    c.append(toggle('bookmarksEnabled', 'Yer işaretlerini etkinleştir', 'Kapalıyken Ctrl+D sekmeyi sabitler.'));
+    c.append(el('div', 'intro', 'Başka tarayıcıdan veya HTML dosyasından aktarın.'));
+    const msg = el('div', 'msg'); msg.setAttribute('role', 'status'); msg.setAttribute('aria-live', 'polite');
+    const src = el('div', 'lst'); src.setAttribute('role', 'list'); src.setAttribute('aria-label', 'Bulunan tarayıcılar');
+    const html = row('HTML dosyasından aktar', 'Safari ya da başka bir tarayıcıdan dışa aktardığınız yer işareti dosyası (.html).', button('Dosya seç', () => bmRun(() => api.call('bm-import-html'))));
+    const gh = el('div', 'sub', 'Aktarılan klasörler');
+    const groups = el('div', 'lst'); groups.setAttribute('role', 'list'); groups.setAttribute('aria-label', 'Aktarılan klasörler');
+    c.append(msg, src, html, gh, groups);
+    bm.box = [hh, c]; Object.assign(bm, { msg, src, groups, gh });
+  }
+  return bm.box;
+}
+function bmMsg(text, err) { bm.msg.textContent = text || ''; bm.msg.classList.toggle('err', !!err); }
+async function bmRun(fn) {
+  if (bm.busy) return;
+  bm.busy = true; bmMsg('Aktarılıyor...');
+  try {
+    const r = await fn();
+    if (!r || r.canceled) bmMsg('');
+    else if (r.error) bmMsg(r.error, true);
+    else bmMsg(`${r.added} yer işareti "${r.group}" klasörüne aktarıldı` + (r.skipped ? `, ${r.skipped} tanesi zaten vardı` : '') + '. Yer işaretleri çubuğunda görebilirsiniz.');
+  } catch (e) { bmMsg('Aktarılamadı: ' + e.message, true); }
+  bm.busy = false;
+  bmLoad();
+}
+async function bmLoad() {
+  if (!bm.box) return;
+  const r = await api.call('bm-sources');
+  const rows = r.sources.map((x) => {
+    const li = el('div', 'li'); li.setAttribute('role', 'listitem');
+    const nm = el('div', 'nm');
+    nm.append(el('b', null, x.browser), el('span', null, x.profile + ' · ' + (x.ok ? (x.count ? x.count + ' yer işareti' : 'yer işareti yok') : 'okunamadı')));
+    const acts = el('div', 'acts');
+    const b = button('Aktar', () => bmRun(() => api.call('bm-import', x.id)));
+    b.disabled = !x.ok || !x.count;
+    acts.append(b); li.append(nm, acts);
+    return li;
+  });
+  bm.src.replaceChildren(...(rows.length ? rows : [el('div', 'empty', 'Bu bilgisayarda yer işareti aktarılabilecek başka tarayıcı bulunamadı (Chrome, Edge, Brave, Opera, Vivaldi, Yandex, Firefox). HTML dosyasından aktarabilirsiniz.')]));
+  bm.gh.hidden = !r.groups.length;
+  bm.groups.replaceChildren(...r.groups.map((g) => {
+    const li = el('div', 'li'); li.setAttribute('role', 'listitem');
+    const nm = el('div', 'nm'); nm.append(el('b', null, g.name), el('span', null, g.count + ' yer işareti'));
+    const acts = el('div', 'acts');
+    acts.append(button('Sil', async () => {
+      if (!confirm(`"${g.name}" klasöründeki ${g.count} yer işareti silinsin mi?`)) return;
+      const x = await api.call('bm-group-remove', g.name);
+      bmMsg(`${x.removed} yer işareti silindi.`); bmLoad();
+    }));
+    li.append(nm, acts);
+    return li;
+  }));
+}
+
+function siteSection(){
+ psSection();const [title,card]=sdSection();title.textContent='Siteler ve çerezler';card.classList.add('site-card');
+ if(!card.querySelector('.ps-add')){
+  const intro=card.querySelector('.intro'),form=ps.box[1].querySelector('.ps-add'),tools=card.querySelector('.tools'),count=tools.querySelector('.cnt');
+  const toolbar=el('div','site-toolbar'),filterRow=el('div','site-filter-row'),tabs=el('div','site-filters');tabs.setAttribute('aria-label',L('Site filtresi','Site filter'));
+  for(const [value,label] of [['all','Tüm siteler'],['protected','Korunanlar']]){
+   const b=button(label,()=>{sd.filter=value;for(const c of tabs.children){c.classList.toggle('selected',c===b);c.setAttribute('aria-pressed',String(c===b));}sdDraw();});
+   b.classList.toggle('selected',value===(sd.filter||'all'));b.setAttribute('aria-pressed',String(value===(sd.filter||'all')));tabs.append(b);
+  }
+  filterRow.append(tabs,count);toolbar.append(filterRow,tools);intro.after(form,ps.msg,toolbar);
+ }
+ return [title,card];
+}
+const ps = { box: null, list: [] };
+function psSection(){
+ if(!ps.box){
+  const card=el('div'),form=el('form','ps-add'),inp=el('input','txt'),add=el('button','btn','Koru');
+  inp.placeholder='örn. youtube.com';inp.setAttribute('aria-label','Korunacak site');inp.autocomplete='off';inp.spellcheck=false;add.type='submit';form.append(inp,add);
+  const msg=el('div','msg');msg.setAttribute('role','status');msg.setAttribute('aria-live','polite');
+  form.onsubmit=async e=>{e.preventDefault();add.disabled=true;try{const r=await api.call('ps-add',inp.value);if(r.error){psMsg(r.error,true);return;}inp.value='';psMsg(L(r.display+' korunuyor.',r.display+' is protected.'),false,r.deps||[]);await psLoad();sdLoad();}finally{add.disabled=false}};
+  card.append(form,msg);ps.box=[null,card];Object.assign(ps,{inp,msg});
+ }
+ return ps.box;
+}
+function psMsg(text, err, deps) {
+  ps.msg.className = 'msg' + (err ? ' err' : ' ok');
+  ps.msg.replaceChildren(...(err?[el('span',null,text)]:[]));
+  if (deps && deps.length) {
+    const box = el('div', 'deps');
+    box.append(el('span', null, L('Girişini korumak için hesap sağlayıcısını da koru:', 'Also protect your sign-in provider:')));
+    for (const dp of deps) box.append(button(L(`${dp.display} adresini de koru`, `Also protect ${dp.display}`), async () => { await api.call('ps-add', dp.site); psMsg(`${dp.display} korunuyor.`); await psLoad(); if (sd.data) sdLoad(); }));
+    ps.msg.append(box);
+  }
+}
+async function psLoad(){const r=await api.call('ps-list');ps.list=r.sites||[];if(sd.data)sdDraw();}
+
+// ================================================================ Cookies and site data (real inventory)
+const sd = { box: null, data: null, q: '', sort: 'size', limit: 100, loading: false };
+function sdSection() {
+  if (!sd.box) {
+    const hh = el('h2', null, 'Çerezler ve site verileri'); hh.id = 'siteler';
+    const c = el('div', 'card');
+    c.append(el('div', 'intro', 'Korunan sitelerin oturumları temizlikte saklanır.'));
+    const tools = el('div', 'tools');
+    const q = el('input', 'txt'); q.type = 'search'; q.placeholder = 'Sitelerde ara'; q.setAttribute('aria-label', 'Site verilerinde ara');
+    q.oninput = () => { sd.q = q.value.trim().toLocaleLowerCase('tr'); sd.limit = 100; sdDraw(); };
+    const sort = el('select'); sort.setAttribute('aria-label', 'Sıralama');
+    for (const [v, t] of [['size', 'Boyuta göre'], ['name', 'Ada göre'], ['recent', 'Son kullanıma göre'], ['cookies', 'Çerez sayısına göre']]) { const o = el('option', null, t); o.value = v; sort.append(o); }
+    sort.onchange = () => { sd.sort = sort.value; sdDraw(); };
+    const refresh = button('Yenile', () => sdLoad());
+    const cnt = el('span', 'cnt');
+    tools.append(q, sort, refresh, cnt);
+    const lst = el('div', 'lst'); lst.setAttribute('role', 'list'); lst.setAttribute('aria-label', 'Çerezler ve site verileri');
+    lst.append(el('div', 'empty', 'Yükleniyor...'));
+    c.append(tools, lst);
+    sd.box = [hh, c]; Object.assign(sd, { lst, cnt, refresh });
+    sdLoad();
+  }
+  return sd.box;
+}
+async function sdLoad() {
+  if (sd.loading) return;
+  sd.loading = true; sd.refresh.disabled = true;
+  try { const r = await api.call('sd-inventory'); sd.data = r; } catch (e) { sd.data = { error: String(e) }; }
+  sd.loading = false; sd.refresh.disabled = false;
+  sdDraw();
+}
+function sdDraw() {
+  const r = sd.data;
+  if (!r) return;
+  if (r.error) { sd.lst.replaceChildren(el('div', 'empty', 'Envanter okunamadı: ' + r.error)); return; }
+  const sites=r.sites.map(x=>({...x,protected:ps.list.some(p=>p.site===x.site)}));
+  for(const p of ps.list)if(!sites.some(x=>x.site===p.site))sites.push({...p,protected:true,cookies:0,keys:0,bytes:0,embedded:[]});
+  let list=sites.filter(x=>(sd.filter!=='protected'||x.protected)&&(!sd.q||x.display.toLocaleLowerCase('tr').includes(sd.q)||x.site.includes(sd.q)));
+  const cmp = { size: (a, b) => (b.bytes || 0) - (a.bytes || 0) || b.cookies - a.cookies, name: (a, b) => a.display.localeCompare(b.display, 'tr'), recent: (a, b) => (b.lastUsed || 0) - (a.lastUsed || 0), cookies: (a, b) => b.cookies - a.cookies }[sd.sort];
+  list.sort(cmp);
+  const total = r.sites.reduce((n, x) => n + x.cookies, 0);
+  sd.cnt.textContent = `${sites.length} site · ${total} çerez`;
+  const warn = [];
+  if (!r.bucketsOk) warn.push(el('div', 'empty', 'Uyarı: depolama kayıt veritabanı okunamadı; IndexedDB/Cache Storage verileri listede eksik olabilir.'));
+  if (!r.lsOk) warn.push(el('div', 'empty', 'Uyarı: localStorage kayıtları okunamadı.'));
+  if (!list.length) { sd.lst.replaceChildren(...warn, el('div', 'empty', sites.length ? 'Aramayla eşleşen site yok.' : 'Hiçbir sitenin çerezi ya da depolaması yok.')); return; }
+  const shown = list.slice(0, sd.limit);
+  const rows = shown.map((x) => {
+    const row = el('div', 'li'); row.setAttribute('role', 'listitem');
+    const nm = el('div', 'nm');
+    const b = el('b', null, x.display);
+    if (x.protected) b.append(el('span', 'tag', 'Korunuyor'));
+    if (x.open) b.append(el('span', 'tag gray', 'Açık sekme'));
+    const parts = [];
+    parts.push(x.cookies ? L(`${x.cookies} çerez`, pl(x.cookies, 'cookie', 'cookies')) + (x.partitionedCookies ? L(` (${x.partitionedCookies} bölümlenmiş)`, ` (${x.partitionedCookies} partitioned)`) : '') : L('çerez yok', 'no cookies'));
+    if (x.keys) parts.push(x.unmeasured && !x.bytes ? L('depolama: boyut ölçülemedi (localStorage)', 'storage: size not measurable (localStorage)') : L('depolama: ', 'storage: ') + fmtBytes(x.bytes) + (x.unmeasured ? L(' + ölçülemeyen localStorage', ' + unmeasured localStorage') : ''));
+    if (x.embedded.length) parts.push(L('gömülü: ', 'embedded: ') + x.embedded.slice(0, 3).join(', ') + (x.embedded.length > 3 ? ' +' + (x.embedded.length - 3) : ''));
+    const lu = ago(x.lastUsed); parts.push(lu ? L('son kullanım ' + lu, 'last used ' + lu) : L('son kullanım bilinmiyor', 'last used unknown'));
+    nm.title=parts.join(' · ');nm.append(b,el('span',null,x.cookies||x.keys?[L(pl(x.cookies,'çerez','çerez'),pl(x.cookies,'cookie','cookies')),x.bytes?fmtBytes(x.bytes):''].filter(Boolean).join(' · '):L('Henüz site verisi yok.','No site data yet.')));
+    const acts = el('div', 'acts');
+    const pr = button(x.protected ? 'Korumayı kaldır' : 'Koru', async () => {
+      const res = await api.call('sd-protect', { site: x.site, on: !x.protected });
+      x.protected = !x.protected; await psLoad(); sdDraw();
+      if(x.protected){psMsg(`${x.display} korunuyor.`,false,res.deps||[]);if(ps.msg.childElementCount)ps.msg.scrollIntoView({block:'nearest',behavior:'smooth'});}else ps.msg.replaceChildren();
+    });
+    pr.classList.add('sm'); pr.setAttribute('aria-pressed', String(!!x.protected)); pr.setAttribute('aria-label', (x.protected ? 'Korumayı kaldır: ' : 'Koru: ') + x.display);
+    const del = button('Sil', async () => {
+      if (!confirm(L(`${x.display} sitesinin çerezleri ve site verileri silinsin mi?`, `Delete ${x.display}'s cookies and site data?`)
+        + (x.protected ? L('\n\nBu site korunuyor; bu işlem korumaya rağmen bu sitenin verilerini siler.', '\n\nThis site is protected; this deletes its data anyway.') : '')
+        + (x.open ? L('\n\nSitenin açık sekmesi var; sayfa bazı verileri yeniden oluşturabilir.', '\n\nThe site has an open tab; the page may recreate some data.') : ''))) return;
+      del.disabled = true; pr.disabled = true;
+      const res = await api.call('sd-delete-site', x.site);
+      if (res.error) toast(res.error);
+      else toast(L(`${x.display}: ${res.deleted.cookies} çerez, ${res.deleted.keys} depolama silindi${res.remaining.length ? ', ' + res.remaining.length + ' kayıt hâlâ duruyor' : ''}`,
+        `${x.display}: ${pl(res.deleted.cookies, 'cookie', 'cookies')} and ${pl(res.deleted.keys, 'storage area', 'storage areas')} deleted${res.remaining.length ? ', ' + res.remaining.length + ' still there' : ''}`));
+      sdLoad();
+    });
+    del.classList.add('sm', 'danger'); del.setAttribute('aria-label', x.display + ' verilerini sil');
+    acts.append(pr, del);
+    row.append(nm, acts);
+    return row;
+  });
+  const out = [...warn, ...rows];
+  if (list.length > shown.length) { const m = button(`Daha fazla göster (${list.length - shown.length})`, () => { sd.limit += 200; sdDraw(); }); m.classList.add('more'); out.push(m); }
+  sd.lst.replaceChildren(...out);
+}
+
+// ================================================================ Clear browsing data (Ctrl+Shift+Delete)
+const cl = { el: null, running: false };
+function clBuild() {
+  if (cl.el) return;
+  const m = el('div', 'modal'); m.hidden = true;
+  const dlg = el('div', 'dlg'); dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true'); dlg.setAttribute('aria-labelledby', 'clT');
+  const t = el('h3', null, 'Gezinti verilerini temizle'); t.id = 'clT';
+  const bd = el('div', 'bd');
+  const rg = el('div', 'rg'); const rs = el('select'); rs.id = 'clRange'; rs.setAttribute('aria-label', 'Zaman aralığı');
+  for (const [v, x] of [['hour', 'Son 1 saat'], ['day', 'Son 24 saat'], ['week', 'Son 7 gün'], ['month', 'Son 4 hafta'], ['all', 'Tüm zamanlar']]) { const o = el('option', null, x); o.value = v; rs.append(o); }
+  rg.append(el('span', null, 'Zaman aralığı'), rs);
+  const ck = (id, label, desc) => { const l = el('label', 'ck'); const i = el('input'); i.type = 'checkbox'; i.id = id; const tx = el('div'); tx.append(el('b', null, label), el('span', null, desc)); l.append(i, tx); return l; };
+  const hist = ck('clHist', 'Tarama geçmişi', 'Ziyaret edilen sayfaların listesi.');
+  const dl = ck('clDl', 'İndirme geçmişi', 'İndirilenler listesi (dosyalar silinmez).');
+  const cookies = ck('clCookies', 'Çerezler ve diğer site verileri', 'Çerezler, localStorage, IndexedDB, Cache Storage, service worker ve site dosyaları. Korunmayan sitelerde oturumunuz kapanır.');
+  const prot = ck('clProt', 'Korunan siteler hariç temizle', 'Korunan sitelerin ve içlerinde gömülü verilerin oturumu korunur.');
+  prot.style.marginLeft = '28px';
+  const pinfo = el('div', 'pinfo');
+  const cache = ck('clCache', 'Önbelleğe alınan resimler ve dosyalar', 'Sayfaların daha hızlı açılması için saklanan dosyalar. Oturum bilgisi içermez.');
+  const notes = el('div');
+  const bar = el('div', 'bar'); bar.append(el('i')); bar.hidden = true;
+  const stat = el('div', 'pinfo'); stat.style.marginLeft = '0'; stat.setAttribute('role', 'status'); stat.setAttribute('aria-live', 'polite');
+  bd.append(rg, hist, dl, cookies, prot, pinfo, cache, notes, bar, stat);
+  const ft = el('div', 'ft');
+  const cancel = el('button', 'btn', 'İptal'); cancel.onclick = () => clClose();
+  const go = el('button', 'btn pri', 'Verileri temizle'); go.onclick = () => clRun();
+  ft.append(cancel, go);
+  dlg.append(t, bd, ft); m.append(dlg);
+  m.onmousedown = (e) => { if (e.target === m && !cl.running) clClose(); };
+  m.onkeydown = (e) => { if(e.key==='Enter'&&!cl.running){const tag=e.target.tagName;if(!['SELECT','BUTTON','A'].includes(tag)){e.preventDefault();if(!cl.go.hidden&&!cl.go.disabled)clRun();else if(cl.go.hidden)clClose();return;}} if (e.key === 'Escape' && !cl.running) { e.preventDefault(); clClose(); } };
+  document.body.append(m);
+  Object.assign(cl, { el: m, rs, hist: hist.querySelector('input'), dl: dl.querySelector('input'), cookies: cookies.querySelector('input'), prot: prot.querySelector('input'), protRow: prot, pinfo, cache: cache.querySelector('input'), notes, bar, stat, go, cancel });
+  for (const x of [rs, cl.hist, cl.dl, cl.cookies, cl.prot, cl.cache]) x.onchange = clNotes;
+}
+let clCount = 0;
+async function openClear() {
+  if (!api) return;
+  clBuild();
+  const r = await api.call('clear-prefs');
+  const p = r.prefs || {};
+  clCount = r.protectedCount || 0;
+  cl.rs.value = p.range || 'all'; cl.hist.checked = !!p.history; cl.dl.checked = !!p.downloads; cl.cookies.checked = p.cookies !== false; cl.cache.checked = !!p.cache; cl.prot.checked = p.protect !== false;
+  cl.stat.textContent = ''; cl.bar.hidden = true;
+  cl.go.hidden = false; cl.go.disabled = false; cl.cancel.textContent = 'İptal';
+  for (const x of [cl.rs, cl.hist, cl.dl, cl.cookies, cl.prot, cl.cache]) x.disabled = false;
+  clNotes();
+  cl.el.hidden = false;
+  document.activeElement?.blur();
+  mFocus();
+}
+function mFocus(){cl.el.querySelector('.dlg').tabIndex=-1;cl.el.querySelector('.dlg').focus({preventScroll:true});}
+function clClose() { if (cl.el) cl.el.hidden = true; if (location.hash === '#temizle') history.replaceState(null, '', location.pathname + location.search); }
+function clNotes() {
+  const c = cl.cookies.checked, all = cl.rs.value === 'all';
+  cl.prot.disabled = !c; cl.protRow.classList.toggle('off', !c);
+  const manage = el('a', null, 'Korunan siteleri yönet'); manage.tabIndex = 0;
+  manage.onclick = () => { clClose(); document.getElementById('siteler').scrollIntoView(); ps.inp && ps.inp.focus(); };
+  manage.onkeydown = (e) => { if (e.key === 'Enter') manage.onclick(); };
+  cl.pinfo.replaceChildren(el('span', null, clCount ? `${clCount} site korunuyor. ` : 'Koruma listesi boş: bütün sitelerin çerezleri ve verileri silinir. '), manage);
+  const n = [];
+  if (c && !cl.prot.checked && clCount) n.push(['warn', `Koruma kapalı: korunan ${clCount} sitedeki oturumlar da silinecek.`]);
+  if (c && !all) n.push(['', 'Motor çerezlerin oluşturulma zamanını vermiyor: bu zaman aralığıyla çerezler SİLİNMEZ. Site depolamasından yalnızca motorun son değişiklik zamanını tuttuğu veriler (IndexedDB, Cache Storage, service worker, site dosyaları) seçilir; localStorage seçilmez. Çerezleri silmek için "Tüm zamanlar"ı seçin.']);
+  if (cl.cache.checked) n.push(['', all ? 'Önbellek site bazında güvenle ayrılamıyor: bu seçenek korunan siteler dahil TÜM sitelerin önbelleğini siler (oturumları kapatmaz).' : 'Motor önbellekte zaman aralığını desteklemiyor: bu seçimle önbellek silinmez. Önbellek için "Tüm zamanlar"ı seçin.']);
+  cl.notes.replaceChildren(...n.map(([k, x]) => el('div', 'note' + (k ? ' ' + k : ''), x)));
+  cl.go.disabled = !(cl.hist.checked || cl.dl.checked || c || cl.cache.checked);
+}
+async function clRun() {
+  if (cl.running) return;
+  cl.running = true;
+  for (const x of [cl.rs, cl.hist, cl.dl, cl.cookies, cl.prot, cl.cache, cl.go]) x.disabled = true;
+  cl.cancel.disabled = true;
+  cl.bar.hidden = false; cl.bar.firstChild.style.width = '3%';
+  cl.stat.textContent = 'Başlıyor...';
+  const timer = setInterval(async () => {
+    const s = await api.call('clear-status').catch(() => null);
+    if (!s || !s.progress) return;
+    const p = s.progress;
+    cl.bar.firstChild.style.width = (p.total ? Math.max(5, Math.round(p.done / p.total * 100)) : 5) + '%';
+    cl.stat.textContent = p.phase === 'siliniyor' ? `Siliniyor: ${p.done} / ${p.total}` : p.phase === 'doğrulanıyor' ? 'Sonuç doğrulanıyor (envanter yeniden okunuyor)...' : 'Gerçek envanter okunuyor...';
+  }, 250);
+  let r;
+  try { r = await api.call('clear-run', { range: cl.rs.value, history: cl.hist.checked, downloads: cl.dl.checked, cookies: cl.cookies.checked, cache: cl.cache.checked, protect: cl.prot.checked }); }
+  catch (e) { r = { error: String(e) }; }
+  clearInterval(timer);
+  cl.running = false;
+  cl.bar.hidden = true;
+  cl.stat.textContent = r.error ? 'Temizlik başlatılamadı: '+r.error : r.site?.error || (r.site?.errors?.length || r.site?.remaining?.length ? L('Bazı veriler silinemedi.','Some data could not be cleared.') : '');
+  cl.cancel.disabled = false; cl.cancel.textContent = 'Kapat'; cl.go.hidden = true;
+  cl.cancel.focus();
+  if (sd.data) sdLoad();
+}
+function hashAction() {
+  if (location.hash === '#temizle') openClear();
+  else if (location.hash === '#siteler' || location.hash === '#korunan' || location.hash === '#yer-isaretleri') { const t = document.getElementById(location.hash==='#korunan'?'siteler':location.hash.slice(1)); if (t) t.scrollIntoView(); }
+}
+window.addEventListener('hashchange', hashAction);
+
+// Highlight the current section in the left menu
+function spy() {
+  const links = [...document.querySelectorAll('nav a')];
+  let cur = links[0];
+  for (const a of links) { const h = document.getElementById(a.getAttribute('href').slice(1)); if (h && h.getBoundingClientRect().top < 140) cur = a; }
+  links.forEach((a) => a.classList.toggle('on', a === cur));
+}
+window.addEventListener('scroll', () => { $('hdr').classList.toggle('scrolled', scrollY > 0); spy(); }, { passive: true });
+$('toHist').onclick = () => api && api.call('open-page', 'history');
+
+let firstLoad = true;
+async function load() {
+  if (!api) return;
+  d = await api.call('settings-get'); render();
+  psLoad(); bmLoad();
+  if (firstLoad) { firstLoad = false; setTimeout(hashAction, 50); }
+}
+if (api) {
+  api.onUpdate((p) => { applyTheme(p.theme); if (!p.changed || p.changed === 'settings') load(); });
+  api.get().then((p) => applyTheme(p.theme)).catch(() => {});
+  load();
+}
+</script>
+</body>
+</html>

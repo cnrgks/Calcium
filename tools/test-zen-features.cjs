@@ -1,0 +1,77 @@
+// Run with Electron: electron tools/test-zen-features.cjs
+const {app,BrowserWindow,ipcMain,session,nativeImage}=require('electron');
+const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),http=require('http');
+const root=path.join(__dirname,'..');
+ipcMain.on('mondium-lang',e=>e.returnValue='tr');
+let submitted=null, moved=null;
+ipcMain.on('ui',(_e,cmd,arg)=>{if(cmd==='newtab-submit')submitted=arg;if(cmd==='move-tab')moved=arg;});
+app.whenReady().then(async()=>{
+ const win=new BrowserWindow({show:false,width:1100,height:760,webPreferences:{preload:path.join(root,'vendor','ui-sandbox-preload.js'),sandbox:true,contextIsolation:true}});
+ let preloadError=null;win.webContents.on('preload-error',(_e,_p,e)=>preloadError=e);
+ await win.loadFile(path.join(root,'ui.html'));assert.equal(preloadError,null);assert(await win.webContents.executeJavaScript(`!!customElements.get('browser-action-list')`),'extension icons must work with sandbox enabled');
+ const tabs=Array.from({length:6},(_,i)=>({id:i+1,title:'Tab '+(i+1),pinned:i<4,volume:100}));
+ const state={tabs,activeId:5,vertical:true,autoHide:false,sideWidth:240,sideMin:56,sideOpen:false,url:'https://www.example.com/path?q=test',volume:100,bookmarks:[],downloads:{any:false,active:0},extSupport:false,theme:{frame:'#000000',toolbar:'#000000',omni:'#0d0d0d',accent:'#a8c7fa',page:'#000000',menu:'#121212',mode:'dark',activeTab:'#0a0a0a'}};
+ win.webContents.send('state',state);await new Promise(r=>setTimeout(r,100));
+ const layout=await win.webContents.executeJavaScript(`({pinned:document.querySelectorAll('#pinnedtabs .tab').length,normal:document.querySelectorAll('#tabs .tab').length,display:getComputedStyle(document.querySelector('#pinnedtabs')).display,title:getComputedStyle(document.querySelector('#pinnedtabs .title')).display,height:document.querySelector('#pinnedtabs .tab').getBoundingClientRect().height})`);
+ assert.equal(await win.webContents.executeJavaScript(`document.querySelector('#url').value`),'www.example.com/path?q=test');
+ await win.webContents.executeJavaScript(`document.querySelector('#url').focus()`);assert.equal(await win.webContents.executeJavaScript(`document.querySelector('#url').value`),'www.example.com/path?q=test');await win.webContents.executeJavaScript(`document.querySelector('#url').blur()`);
+ assert.equal(layout.pinned,4);assert.equal(layout.normal,2);assert.equal(layout.display,'grid');assert.equal(layout.title,'none');assert.equal(layout.height,48);
+ state.activeId=1;win.webContents.send('state',state);await new Promise(r=>setTimeout(r,40));
+ const neutralDrag=await win.webContents.executeJavaScript(`(()=>{const el=document.querySelector('#pinnedtabs .tab.on'),r=el.getBoundingClientRect();const active=getComputedStyle(el).boxShadow;el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0,clientX:r.left+10,clientY:r.top+20}));window.dispatchEvent(new MouseEvent('mousemove',{clientX:r.left+90,clientY:r.top+20}));const ghost=getComputedStyle(document.querySelector('.pinned-ghost')).boxShadow;const placeholder=getComputedStyle(document.querySelector('.placeholder')).boxShadow;window.dispatchEvent(new MouseEvent('mouseup',{button:0}));return {active,ghost,placeholder}})()`);
+ assert(neutralDrag.active.includes('128, 128, 128'));assert(neutralDrag.ghost.includes('128, 128, 128'));assert(neutralDrag.placeholder.includes('128, 128, 128'));
+ tabs[0].iconColor='#ff0000';tabs[1].sleeping=true;state.activeId=1;
+ win.webContents.send('state',state);await new Promise(r=>setTimeout(r,60));
+ const visual=await win.webContents.executeJavaScript(`({border:getComputedStyle(document.querySelector('#pinnedtabs .tab.on')).boxShadow,filter:getComputedStyle(document.querySelector('#pinnedtabs .sleep .ico')).filter,opacity:getComputedStyle(document.querySelector('#pinnedtabs .sleep .ico')).opacity,scroll:getComputedStyle(document.querySelector('#pinnedtabs')).scrollbarWidth,bookmarks:menuModel({bookmarksEnabled:false,closed:[],bookmarks:[]}).some(x=>x.label==='Yer işaretleri')})`);
+ assert(visual.border.includes('255, 0, 0'));assert.equal(visual.filter,'grayscale(1)');assert(Number(visual.opacity)<.6);assert.equal(visual.scroll,'none');assert.equal(visual.bookmarks,false);
+ await win.webContents.executeJavaScript(`{const a=document.querySelector('#pinnedtabs .tab'),b=a.nextElementSibling;const r=a.getBoundingClientRect(),t=b.getBoundingClientRect();a.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0,clientX:r.left+10,clientY:r.top+24}));window.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:t.right-2,clientY:t.top+24}));}`);
+ assert.equal(await win.webContents.executeJavaScript(`document.querySelectorAll('.pinned-ghost').length`),1);
+ await win.webContents.executeJavaScript(`window.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,button:0}));`);await new Promise(r=>setTimeout(r,40));assert.equal(moved.id,1);assert.equal(moved.to,1);assert.equal(await win.webContents.executeJavaScript(`document.querySelectorAll('.pinned-ghost').length`),0);
+ // Cross-row 2x2 moves must remain stable while the pointer is stationary.
+ const dragResult=await win.webContents.executeJavaScript(`(async()=>{
+   const grid=document.querySelector('#pinnedtabs');
+   const el=grid.querySelector('[data-id="1"]'),target=grid.children[3];
+   const a=el.getBoundingClientRect(),b=target.getBoundingClientRect();
+   el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0,clientX:a.left+a.width/2,clientY:a.top+a.height/2}));
+   for(let i=0;i<8;i++){window.dispatchEvent(new MouseEvent('mousemove',{clientX:b.left+b.width/2,clientY:b.top+b.height/2}));await new Promise(r=>setTimeout(r,25));}
+   const order=[...grid.children].map(e=>Number(e.dataset.id));
+   const ghost=getComputedStyle(document.querySelector('.pinned-ghost'));const awake={shadow:ghost.boxShadow,opacity:getComputedStyle(document.querySelector('.pinned-ghost .ico')).opacity,filter:getComputedStyle(document.querySelector('.pinned-ghost .ico')).filter};
+   window.dispatchEvent(new MouseEvent('mouseup',{button:0}));
+   const asleep=grid.querySelector('[data-id="2"]');asleep.style.setProperty('--tab-accent','#ff0000');const x=asleep.getBoundingClientRect(),y=grid.children[1].getBoundingClientRect();
+   asleep.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0,clientX:x.left+x.width/2,clientY:x.top+x.height/2}));window.dispatchEvent(new MouseEvent('mousemove',{clientX:y.left+y.width/2,clientY:y.top+y.height/2}));
+   const g=getComputedStyle(document.querySelector('.pinned-ghost'));const sleeping={shadow:g.boxShadow,opacity:getComputedStyle(document.querySelector('.pinned-ghost .ico')).opacity,filter:getComputedStyle(document.querySelector('.pinned-ghost .ico')).filter};
+   const p=grid.querySelector('.placeholder'),placeholder={opacity:getComputedStyle(p).opacity,filter:getComputedStyle(p.querySelector('.ico')).filter,iconOpacity:getComputedStyle(p.querySelector('.ico')).opacity,shadow:getComputedStyle(p).boxShadow};window.dispatchEvent(new MouseEvent('mouseup',{button:0}));return {order,awake,sleeping,placeholder};
+ })()`);
+ assert.equal(dragResult.order[3],1);assert.deepEqual(dragResult.sleeping,dragResult.awake);assert.equal(dragResult.placeholder.opacity,'1');assert.equal(dragResult.placeholder.filter,'none');assert.equal(dragResult.placeholder.iconOpacity,'1');assert(dragResult.placeholder.shadow.includes('255, 0, 0'));
+ win.webContents.send('newtab-prompt',{searchName:'Google'});await new Promise(r=>setTimeout(r,100));
+ assert.equal(await win.webContents.executeJavaScript(`document.querySelector('#newtabPrompt').hidden`),false);
+ const inputTop=await win.webContents.executeJavaScript(`document.querySelector('#newtabQuery').getBoundingClientRect().top`);
+ await win.webContents.executeJavaScript(`document.querySelector('#newtabQuery').value='kick';document.querySelector('#newtabQuery').dispatchEvent(new Event('input'))`);
+ win.webContents.send('newtab-results',{q:'kick',items:[{title:'KICK',url:'https://kick.com/',kind:'hist'}]});await new Promise(r=>setTimeout(r,40));
+ assert.equal(await win.webContents.executeJavaScript(`document.querySelectorAll('#newtabResults button').length`),2);
+ const steady=await win.webContents.executeJavaScript(`(()=>{window.previousSuggestion=document.querySelectorAll('#newtabResults button')[1];window.previousSuggestionIcon=window.previousSuggestion.firstElementChild;document.querySelector('#newtabQuery').value='kic';document.querySelector('#newtabQuery').dispatchEvent(new Event('input'));return document.querySelectorAll('#newtabResults button').length===2&&document.querySelector('#newtabQuery').getAttribute('aria-expanded')==='true';})()`);assert(steady,'typing must not hide or empty suggestions while awaiting reply');
+ win.webContents.send('newtab-results',{q:'kic',items:[{title:'KICK',url:'https://kick.com/',kind:'hist'}]});await new Promise(r=>setTimeout(r,30));assert(await win.webContents.executeJavaScript(`document.querySelectorAll('#newtabResults button')[1]===window.previousSuggestion&&document.querySelectorAll('#newtabResults button')[1].firstElementChild===window.previousSuggestionIcon`),'matching result rows and icons are reused');
+ assert.equal(await win.webContents.executeJavaScript(`document.querySelector('#newtabQuery').getBoundingClientRect().top`),inputTop,'suggestions must not move the query input');
+ await win.webContents.executeJavaScript(`document.querySelector('#newtabQuery').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));document.querySelector('#newtabPrompt form').requestSubmit()`);await new Promise(r=>setTimeout(r,30));assert.equal(submitted,'https://kick.com/');assert.equal(await win.webContents.executeJavaScript(`document.querySelector('#newtabQuery').value`),'kick.com');
+ await win.webContents.executeJavaScript(`document.querySelector('#newtabQuery').value='';document.querySelector('#newtabQuery').dispatchEvent(new Event('input'))`);
+ await win.webContents.executeJavaScript(`document.querySelector('#newtabQuery').value='test arama';document.querySelector('#newtabPrompt form').requestSubmit()`);
+ await new Promise(r=>setTimeout(r,50));assert.equal(submitted,'test arama');
+ win.webContents.send('menu-closed');await new Promise(r=>setTimeout(r,50));assert.equal(await win.webContents.executeJavaScript(`document.querySelector('#newtabPrompt').hidden`),true);
+ state.sideWidth=56;state.tabs=[...tabs,...Array.from({length:10},(_,i)=>({id:10+i,title:'Pinned '+i,pinned:true,sleeping:true,volume:100}))];win.webContents.send('state',state);await new Promise(r=>setTimeout(r,50));
+ const narrow=await win.webContents.executeJavaScript(`({pinned:document.querySelector('#pinnedtabs .tab').getBoundingClientRect().height,normal:document.querySelector('#tabs .tab').getBoundingClientRect().height,separator:getComputedStyle(document.querySelector('#pinnedSeparator')).display,gap:document.querySelector('#vtabs').getBoundingClientRect().top-document.querySelector('#pinnedtabs').getBoundingClientRect().bottom})`);assert.equal(narrow.pinned,narrow.normal);assert.equal(narrow.pinned,36);assert.equal(narrow.separator,'block');assert(narrow.gap>=10);state.tabs=tabs;
+ state.vertical=false;win.webContents.send('state',state);await new Promise(r=>setTimeout(r,50));assert.equal(await win.webContents.executeJavaScript(`document.querySelectorAll('#tabs .tab').length`),6);
+ const requests=[];const server=http.createServer((req,res)=>{requests.push(req.url);res.setHeader('Content-Type','text/html');res.end('<title>Video &amp; Şarkı &#x1F3B5;</title><script>fetch("/script-ran")</script><video autoplay src="/video.mp4"></video><img src="/image.png">');});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const source=fs.readFileSync(path.join(root,'main.js'),'utf8');const w={tabs:[],ses:session.defaultSession};const tab={w,url:'http://127.0.0.1:'+server.address().port+'/',title:'Fallback',view:null};w.tabs.push(tab);
+ const ctx={settings:{bookmarks:[]},history:[],windows:[w],AbortController,TextDecoder,setTimeout,clearTimeout,inWin:(_w,f)=>f(),pushState:()=>{}};vm.createContext(ctx);
+ vm.runInContext(source.slice(source.indexOf('const titleQueue ='),source.indexOf('function newTab(')),ctx);
+ await ctx.readTabTitle(tab);assert.equal(tab.title,'Video & Şarkı 🎵');assert.deepEqual(requests,['/']);assert.equal(tab.view,null);
+ const pixels=Buffer.alloc(4*4*4);for(let i=0;i<pixels.length;i+=4){pixels[i+2]=255;pixels[i+3]=255;}
+ const icon=nativeImage.createFromBitmap(pixels,{width:4,height:4});tab.pinned=true;tab.favicon=icon.toDataURL();
+ Object.assign(ctx,{nativeImage,Buffer,AbortSignal,assertImageLimits:require('../bounded-fetch').assertImageLimits});vm.runInContext(source.slice(source.indexOf('const iconColors ='),source.indexOf('function togglePin(')),ctx);await ctx.updateIconColor(tab);assert.equal(tab.iconColor,'#ff0000');
+ w.ui={webContents:win.webContents};tab.favicon='data:image/svg+xml;base64,'+Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#00cc44"/></svg>').toString('base64');await ctx.updateIconColor(tab);assert.equal(tab.iconColor,'#00cc44','SVG favicon uses Chromium decode and its dominant green');
+ const grayPixels=Buffer.alloc(4*4*4,160);for(let i=3;i<grayPixels.length;i+=4)grayPixels[i]=255;tab.favicon=nativeImage.createFromBitmap(grayPixels,{width:4,height:4}).toDataURL();await ctx.updateIconColor(tab);assert.equal(tab.iconColor,'#a0a0a0','monochrome icon has a stable neutral accent');
+ let shown=0;const reveal={settings:{verticalAutoHide:true},W:{sideClosing:true},vertical:()=>true,clearTimeout:()=>{},openSide:()=>shown++,Date};vm.createContext(reveal);vm.runInContext(source.slice(source.indexOf('function revealPinChange('),source.indexOf('function togglePin(')),reveal);reveal.revealPinChange();assert.equal(shown,1);assert.equal(reveal.W.sideClosing,false);assert(reveal.W.sideHoldUntil>Date.now()+1000);
+ let pins=0,bookmarks=0;const keys={isMac:false,settings:{bookmarksEnabled:false},activeId:1,togglePin:()=>pins++,revealPinChange:()=>{},toggleBookmark:()=>bookmarks++};vm.createContext(keys);vm.runInContext(source.slice(source.indexOf('function handleShortcut('),source.indexOf('// ---------------------------------------------------------------- Menus')),keys);keys.handleShortcut({key:'d',control:true});assert.equal(pins,1);assert.equal(bookmarks,0);keys.settings.bookmarksEnabled=true;keys.handleShortcut({key:'d',control:true});assert.equal(bookmarks,1);
+ console.log('PASS: pinned grid + floating horizontal drag, sleeping grayscale, favicon accent, bookmarks off + Ctrl+D pin, centered search and deferred titles.');
+ server.close();win.destroy();app.quit();
+}).catch(e=>{console.error(e);app.exit(1)});

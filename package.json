@@ -1,0 +1,163 @@
+{
+  "name": "calcium",
+  "productName": "Calcium",
+  "version": "1.3.1",
+  "description": "Calcium — a bare bones browser.",
+  "main": "main.js",
+  "license": "GPL-3.0",
+  "scripts": {
+    "start": "node tools/dev.js",
+    "dist:win": "electron-builder --win nsis --x64 --publish never",
+    "dist:linux": "electron-builder --linux --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "vmp-dev": "python -m castlabs_evs.vmp sign-pkg node_modules/electron/dist",
+    "start:electron": "electron .",
+    "update-ublock": "node tools/update-ublock.js",
+    "prepare-security": "node tools/prepare-security.js",
+    "postinstall": "node tools/prepare-security.js",
+    "test:security": "node tools/test-security.cjs",
+    "test:electron": "node tools/run-electron-tests.cjs",
+    "check:engine": "node tools/check-engine.cjs"
+  },
+  "dependencies": {
+    "adm-zip": "0.6.1",
+    "electron-chrome-extensions": "4.10.0",
+    "electron-chrome-web-store": "0.13.0"
+  },
+  "devDependencies": {
+    "electron": "https://codeload.github.com/castlabs/electron-releases/tar.gz/refs/tags/v45.2.1%2Bwvcus",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "local.mondium.tarayici",
+    "productName": "Calcium",
+    "asar": true,
+    "compression": "maximum",
+    "electronLanguages": [
+      "tr",
+      "en-US"
+    ],
+    "files": [
+      "main.js",
+      "ui.html",
+      "ui-preload.js",
+      "page-preload.js",
+      "newtab.html",
+      "welcome.html",
+      "history.html",
+      "downloads.html",
+      "settings.html",
+      "reader.js",
+      "volume.js",
+      "hoverzoom.js",
+      "extensions.html",
+      "user-scripts.js",
+      "user-scripts-sw.js",
+      "icon.png",
+      "package.json",
+      "node_modules/**/*",
+      "mv2-bridge.js",
+      "vendor/**/*",
+      "site-data.js",
+      "bookmark-import.js",
+      "i18n.js",
+      "taskmanager.html",
+      "bounded-fetch.js",
+      "secure-crx.js",
+      "threat-protection.js",
+      "securitywarning.html",
+      "private-ubo.js",
+      "overlay-scrollbar.js"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Calcium",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "uninstallDisplayName": "Calcium",
+      "include": "build/installer.nsh",
+      "installerLanguages": [
+        "en_US",
+        "tr_TR"
+      ],
+      "multiLanguageInstaller": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Calcium-Setup-${version}.exe"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Network"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ]
+    },
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "electronDownload": {
+      "mirror": "https://github.com/castlabs/electron-releases/releases/download/"
+    },
+    "afterSign": "build/vmp-win.js",
+    "afterPack": "build/vmp-mac.js",
+    "asarUnpack": [
+      "vendor/ublock/**"
+    ],
+    "beforeBuild": "./build/prepare-security.js",
+    "extraResources": [
+      {
+        "from": "node_modules",
+        "to": "node_modules",
+        "filter": [
+          "@types/chrome/**/*",
+          "@types/filesystem/**/*",
+          "@types/filewriter/**/*",
+          "@types/har-format/**/*",
+          "adm-zip/**/*",
+          "debug/**/*",
+          "electron-chrome-extensions/**/*",
+          "electron-chrome-web-store/**/*",
+          "ms/**/*",
+          "pbf/**/*",
+          "protocol-buffers-schema/**/*",
+          "resolve-protobuf-schema/**/*"
+        ]
+      },
+      {
+        "from": "build/icon.ico",
+        "to": "calcium.ico"
+      }
+    ]
+  },
+  "author": "cnrgks",
+  "allowScripts": {
+    "electron": true
+  },
+  "overrides": {
+    "adm-zip": "0.6.1",
+    "minimatch@>=7 <11.0.1": "11.0.5"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}
