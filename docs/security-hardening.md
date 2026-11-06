@@ -33,3 +33,7 @@ The engine and dependency checks must be repeated before every release; a clean 
 ## Content blocking
 
 uBlock Origin is the only blocking engine; the Ghostery alternative has been removed. Electron does not support loading extensions into nonpersistent sessions. Private windows retain an in-memory session and route bounded batches of network decisions through the loaded uBO engines, without registering private tabs or request logs in the persistent extension session. This adapter covers static network rules, dynamic URL rules and firewall rules; it does not provide the full extension cosmetic/scriptlet pipeline in private windows. Normal windows use the full extension.
+
+## Independent installation
+
+Calcium 1.3.2 uses its own Windows app ID, NSIS installation GUID and profile folder. The installer does not write or delete Mondium registrations, and the browser does not automatically reuse Mondium or Chromium profiles.

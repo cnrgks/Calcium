@@ -27,7 +27,7 @@ const bookmarkImport = require('./bookmark-import');
 
 // Separate profile folder for tests: does not touch the user's running Calcium or data (single-instance lock is per folder too)
 if (process.env.MONDIUM_PROFILE) app.setPath('userData', process.env.MONDIUM_PROFILE);
-else { const legacy=path.join(app.getPath('appData'),'Mondium'); app.setPath('userData',fs.existsSync(path.join(legacy,'ayarlar.json'))?legacy:path.join(app.getPath('appData'),'Calcium')); }
+else app.setPath('userData',path.join(app.getPath('appData'),'Calcium'));
 
 // Extension support (Chrome Web Store + chrome.* APIs). If it fails to load, the browser keeps working without extensions.
 let ECE = null, CWS = null, extensions = null;
@@ -35,17 +35,6 @@ try { ({ ElectronChromeExtensions: ECE } = require('electron-chrome-extensions')
 try { CWS = require('./vendor/secure-web-store'); } catch (e) { console.warn('Web Store library missing:', e.message); }
 
 const isMac = process.platform === 'darwin';
-
-(function migrateOldProfile() {
-  const dst = app.getPath('userData');
-  const src = path.join(path.dirname(dst), 'Chromium');
-  if (fs.existsSync(path.join(dst, 'ayarlar.json')) || !fs.existsSync(path.join(src, 'ayarlar.json'))) return;
-  const SKIP = /^(Cache|Code Cache|GPUCache|DawnGraphiteCache|DawnWebGPUCache|GPUPersistentCache|GrShaderCache|ShaderCache|blob_storage|Crashpad|DevToolsActivePort|Singleton.*|lockfile|filtre-motoru\.bin)$/i;
-  try {
-    fs.cpSync(src, dst, { recursive: true, force: false, errorOnExist: false, filter: (p) => !SKIP.test(path.basename(p)) });
-    console.log('Old Chromium profile migrated to the Calcium folder.');
-  } catch (e) { console.warn('Could not migrate old profile:', e.message); }
-})();
 
 // The ad blocker library leaves an unhandled rejection when it cannot run a script in a closed frame.
 // Harmless; silenced so it doesn't flood the terminal, other errors still show.
@@ -2900,7 +2889,7 @@ function createWindow(opts = {}) {
     titleBarStyle: 'hidden',
     ...(isMac ? { trafficLightPosition: { x: 12, y: 14 } } : { titleBarOverlay: { color: settings.verticalTabs ? c.toolbar : c.frame, symbolColor: c.symbol, height: settings.verticalTabs ? TOOLBAR : TAB_STRIP } })
   });
-  if(process.platform==='win32')win.setAppDetails({appId:'local.mondium.tarayici',appIconPath:app.isPackaged?path.join(process.resourcesPath,'calcium.ico'):path.join(__dirname,'build','icon.ico'),appIconIndex:0,relaunchDisplayName:'Calcium',relaunchCommand:app.isPackaged?'"'+process.execPath+'"':'"'+process.execPath+'" "'+__dirname+'"'});
+  if(process.platform==='win32')win.setAppDetails({appId:'org.cnrgks.calcium',appIconPath:app.isPackaged?path.join(process.resourcesPath,'calcium.ico'):path.join(__dirname,'build','icon.ico'),appIconIndex:0,relaunchDisplayName:'Calcium',relaunchCommand:app.isPackaged?'"'+process.execPath+'"':'"'+process.execPath+'" "'+__dirname+'"'});
   if (win.setMenu) win.setMenu(null);
 
   ui = w.ui = new WebContentsView({
@@ -3016,7 +3005,7 @@ app.whenReady().then(async () => {
     });
   } catch (e) { console.warn('Could not configure DoH:', e.message); }
 
-  if (process.platform === 'win32') app.setAppUserModelId('local.mondium.tarayici');   // "Calcium" in the taskbar and notifications
+  if (process.platform === 'win32') app.setAppUserModelId('org.cnrgks.calcium');   // "Calcium" in the taskbar and notifications
   nativeTheme.themeSource = currentTheme().mode;
   mainSes = ses = session.fromPartition('persist:main');
   setupSession(mainSes);

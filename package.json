@@ -1,7 +1,7 @@
 {
   "name": "calcium",
   "productName": "Calcium",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "Calcium — a bare bones browser.",
   "main": "main.js",
   "license": "GPL-3.0",
@@ -29,7 +29,7 @@
     "electron-builder": "26.18.0"
   },
   "build": {
-    "appId": "local.mondium.tarayici",
+    "appId": "org.cnrgks.calcium",
     "productName": "Calcium",
     "asar": true,
     "compression": "maximum",
@@ -98,7 +98,8 @@
       ],
       "multiLanguageInstaller": true,
       "deleteAppDataOnUninstall": false,
-      "artifactName": "Calcium-Setup-${version}.exe"
+      "artifactName": "Calcium-Setup-${version}.exe",
+      "guid": "ddf0f384-1d45-4192-9c12-84227af85eb4"
     },
     "linux": {
       "target": [

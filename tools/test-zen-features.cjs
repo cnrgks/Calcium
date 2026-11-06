@@ -9,6 +9,7 @@ app.whenReady().then(async()=>{
  const win=new BrowserWindow({show:false,width:1100,height:760,webPreferences:{preload:path.join(root,'vendor','ui-sandbox-preload.js'),sandbox:true,contextIsolation:true}});
  let preloadError=null;win.webContents.on('preload-error',(_e,_p,e)=>preloadError=e);
  await win.loadFile(path.join(root,'ui.html'));assert.equal(preloadError,null);assert(await win.webContents.executeJavaScript(`!!customElements.get('browser-action-list')`),'extension icons must work with sandbox enabled');
+ assert(await win.webContents.executeJavaScript(`(()=>{const panel=volumePanel({volume:20,volumeMax:600});return !panel.textContent.includes('Normale döndür')&&[...panel.querySelectorAll('button')].some(b=>b.textContent==='%100')})()`));
  const tabs=Array.from({length:6},(_,i)=>({id:i+1,title:'Tab '+(i+1),pinned:i<4,volume:100}));
  const state={tabs,activeId:5,vertical:true,autoHide:false,sideWidth:240,sideMin:56,sideOpen:false,url:'https://www.example.com/path?q=test',volume:100,bookmarks:[],downloads:{any:false,active:0},extSupport:false,theme:{frame:'#000000',toolbar:'#000000',omni:'#0d0d0d',accent:'#a8c7fa',page:'#000000',menu:'#121212',mode:'dark',activeTab:'#0a0a0a'}};
  win.webContents.send('state',state);await new Promise(r=>setTimeout(r,100));

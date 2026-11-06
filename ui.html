@@ -1122,8 +1122,7 @@ function volumePanel(d) {
   const presets = [50, 100, 150, 200, 300, 600].filter((x) => x <= max);
   const qb = presets.map((x) => { const b = el('button', null, '%' + x); b.onclick = () => set(x, true); q.append(b); return [x, b]; });
   const f = el('div', 'vf');
-  const reset = el('button', null, 'Normale döndür');
-  f.append(el('span', null, 'Sadece bu sekme için'), reset);
+  f.append(el('span', null, 'Sadece bu sekme için'));
   let raf = 0;
   function show(val) {
     v.textContent = '%' + val;
@@ -1138,7 +1137,6 @@ function volumePanel(d) {
   }
   r.oninput = () => set(Number(r.value));
   r.onchange = () => set(Number(r.value), true);
-  reset.onclick = () => set(100, true);
   panel.onwheel = (e) => { e.preventDefault(); set(Number(r.value) + (e.deltaY < 0 ? 10 : -10), true); };
   show(d.volume);
   panel.append(h, rw, q, f);

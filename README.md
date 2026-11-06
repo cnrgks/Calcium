@@ -19,8 +19,8 @@ New installs enable vertical tabs, pitch black and the new-tab search prompt. Si
 
 ## Download
 
-Get **Calcium-Setup-1.3.1.exe** from the [latest release](https://github.com/cnrgks/Calcium/releases/latest).
-Install new versions manually using the setup. Existing profiles are retained.
+Get **Calcium-Setup-1.3.2.exe** from the [latest release](https://github.com/cnrgks/Calcium/releases/latest).
+Install new versions manually using the setup. Calcium has its own installation identity and profile folder; it does not replace Mondium or share its profile.
 
 ## Development
 
