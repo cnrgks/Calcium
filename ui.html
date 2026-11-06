@@ -69,6 +69,7 @@
 
   /* ---------- Vertical tabs (sidebar on the left) ---------- */
   #side { display:none; }
+  body.onboarding #side,body.onboarding #strip{display:none!important;}
   body.vert { display:flex; flex-direction:column; }
   body.vert #strip { display:none; }
   body.vert #toolbar { -webkit-app-region:drag; flex:none; }
@@ -220,10 +221,6 @@
   .vp .vq button { flex:1; height:28px; border-radius:14px; border:1px solid var(--border); color:var(--text); font-size:12px; font-variant-numeric:tabular-nums; }
   .vp .vq button:hover { background:var(--hover); }
   .vp .vq button.on { background:var(--sel); border-color:transparent; color:var(--accent); font-weight:600; }
-  .vp .vf { display:flex; align-items:center; gap:12px; padding:10px 14px 10px 20px; border-top:1px solid var(--border); color:var(--dim); font-size:12px; }
-  .vp .vf span { flex:1; min-width:0; }
-  .vp .vf button { flex:none; height:32px; padding:0 14px; border-radius:16px; border:1px solid var(--border); color:var(--accent); font-weight:500; white-space:nowrap; }
-  .vp .vf button:hover { background:var(--hover); }
   /* Incognito badge (right side of the tab strip) */
   #incog { flex:none; display:flex; align-items:center; gap:6px; height:28px; margin:0 6px 4px auto; padding:0 10px; border-radius:14px; color:#e3e3e3; font-size:12px; -webkit-app-region:no-drag; }
   #incog svg { width:18px; height:18px; }
@@ -747,6 +744,7 @@ function render(s) {
     pending = s; return;
   }
   state = s;
+  document.body.classList.toggle('onboarding',!!s.onboarding);
   document.body.classList.toggle('find', !!s.findOpen);
   renderSide(s);
   // Tab strip is redrawn only if tabs actually changed (no needless DOM work or image loads)
@@ -1121,8 +1119,6 @@ function volumePanel(d) {
   const q = el('div', 'vq');
   const presets = [50, 100, 150, 200, 300, 600].filter((x) => x <= max);
   const qb = presets.map((x) => { const b = el('button', null, '%' + x); b.onclick = () => set(x, true); q.append(b); return [x, b]; });
-  const f = el('div', 'vf');
-  f.append(el('span', null, 'Sadece bu sekme için'));
   let raf = 0;
   function show(val) {
     v.textContent = '%' + val;
@@ -1139,7 +1135,7 @@ function volumePanel(d) {
   r.onchange = () => set(Number(r.value), true);
   panel.onwheel = (e) => { e.preventDefault(); set(Number(r.value) + (e.deltaY < 0 ? 10 : -10), true); };
   show(d.volume);
-  panel.append(h, rw, q, f);
+  panel.append(h, rw, q);
   setTimeout(() => r.focus(), 0);
   return panel;
 }

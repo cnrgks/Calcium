@@ -1,7 +1,7 @@
 {
   "name": "calcium",
   "productName": "Calcium",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "description": "Calcium — a bare bones browser.",
   "main": "main.js",
   "license": "GPL-3.0",
@@ -15,14 +15,16 @@
     "update-ublock": "node tools/update-ublock.js",
     "prepare-security": "node tools/prepare-security.js",
     "postinstall": "node tools/prepare-security.js",
-    "test:security": "node tools/test-security.cjs",
+    "test:security": "node tools/test-security.cjs && node tools/test-protection.cjs",
     "test:electron": "node tools/run-electron-tests.cjs",
-    "check:engine": "node tools/check-engine.cjs"
+    "check:engine": "node tools/check-engine.cjs",
+    "update-protection": "node tools/update-protection.cjs"
   },
   "dependencies": {
     "adm-zip": "0.6.1",
     "electron-chrome-extensions": "4.10.0",
-    "electron-chrome-web-store": "0.13.0"
+    "electron-chrome-web-store": "0.13.0",
+    "tldts": "7.4.19"
   },
   "devDependencies": {
     "electron": "https://codeload.github.com/castlabs/electron-releases/tar.gz/refs/tags/v45.2.1%2Bwvcus",
@@ -67,7 +69,8 @@
       "threat-protection.js",
       "securitywarning.html",
       "private-ubo.js",
-      "overlay-scrollbar.js"
+      "overlay-scrollbar.js",
+      "calcium-protection.js"
     ],
     "win": {
       "target": [
@@ -141,7 +144,9 @@
           "ms/**/*",
           "pbf/**/*",
           "protocol-buffers-schema/**/*",
-          "resolve-protobuf-schema/**/*"
+          "resolve-protobuf-schema/**/*",
+          "tldts/**/*",
+          "tldts-core/**/*"
         ]
       },
       {

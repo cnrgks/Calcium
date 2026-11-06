@@ -8,18 +8,18 @@ A minimal Windows browser built on Electron / castLabs Chromium. Available in En
 
 - Vertical tabs and a grid of pinned tabs. Ctrl+D pins the current tab.
 - Deferred background tabs, sleeping tabs and automatic session restore.
-- Built-in uBlock Origin and local malicious-domain filtering.
+- Built-in uBlock Origin, lightweight Calcium tracker protection and local malicious-domain filtering.
 - System, light and dark themes, with optional pitch black.
 - Centered downloads and task-manager windows, with compact history.
 - Site-data cleanup that can preserve protected sign-in sessions.
 - Chrome Web Store extensions, image hover zoom and per-tab volume boost.
 - Full-page F11 fullscreen and optional download location prompts.
 
-New installs enable vertical tabs, pitch black and the new-tab search prompt. Sidebar auto-hide is off. Bookmarks, tab audio controls and download notifications are disabled.
+New installs enable vertical tabs, pitch black and the new-tab search prompt. Sidebar auto-hide is on. Bookmarks, tab audio controls and download notifications are disabled.
 
 ## Download
 
-Get **Calcium-Setup-1.3.2.exe** from the [latest release](https://github.com/cnrgks/Calcium/releases/latest).
+Get **Calcium-Setup-1.3.3.exe** from the [latest release](https://github.com/cnrgks/Calcium/releases/latest).
 Install new versions manually using the setup. Calcium has its own installation identity and profile folder; it does not replace Mondium or share its profile.
 
 ## Development

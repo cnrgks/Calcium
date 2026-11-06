@@ -21,7 +21,7 @@ const os = require('os');
 const url = require('url');
 
 let parseTld = null;
-try { ({ parse: parseTld } = require('tldts-experimental')); } catch {}
+try { ({ parse: parseTld } = require('tldts')); } catch {}
 
 // ---------------------------------------------------------------- Site rules
 const isIp = (h) => /^\d{1,3}(\.\d{1,3}){3}$/.test(h) || /^\[?[0-9a-f:]+\]?$/i.test(h) && h.includes(':');

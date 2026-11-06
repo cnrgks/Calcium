@@ -21,6 +21,8 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const { pathToFileURL } = require('url');
 const { createThreatProtection } = require('./threat-protection');
+const {createCalciumProtection,cleanTrackingUrl}=require('./calcium-protection');
+const {siteOfHost}=require('./site-data');
 const { readResponseBytes, assertImageLimits } = require('./bounded-fetch');
 const { createSiteData } = require('./site-data');
 const bookmarkImport = require('./bookmark-import');
@@ -47,6 +49,7 @@ process.on('unhandledRejection', (e) => {
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'ayarlar.json');
 const DEFAULTS = {
   searchEngine: 'google',
+  calciumProtection:true,calciumAllowedSites:[],
   forceDarkPages: false,
   strictIsolation: true,    // true = every site in its own process like Chrome (much more RAM); false = only login/payment/protected sites isolated
   clearGoogleOnExit: false,  // when on, Google cookies/site data are cleared on exit (signs out of Google)
@@ -67,7 +70,7 @@ const DEFAULTS = {
   newTabPrompt: true,        // Ask for a search/address before creating a new tab
   verticalTabs: true,       // vertical tabs (sidebar on the left)
   verticalWidth: 240,        // vertical sidebar width (px); at its narrowest only icons
-  verticalAutoHide: false,
+  verticalAutoHide: true,
   language: 'auto',         // UI language: 'auto' (Windows language) | 'tr' | 'en'
   pitchBlack: true,         // pure black in dark theme
   protectedSites: [],        // Protected Sites: cookies and site data not cleared on cleanup (registrable domain)
@@ -84,6 +87,7 @@ try { settings = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(SETTINGS_FILE, 'ut
 // language (which may be English even for Turkish users). New installs pick a language on the welcome page.
 if (settings.firstRunDone && !settings.languageSet) { if (settings.language === 'auto') settings.language = 'tr'; settings.languageSet = true; }
 if (!settings.isolationSecurityMigration) { settings.strictIsolation=true;settings.isolationSecurityMigration=true; }
+if(!Array.isArray(settings.calciumAllowedSites))settings.calciumAllowedSites=[];
 settings.bookmarksEnabled=false;settings.tabAudio=false;settings.downloadNotify=false;
 settings.restoreSession=true;delete settings.adblockEngine;delete settings.checkUpdates;delete settings.newtabTitle;
 if(!['sistem','acik','koyu'].includes(settings.theme))settings.theme=['gece','orman','murdum'].includes(settings.theme)?'koyu':'acik';
@@ -366,7 +370,7 @@ const forEachWin = (fn) => { for (const w of [...windows]) inWin(w, () => fn(w))
 const lastWin = (normalOnly) => windows.filter((w) => !normalOnly || !w.incognito).sort((a, b) => b.focusedAt - a.focusedAt)[0] || null;
 
 const uiHeight = () => (htmlFullscreen ? 0
-  : TAB_STRIP + TOOLBAR + (hasBookmarks() ? BOOKMARKS : 0) + (findOpen ? FINDBAR : 0));
+  : (settings.firstRunDone?TAB_STRIP:0) + TOOLBAR + (hasBookmarks() ? BOOKMARKS : 0) + (findOpen ? FINDBAR : 0));
 
 // ---------------------------------------------------------------- uBlock Origin: the only blocking engine
 const UBO_DIR=path.join(__dirname,'vendor','ublock').replace(/app\.asar(?=[\\/])/,'app.asar.unpacked');
@@ -394,12 +398,20 @@ function ensureUBlock(target){
   const started=Date.now();let ready=false;
   while(Date.now()-started<10000){const bg=webContents.getAllWebContents().find(w=>!w.isDestroyed()&&w.session===target&&w.getURL().startsWith(`chrome-extension://${ext.id}/background.html`));if(bg){try{ready=await Promise.race([bg.executeJavaScript('!!(self.µBlock && self.µBlock.readyToFilter)'),timeout(500)]);if(ready)break;}catch{}}await new Promise(r=>setTimeout(r,100));}
   if(!ready)throw Error('uBlock Origin filters are not ready');
+  // Electron's extension API does not reliably enforce blocking webRequest listeners.
+  // Run network decisions through the loaded uBO engine; cosmetics stay in the extension.
+  await require('./private-ubo').attachPrivateUBlock(target,uboBackground,webContents);
+  const background=uboBackground();if(background)await background.executeJavaScript("if(!µBlock.userSettings.autoUpdate)µBlock.changeUserSettings('autoUpdate',true);").catch(()=>{});
   console.log('uBlock Origin '+ext.version+' ready'+(target===mainSes?'':' (private)'));return true;
  })().catch(error=>{uboErrors.set(target,error.message);console.error('uBlock Origin:',error.message);return false});
  uboLoads.set(target,job);return job;
 }
 async function startBlocking(){await ensureUBlock(mainSes);mainBlockResolve();forEachWin(()=>pushState());}
-async function forceUpdateFilters(){if(uboId)newTab(uboPage('dashboard.html#3p-filters.html'));}
+function uboBackground(){return uboId?webContents.getAllWebContents().find(w=>!w.isDestroyed()&&w.session===mainSes&&w.getURL().startsWith(uboPage('background.html'))):null;}
+async function forceUpdateFilters(){
+ const bg=uboBackground();const results=await Promise.allSettled([calciumProtection.refresh({force:true}),threatProtection.refresh(),bg?bg.executeJavaScript("µBlock.scheduleAssetUpdater({now:true,auto:true,fetchDelay:1000}).then(()=>true)"):Promise.resolve(false)]);
+ notifyPages('settings');return {ok:results.every(r=>r.status==='fulfilled'&&r.value===true)};
+}
 
 ipcMain.on('mondium-link-title', (e, data) => {
   e.returnValue=false;const tab=byWcId.get(e.sender.id);
@@ -429,6 +441,11 @@ mainBlockReady.then(() => { mainBlockSettled = true; });
 setTimeout(() => { mainBlockSettled = true; }, 12000);
 const timeout = (ms) => new Promise((r) => setTimeout(r, ms));
 const threatProtection = createThreatProtection({root:__dirname,profile:app.getPath('userData')});
+const calciumProtection=createCalciumProtection({root:__dirname,profile:app.getPath('userData')});
+function calciumSite(url){try{const u=new URL(url);return /^https?:$/.test(u.protocol)?siteOfHost(u.hostname):null;}catch{return null;}}
+function calciumEnabledFor(url){const site=calciumSite(url);return !!site&&settings.calciumProtection!==false&&!settings.calciumAllowedSites.includes(site);}
+function toggleCalciumSite(url){const site=calciumSite(url);if(!site)return;const i=settings.calciumAllowedSites.indexOf(site);if(i>=0)settings.calciumAllowedSites.splice(i,1);else settings.calciumAllowedSites.push(site);saveSettings();notifyPages('settings');}
+
 const blockedNavigations = new Map(), trustedThreatHosts = new WeakMap(), navigationEpoch = new WeakMap();
 function showThreatWarning(wc,url){
  const tab=byWcId.get(wc.id);if(!tab)return false;
@@ -437,6 +454,7 @@ function showThreatWarning(wc,url){
  blockedNavigations.set(wc.id,url);wc.loadURL(SECURITY_URL).catch(()=>{});return true;
 }
 async function go(wc, url) {
+  if(calciumEnabledFor(url))url=cleanTrackingUrl(url);
   const epoch=(navigationEpoch.get(wc)||0)+1;navigationEpoch.set(wc,epoch);
   if(showThreatWarning(wc,url))return;
   if (!url.startsWith('file:')) {
@@ -603,6 +621,8 @@ function setupSession(ses = mainSes, incognito = false) {
 
   // Thorium: DNT + Global Privacy Control on by default
   ses.webRequest.onBeforeSendHeaders((details, cb) => {
+    const tab=byWcId.get(details.webContentsId),topUrl=tab?.view?.webContents.getURL()||tab?.url;
+    if(tab&&calciumEnabledFor(topUrl)&&calciumProtection.shouldBlock(details.url,topUrl,details.resourceType)){tab.blocked=(tab.blocked||0)+1;inWin(tab.w,()=>schedulePush());cb({cancel:true});return;}
     if(details.resourceType==='mainFrame' && threatProtection.isBlocked(details.url)){const tab=byWcId.get(details.webContentsId);if(!trustedThreatHosts.get(tab?.w)?.has(hostOf(details.url))){cb({cancel:true});return;}}
     details.requestHeaders['DNT'] = '1';
     if (isGoogleLogin(details.url)) details.requestHeaders['User-Agent'] = LOGIN_UA;
@@ -1357,7 +1377,7 @@ function layout() {
     // Vertical: the UI covers the whole window and sits BEHIND the page (top bars + left sidebar stay visible).
     // In auto-hide mode the page is full width; when the sidebar opens the UI is raised and slides over the page.
     const top = TOOLBAR + (hasBookmarks() ? BOOKMARKS : 0) + (findOpen ? FINDBAR : 0);
-    const sw = settings.verticalAutoHide ? 0 : sideWidth(width);
+    const sw = !settings.firstRunDone||settings.verticalAutoHide ? 0 : sideWidth(width);
     ui.setBounds({ x: 0, y: 0, width, height });
     if (t && t.view) {
       t.view.setBounds({ x: sw, y: top, width: Math.max(0, width - sw), height: Math.max(0, height - top) });
@@ -1447,6 +1467,7 @@ function pushState() {
   const recv = active.reduce((a, d) => a + d.received, 0), tot = active.reduce((a, d) => a + (d.total || 0), 0);
   win.setTitle((t ? `${t.title} - ` : '') + (W.incognito ? 'Calcium (Gizli)' : 'Calcium'));
   send('state', {
+    onboarding:!settings.firstRunDone,
     tabs: tabs.map((x) => ({
       id: x.id, title: x.title, favicon: x.favicon, loading: x.loading && !!x.view,
       iconColor: x.iconColor || null, sleeping: !x.view || !!x.pendingNavigation, audible: x.audible, pinned: !!x.pinned, muted: !!x.muted, volume: x.volume || 100
@@ -2209,6 +2230,7 @@ function showReloadMenu(pos) {
 function showShieldMenu(pos) {
   const t = activeTab();
   popAt([
+    {label:'Bu sitede Calcium koruması',type:'checkbox',checked:calciumEnabledFor(t?.url),enabled:!!calciumSite(t?.url),click:()=>{toggleCalciumSite(t.url);t.view?.webContents.reload();}},
     { label: uboId ? 'uBlock Origin: AÇIK' : 'Reklam engelleyici yükleniyor...', enabled: false },
     { label: `${(t && hostOf(t.url)) || 'Bu sayfa'}: ${t ? t.blocked : 0} reklam/izleyici engellendi`, enabled: false },
     { type: 'separator' },
@@ -2418,6 +2440,7 @@ function showContextMenu(wc, p) {
       if (extItems.length) items.push({ type: 'separator' }, ...extItems);
     } catch {}
   }
+  if(calciumSite(wc.getURL()))items.push({type:'separator'},{label:'Bu sitede Calcium koruması',type:'checkbox',checked:calciumEnabledFor(wc.getURL()),click:()=>{toggleCalciumSite(wc.getURL());wc.reload();}});
   items.push({ type: 'separator' }, { label: 'İncele', click: () => wc.inspectElement(p.x, p.y) });
   Menu.buildFromTemplate(bindMenu(items)).popup({ window: win });
 }
@@ -2613,6 +2636,7 @@ function normalizeUrl(u) {
 
 function settingsData() {
   return {
+    calciumProtection:settings.calciumProtection!==false,calciumProtectionStats:calciumProtection.stats(),
     askDownloadLocation:settings.askDownloadLocation!==false,
     newTabPrompt: settings.newTabPrompt !== false,
     bookmarksEnabled: settings.bookmarksEnabled !== false,
@@ -2658,7 +2682,7 @@ function settingsSet(key, value) {
     case 'pitchBlack': if (typeof value !== 'boolean') return false; settings.pitchBlack = value; saveSettings(); applyTheme(); return true;
 
     case 'verticalAutoHide': if (typeof value !== 'boolean') return false; if (value !== !!settings.verticalAutoHide) { if (settings.verticalTabs) toggleAutoHide(); else { settings.verticalAutoHide = value; saveSettings(); } } return true;
-    case 'askDownloadLocation': case 'forceDarkPages': case 'strictIsolation': case 'clearGoogleOnExit': case 'keepLogins': return bool(key);
+    case 'calciumProtection': case 'askDownloadLocation': case 'forceDarkPages': case 'strictIsolation': case 'clearGoogleOnExit': case 'keepLogins': return bool(key);
   }
   return false;
 }
@@ -2706,7 +2730,7 @@ ipcMain.handle('page', async (e, cmd, arg) => {
       case 'bm-group-remove': return removeBookmarkGroup(String(arg || ''));
       case 'site-perms': settings.sitePerms = {}; saveSettings(true); notifyPages('settings'); return { ok: true };
       case 'device-grants': showDeviceGrants(); return { ok: true };
-      case 'update-filters': forceUpdateFilters(); return { ok: true };
+      case 'update-filters': return forceUpdateFilters();
       case 'ubo-dashboard': if (uboId) newTab(uboPage('dashboard.html')); return { ok: true };
       case 'open-downloads-folder': shell.openPath(app.getPath('downloads')); return { ok: true };
       case 'web-store': openUrl('https://chromewebstore.google.com/category/extensions', 'tab'); return { ok: true };
@@ -2804,7 +2828,7 @@ ipcMain.handle('page', async (e, cmd, arg) => {
     case 'language': if (kind === 'welcome' && ['auto', 'tr', 'en'].includes(arg)) { settings.languageSet = true; setLanguage(arg); } return { ok: true };
     case 'welcome-done': {
       settings.firstRunDone = true;
-      saveSettings(true);
+      saveSettings(true);forEachWin(()=>{layout();pushState();});
       const t = tabs.find((x) => x.view && x.view.webContents === e.sender);
       if (t) { t.url = newtabUrl(); t.title = 'Yeni Sekme'; go(t.view.webContents, t.url); const w = W; setTimeout(() => inWin(w, () => focusUrl()), 300); }
       return { ok: true };
@@ -3011,7 +3035,7 @@ app.whenReady().then(async () => {
   setupSession(mainSes);
   if (settings.clearGoogleOnExit) await clearGoogleData();   // the previous session may have crashed
   nativeTheme.on('updated', () => { forEachWin(() => { paintFrame(); pushState(); }); broadcastPages(); });
-  if(app.isPackaged){setTimeout(()=>threatProtection.refresh(),30000);setInterval(()=>threatProtection.refresh(),12*60*60*1000);}
+  if(!process.env.CALCIUM_TEST_MODE){const refresh=()=>Promise.allSettled([threatProtection.refresh(),calciumProtection.refresh()]).then(()=>notifyPages('settings'));setTimeout(refresh,30000).unref();setInterval(refresh,12*60*60*1000).unref();}
   createWindow();
   startBlocking();
   setupExtensions();

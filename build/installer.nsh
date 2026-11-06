@@ -1,3 +1,4 @@
+!include "installer-theme.nsh"
 ; Calcium: registers as a browser in Windows "Default apps" (like Chrome, per user, HKCU).
 ; The user can pick Calcium in Settings > Default apps; the installer does NOT make it the default by itself.
 

@@ -556,6 +556,12 @@
 
   // Strings with variable parts. {0}, {1}... in order; English may use {0:one|many} for plurals.
   Object.assign(EN, {
+ 'Calcium koruması':'Calcium protection','Bu sitede Calcium koruması':'Calcium protection on this site',
+ 'Bilinen üçüncü taraf reklam ve izleyicilerini engelle.':'Block known third-party advertising and trackers.',
+ 'Koruma listeleri':'Protection lists','Listeleri güncelle':'Update lists',
+ 'Otomatik güncellenir. Sorun yaşayan sitelerde sağ tık menüsünden Calcium korumasını kapatabilirsin.':'Updates automatically. If a site breaks, disable Calcium protection in its context menu.',
+ 'Güncelleme kontrolü tamamlandı.':'Update check completed.','Bazı listeler güncellenemedi; mevcut koruma sürüyor.':'Some lists could not update; existing protection remains active.',
+
  'İndirirken nereye kaydedileceğini sor':'Ask where to save downloads',
  'Her indirmede kayıt konumunu seç.':'Choose a location for each download.',
     'Siteler ve çerezler':'Sites and cookies',

@@ -13,43 +13,44 @@
   * { box-sizing:border-box; margin:0; padding:0; }
   html, body { min-height:100%; background:var(--bg); color:var(--text); font-family:"Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
     transition:background .25s; user-select:none; }
-  main { max-width:760px; margin:0 auto; padding:9vh 24px 48px; text-align:center; }
-  .logo { width:72px; height:72px; margin:0 auto 22px; border-radius:20px; background:linear-gradient(135deg, #2f6df6, #4fc3f7);
+  main { max-width:660px; margin:0 auto; padding:9vh 24px 48px; text-align:center; }
+  .logo { width:72px; height:72px; margin:0 auto 22px; border-radius:20px; background:transparent;color:var(--text);
     display:flex; align-items:center; justify-content:center; }
-  .logo span { width:34px; height:34px; border:7px solid #fff; border-right-color:transparent; border-radius:50%; transform:rotate(-45deg); }
+  .logo svg { width:72px;height:72px; }
   h1 { font-size:32px; font-weight:400; margin-bottom:10px; }
   p.sub { color:var(--dim); font-size:15px; margin-bottom:34px; }
   #lang { display:flex; gap:8px; justify-content:center; margin:0 0 22px; }
   #lang button { height:32px; padding:0 16px; border-radius:16px; border:1px solid var(--line, rgba(128,128,128,.35)); background:transparent; color:inherit; font-size:13px; cursor:pointer; }
   #lang button.on { border-color:var(--accent); color:var(--accent); font-weight:600; }
-  #grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:14px; text-align:left; }
-  .card { border:2px solid transparent; border-radius:12px; padding:8px; background:var(--card); cursor:default; transition:transform .12s; }
+  #grid { display:grid; grid-template-columns:repeat(3,minmax(0,160px));justify-content:center;gap:14px;width:100%;margin:0 auto;text-align:left; }
+  .card { position:relative;appearance:none;font:inherit;color:inherit;text-align:left;min-width:0;border:2px solid transparent; border-radius:12px; padding:8px; background:var(--card); cursor:pointer; transition:transform .12s; }
   .card:hover { transform:translateY(-2px); }
   .card.on { border-color:var(--accent); }
-  .pv { height:78px; border-radius:7px; overflow:hidden; display:flex; flex-direction:column; border:1px solid rgba(0,0,0,.08); }
-  .pv .f { height:16px; display:flex; align-items:flex-end; padding-left:8px; }
-  .pv .f i { width:42px; height:11px; border-radius:4px 4px 0 0; }
-  .pv .t { height:16px; display:flex; align-items:center; padding:0 6px; }
-  .pv .t i { flex:1; height:8px; border-radius:4px; }
-  .pv .b { flex:1; display:flex; align-items:center; justify-content:center; }
-  .pv .b i { width:50%; height:8px; border-radius:4px; }
-  .nm { display:flex; align-items:center; justify-content:space-between; margin-top:8px; padding:0 2px; font-size:13px; }
-  .nm .ck { width:18px; height:18px; border-radius:50%; background:var(--accent); display:none; align-items:center; justify-content:center; }
+  .pv { height:104px;border-radius:7px;overflow:hidden;display:flex;align-items:center;justify-content:center;border:1px solid rgba(128,128,128,.15); }
+  .pv svg { width:68px;height:68px; }
+  .pv.light-bone { background:#f5f5f5;color:#101010; }
+  .pv.dark-bone { background:#080808;color:#f5f5f5; }
+  .pv.system-bone { border:0;outline:0;box-shadow:none;background:linear-gradient(45deg,#f5f5f5 50%,#080808 50%); }
+  .nm { display:flex; align-items:center; justify-content:center; margin-top:10px; padding:0 2px; font-size:13px; }
+  .nm .ck { position:absolute;top:13px;right:13px;width:18px; height:18px; border-radius:50%; background:var(--accent); display:none; align-items:center; justify-content:center; }
   .nm .ck svg { width:12px; height:12px; fill:var(--accent-fg); }
   .card.on .ck { display:flex; }
   .actions { margin-top:36px; display:flex; flex-direction:column; align-items:center; gap:10px; }
   #go { height:40px; padding:0 32px; border-radius:20px; border:0; background:var(--accent); color:var(--accent-fg); font-size:14px; font-weight:500; }
   #go:hover { filter:brightness(1.08); }
   .hint { color:var(--dim); font-size:12px; }
+  .card:focus-visible,#go:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+  #go{cursor:pointer}
+  @media(max-width:480px){main{padding:7vh 16px 32px}h1{font-size:27px}#grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.pv{height:88px}.pv svg{width:54px;height:54px}.card{padding:6px}.nm{font-size:12px}.nm .ck{top:10px;right:10px;width:15px;height:15px}}
 </style>
 </head>
 <body>
   <main>
-    <div class="logo"><span></span></div>
+    <div class="logo"><svg viewBox="0 0 24 24" role="img" aria-label="Calcium"><g transform="rotate(-45 12 12)" fill="currentColor"><rect x="5" y="9" width="14" height="6" rx="2"/><circle cx="5" cy="9" r="3"/><circle cx="5" cy="15" r="3"/><circle cx="19" cy="9" r="3"/><circle cx="19" cy="15" r="3"/></g></svg></div>
     <h1>Calcium'a hoş geldiniz</h1>
     <div id="lang" role="radiogroup" aria-label="Dil / Language"><button data-l="tr">Türkçe</button><button data-l="en">English</button></div>
     <p class="sub">Başlamak için bir tema seçin.</p>
-    <div id="grid"></div>
+    <div id="grid" role="radiogroup" aria-label="Tema"></div>
     <div class="actions">
       <button id="go">Başla</button>
       <span class="hint">Temayı daha sonra ⋮ → Tema menüsünden değiştirebilirsiniz.</span>
@@ -59,31 +60,19 @@
 'use strict';
 const api = window.pageApi;
 const CHECK = '<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
-const BASE = {
-  light: { frame: '#dfe3e7', toolbar: '#ffffff', body: '#ffffff', bar: '#edf2fa', tab: '#ffffff' },
-  dark: { frame: '#1f1f1f', toolbar: '#3c3c3c', body: '#202124', bar: '#282828', tab: '#3c3c3c' }
-};
-let data = null;
-
-function preview(t) {
-  const sysDark = matchMedia('(prefers-color-scheme: dark)').matches;
-  const mode = t.mode === 'system' ? (sysDark ? 'dark' : 'light') : t.mode;
-  const b = BASE[mode];
-  const frame = t.frame || b.frame, toolbar = t.toolbar || b.toolbar;
-  const bar = t.frame ? (mode === 'dark' ? t.frame : '#ffffff') : b.bar;
-  const body = mode === 'dark' ? (t.frame ? '#161b22' : b.body) : '#ffffff';
-  const pv = document.createElement('div'); pv.className = 'pv';
-  if (t.mode === 'system') pv.style.background = 'linear-gradient(135deg, #ffffff 50%, #202124 50%)';
-  pv.innerHTML = `<div class="f" style="background:${frame}"><i style="background:${toolbar}"></i></div>
-    <div class="t" style="background:${toolbar}"><i style="background:${bar}"></i></div>
-    <div class="b" style="background:${t.mode === 'system' ? 'transparent' : body}"><i style="background:${t.accent || (mode === 'dark' ? '#a8c7fa' : '#0b57d0')}"></i></div>`;
-  return pv;
+const BONE=document.querySelector('.logo svg').innerHTML;
+let data=null;
+function preview(t){
+ const pv=document.createElement('div');pv.className='pv '+(t.mode==='system'?'system-bone':t.mode==='dark'?'dark-bone':'light-bone');
+ const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
+ svg.innerHTML=t.mode==='system'?'<defs><clipPath id="system-light"><polygon points="0,0 0,24 24,24"/></clipPath><clipPath id="system-dark"><polygon points="0,0 24,0 24,24"/></clipPath></defs><g clip-path="url(#system-light)" color="#101010">'+BONE+'</g><g clip-path="url(#system-dark)" color="#f5f5f5">'+BONE+'</g>':BONE;
+ pv.append(svg);return pv;
 }
 
 function render() {
   const grid = document.getElementById('grid');
   grid.replaceChildren(...data.themes.map((t) => {
-    const c = document.createElement('div');
+    const c = document.createElement('button');c.type='button';c.setAttribute('role','radio');c.setAttribute('aria-checked',String(t.key===data.themeKey));c.dataset.theme=t.key;
     c.className = 'card' + (t.key === data.themeKey ? ' on' : '');
     const nm = document.createElement('div'); nm.className = 'nm';
     const label = document.createElement('span'); label.textContent = t.name;

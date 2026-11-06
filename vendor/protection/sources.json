@@ -1,0 +1,65 @@
+{
+  "updatedAt": "2026-11-06T20:10:44.668Z",
+  "sources": [
+    {
+      "source": "https://ublockorigin.github.io/uAssetsCDN/filters/badware.min.txt",
+      "file": "vendor/ublock/assets/ublock/badware.min.txt",
+      "bytes": 164543,
+      "sha256": "ee91734de902971394973ff4bac9a994a2f2e12940c1115208785af5378a2ef9"
+    },
+    {
+      "source": "https://ublockorigin.github.io/uAssetsCDN/filters/filters.min.txt",
+      "file": "vendor/ublock/assets/ublock/filters.min.txt",
+      "bytes": 1942090,
+      "sha256": "0a06adef303cf0d2409b7c15051b8fad45e8d1a1299327cb21576a102bd3a7fb"
+    },
+    {
+      "source": "https://ublockorigin.github.io/uAssetsCDN/filters/privacy.min.txt",
+      "file": "vendor/ublock/assets/ublock/privacy.min.txt",
+      "bytes": 140503,
+      "sha256": "a76db14e66efe9f7943f2e589a42facb0b87504523a7471a2f0242d1de444f20"
+    },
+    {
+      "source": "https://ublockorigin.github.io/uAssetsCDN/filters/unbreak.min.txt",
+      "file": "vendor/ublock/assets/ublock/unbreak.min.txt",
+      "bytes": 178674,
+      "sha256": "598e3699dc18d6d706bbcc603964a018a503ab6777eeb82e57f9a013ba5ee4fe"
+    },
+    {
+      "source": "https://ublockorigin.github.io/uAssetsCDN/filters/quick-fixes.min.txt",
+      "file": "vendor/ublock/assets/ublock/quick-fixes.min.txt",
+      "bytes": 80127,
+      "sha256": "e24fa6c0a8832a5596b221779c3590d9da3c78bfa2496d760c35ec3330fe30e4"
+    },
+    {
+      "source": "https://raw.githubusercontent.com/AdguardTeam/AdguardFilters/master/SpywareFilter/sections/tracking_servers.txt",
+      "file": "vendor/protection/tracking-servers.txt",
+      "bytes": 126877,
+      "sha256": "e2bc3a4e98f2e6576d355dac34b8e42fd4b76057648664b6d6a580bcfd31b82f"
+    },
+    {
+      "source": "https://cdn.jsdelivr.net/gh/uBlockOrigin/uAssetsCDN@main/thirdparties/easyprivacy.txt",
+      "file": "vendor/ublock/assets/thirdparties/easylist/easyprivacy.txt",
+      "bytes": 1502084,
+      "sha256": "d0a87385dc863e82e5f3eefd3862f9d258b434ad9a413eb6d6ba29c979c4424d"
+    },
+    {
+      "source": "https://cdn.jsdelivr.net/gh/uBlockOrigin/uAssetsCDN@main/thirdparties/easylist.txt",
+      "file": "vendor/ublock/assets/thirdparties/easylist/easylist.txt",
+      "bytes": 2248949,
+      "sha256": "69ec8b84981c0f2e4da73c499de4fabd6ddf6d70d319dcc8fba848297992aac9"
+    },
+    {
+      "source": "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=1&mimetype=plaintext",
+      "file": "vendor/ublock/assets/thirdparties/pgl.yoyo.org/as/serverlist.txt",
+      "bytes": 95208,
+      "sha256": "4f6a67ee8ff6ae63ccecb4e47bab684d53e50a463c34099df1128341a24a2a2d"
+    },
+    {
+      "source": "https://curbengh.github.io/malware-filter/urlhaus-filter-ag-online.txt",
+      "file": "vendor/ublock/assets/thirdparties/urlhaus-filter/urlhaus-filter-online.txt",
+      "bytes": 12120630,
+      "sha256": "0a92a4d41e6159b77e1caa5845fc3cc53c8b25a854327c9530712aa8df30675c"
+    }
+  ]
+}

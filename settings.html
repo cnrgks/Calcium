@@ -254,6 +254,8 @@ function render() {
     ...section('araclar','Araçlar',row('Ses yükseltme','Her sekmenin sesini ayrı ayarla. En fazla %600.',null),toggle('hoverZoom','Resim büyütme','Resmin üzerine gel. Z ile sabitle, S ile indir.')),
     ...section('indirmeler','İndirmeler',row('Kayıt konumu',d.downloadsDir,button('Klasörü aç',()=>api.call('open-downloads-folder'))),toggle('askDownloadLocation','İndirirken nereye kaydedileceğini sor','Her indirmede kayıt konumunu seç.')),
     ...section('uzantilar','Uzantılar ve reklam engelleme',
+      toggle('calciumProtection','Calcium koruması','Bilinen üçüncü taraf reklam ve izleyicilerini engelle.'),
+      row('Koruma listeleri','Otomatik güncellenir. Sorun yaşayan sitelerde sağ tık menüsünden Calcium korumasını kapatabilirsin.',button('Listeleri güncelle',()=>api.call('update-filters').then(r=>toast(r?.ok?'Güncelleme kontrolü tamamlandı.':'Bazı listeler güncellenemedi; mevcut koruma sürüyor.')))),
       row('uBlock Origin',d.uboError?'Başlatılamadı. Tarayıcıyı yeniden başlatın.':!d.ubo?'Yükleniyor…':'Her zaman açık.',button('uBlock ayarları',()=>api.call('ubo-dashboard'))),
       row('Uzantılar','Yüklü uzantıları yönet.',button('Yönet',()=>api.call('open-page','extensions')))),
     ...section('hakkinda','Calcium hakkında',row('Calcium '+d.version,'Chromium '+d.chrome+' · Electron '+d.electron,null))
