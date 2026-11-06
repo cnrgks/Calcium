@@ -240,6 +240,7 @@ function render() {
       select('engine',d.engines.map(x=>[x.key,x.name]),'Arama motoru','')),
     ...section('performans','Performans',
       toggle('sleepTabs','Kullanılmayan sekmeleri uyut','Ses çalan sekmeler açık kalır.'),
+      d.sleepTabs?toggle('memorySaver','Bellek baskısında erken uyut','RAM azaldığında eski arka plan sekmelerini kademeli uyut.'):null,
       d.sleepTabs?select('sleepMinutes',d.sleepChoices.map(m=>[m,sleepNames[m]]),'Uyutma süresi',''):null,
       row('Görev yöneticisi','Sekmelerin bellek ve CPU kullanımı. Shift+Esc',button('Aç',()=>api.call('task-manager')))),
     ...section('gizlilik','Gizlilik ve güvenlik',

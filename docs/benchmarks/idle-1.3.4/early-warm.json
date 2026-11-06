@@ -1,0 +1,318 @@
+[
+  {
+    "seconds": 0,
+    "privateKB": 319960,
+    "rows": [
+      {
+        "pid": 40752,
+        "type": "Browser",
+        "privateKB": 90864,
+        "workingSetKB": 165396,
+        "cpu": 0,
+        "contents": []
+      },
+      {
+        "pid": 40436,
+        "type": "GPU",
+        "privateKB": 91716,
+        "workingSetKB": 107932,
+        "cpu": 0,
+        "contents": []
+      },
+      {
+        "pid": 40904,
+        "type": "Utility",
+        "name": "Network Service",
+        "privateKB": 12136,
+        "workingSetKB": 54728,
+        "cpu": 0,
+        "contents": []
+      },
+      {
+        "pid": 38712,
+        "type": "Tab",
+        "privateKB": 33256,
+        "workingSetKB": 89200,
+        "cpu": 0,
+        "contents": [
+          {
+            "id": 2,
+            "pid": 38712,
+            "type": "window",
+            "url": "file:///<app-root>/newtab.html#https%3A%2F%2Fwww.google.com%2Fsearch%3Fpws%3D0%26udm%3D14%26q%3D"
+          },
+          {
+            "id": 1,
+            "pid": 38712,
+            "type": "window",
+            "url": "file:///<app-root>/ui.html"
+          }
+        ]
+      },
+      {
+        "pid": 40088,
+        "type": "Tab",
+        "privateKB": 91988,
+        "workingSetKB": 147360,
+        "cpu": 0,
+        "contents": [
+          {
+            "id": 3,
+            "pid": 40088,
+            "type": "backgroundPage",
+            "url": "chrome-extension://hoadepnhojnbgcpfbikdjmbhppelidkm/background.html"
+          }
+        ]
+      }
+    ],
+    "main": {
+      "rss": 166924288,
+      "heapTotal": 26894336,
+      "heapUsed": 9023576,
+      "external": 4485124,
+      "arrayBuffers": 0
+    },
+    "uboHeap": {
+      "used": 42645089,
+      "total": 47998345,
+      "ready": true
+    }
+  },
+  {
+    "seconds": 15,
+    "privateKB": 322432,
+    "rows": [
+      {
+        "pid": 40752,
+        "type": "Browser",
+        "privateKB": 121292,
+        "workingSetKB": 163736,
+        "cpu": 0.019443727244144147,
+        "contents": []
+      },
+      {
+        "pid": 40436,
+        "type": "GPU",
+        "privateKB": 94268,
+        "workingSetKB": 109608,
+        "cpu": 0.010396908297604777,
+        "contents": []
+      },
+      {
+        "pid": 40904,
+        "type": "Utility",
+        "name": "Network Service",
+        "privateKB": 12868,
+        "workingSetKB": 59528,
+        "cpu": 0.014786628255379547,
+        "contents": []
+      },
+      {
+        "pid": 38712,
+        "type": "Tab",
+        "privateKB": 31964,
+        "workingSetKB": 89548,
+        "cpu": 0.009713529855481401,
+        "contents": [
+          {
+            "id": 2,
+            "pid": 38712,
+            "type": "window",
+            "url": "file:///<app-root>/newtab.html#https%3A%2F%2Fwww.google.com%2Fsearch%3Fpws%3D0%26udm%3D14%26q%3D"
+          },
+          {
+            "id": 1,
+            "pid": 38712,
+            "type": "window",
+            "url": "file:///<app-root>/ui.html"
+          }
+        ]
+      },
+      {
+        "pid": 40088,
+        "type": "Tab",
+        "privateKB": 62040,
+        "workingSetKB": 123416,
+        "cpu": 0.022636975137899678,
+        "contents": [
+          {
+            "id": 3,
+            "pid": 40088,
+            "type": "backgroundPage",
+            "url": "chrome-extension://hoadepnhojnbgcpfbikdjmbhppelidkm/background.html"
+          }
+        ]
+      }
+    ],
+    "main": {
+      "rss": 167669760,
+      "heapTotal": 26894336,
+      "heapUsed": 9136944,
+      "external": 4485164,
+      "arrayBuffers": 0
+    },
+    "uboHeap": {
+      "used": 29505639,
+      "total": 30357083,
+      "ready": true
+    }
+  },
+  {
+    "seconds": 45,
+    "privateKB": 297960,
+    "rows": [
+      {
+        "pid": 40752,
+        "type": "Browser",
+        "privateKB": 96632,
+        "workingSetKB": 139800,
+        "cpu": 0.01381028506102508,
+        "contents": []
+      },
+      {
+        "pid": 40436,
+        "type": "GPU",
+        "privateKB": 94260,
+        "workingSetKB": 109632,
+        "cpu": 0.0037765237667769266,
+        "contents": []
+      },
+      {
+        "pid": 40904,
+        "type": "Utility",
+        "name": "Network Service",
+        "privateKB": 12808,
+        "workingSetKB": 59588,
+        "cpu": 0.00028077943839921416,
+        "contents": []
+      },
+      {
+        "pid": 38712,
+        "type": "Tab",
+        "privateKB": 31964,
+        "workingSetKB": 89556,
+        "cpu": 0.000022728450222260406,
+        "contents": [
+          {
+            "id": 2,
+            "pid": 38712,
+            "type": "window",
+            "url": "file:///<app-root>/newtab.html#https%3A%2F%2Fwww.google.com%2Fsearch%3Fpws%3D0%26udm%3D14%26q%3D"
+          },
+          {
+            "id": 1,
+            "pid": 38712,
+            "type": "window",
+            "url": "file:///<app-root>/ui.html"
+          }
+        ]
+      },
+      {
+        "pid": 40088,
+        "type": "Tab",
+        "privateKB": 62296,
+        "workingSetKB": 123424,
+        "cpu": 0.00007760934996648053,
+        "contents": [
+          {
+            "id": 3,
+            "pid": 40088,
+            "type": "backgroundPage",
+            "url": "chrome-extension://hoadepnhojnbgcpfbikdjmbhppelidkm/background.html"
+          }
+        ]
+      }
+    ],
+    "main": {
+      "rss": 143155200,
+      "heapTotal": 9068544,
+      "heapUsed": 8303280,
+      "external": 4463687,
+      "arrayBuffers": 0
+    },
+    "uboHeap": {
+      "used": 29506265,
+      "total": 30357193,
+      "ready": true
+    }
+  },
+  {
+    "seconds": 75,
+    "privateKB": 292884,
+    "rows": [
+      {
+        "pid": 40752,
+        "type": "Browser",
+        "privateKB": 94260,
+        "workingSetKB": 138216,
+        "cpu": 0.0077421024950162,
+        "contents": []
+      },
+      {
+        "pid": 40436,
+        "type": "GPU",
+        "privateKB": 93788,
+        "workingSetKB": 109340,
+        "cpu": 0.0038592606062857904,
+        "contents": []
+      },
+      {
+        "pid": 40904,
+        "type": "Utility",
+        "name": "Network Service",
+        "privateKB": 12696,
+        "workingSetKB": 60076,
+        "cpu": 0.0036961232877130395,
+        "contents": []
+      },
+      {
+        "pid": 38712,
+        "type": "Tab",
+        "privateKB": 31964,
+        "workingSetKB": 89556,
+        "cpu": 0.00020059276243334701,
+        "contents": [
+          {
+            "id": 2,
+            "pid": 38712,
+            "type": "window",
+            "url": "file:///<app-root>/newtab.html#https%3A%2F%2Fwww.google.com%2Fsearch%3Fpws%3D0%26udm%3D14%26q%3D"
+          },
+          {
+            "id": 1,
+            "pid": 38712,
+            "type": "window",
+            "url": "file:///<app-root>/ui.html"
+          }
+        ]
+      },
+      {
+        "pid": 40088,
+        "type": "Tab",
+        "privateKB": 60176,
+        "workingSetKB": 121536,
+        "cpu": 0.000655325179623189,
+        "contents": [
+          {
+            "id": 3,
+            "pid": 40088,
+            "type": "backgroundPage",
+            "url": "chrome-extension://hoadepnhojnbgcpfbikdjmbhppelidkm/background.html"
+          }
+        ]
+      }
+    ],
+    "main": {
+      "rss": 141533184,
+      "heapTotal": 9068544,
+      "heapUsed": 8329232,
+      "external": 4463687,
+      "arrayBuffers": 0
+    },
+    "uboHeap": {
+      "used": 29507315,
+      "total": 30357303,
+      "ready": true
+    }
+  }
+]

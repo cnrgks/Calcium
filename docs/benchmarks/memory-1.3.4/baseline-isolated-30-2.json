@@ -1,0 +1,45 @@
+{
+  "tabs": 30,
+  "electron": "45.2.1",
+  "fixtureBytesPerTab": 8388608,
+  "simulatedPressure": true,
+  "uboDisabled": true,
+  "results": [
+    {
+      "label": "loaded",
+      "at": "2026-11-06T20:47:03.541Z",
+      "liveTabs": 30,
+      "webContents": 31,
+      "processes": 34,
+      "privateKB": 1181576,
+      "workingSetKB": 3384836
+    },
+    {
+      "label": "pressure",
+      "at": "2026-11-06T20:47:06.633Z",
+      "liveTabs": 30,
+      "webContents": 31,
+      "processes": 34,
+      "privateKB": 1181588,
+      "workingSetKB": 3384888
+    },
+    {
+      "label": "manual-sleep",
+      "at": "2026-11-06T20:47:08.141Z",
+      "liveTabs": 1,
+      "webContents": 2,
+      "processes": 5,
+      "privateKB": 264260,
+      "workingSetKB": 501588
+    },
+    {
+      "label": "after-20-cycles",
+      "at": "2026-11-06T20:47:10.886Z",
+      "liveTabs": 1,
+      "webContents": 2,
+      "processes": 5,
+      "privateKB": 269776,
+      "workingSetKB": 507096
+    }
+  ]
+}

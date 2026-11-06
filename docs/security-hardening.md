@@ -43,3 +43,9 @@ A loopback-only integration test checks a permitted control request, Calcium blo
 ## Independent installation
 
 Calcium 1.3.2 uses its own Windows app ID, NSIS installation GUID and profile folder. The installer does not write or delete Mondium registrations, and the browser does not automatically reuse Mondium or Chromium profiles.
+
+## 1.3.4 follow-up
+
+Device permissions now use independent policies per Electron Session, match origin/type/device ID for temporary grants, and never read/write normal grants in incognito. Only serial-identified devices can retain a persistent origin-bound grant. Unknown permission checks deny by default. Regression tests exercise both the policy and the actual Session handler wiring; physical device testing remains outstanding.
+
+Automatic memory-pressure sleeping retains site isolation and sandboxing. Edited forms, media permissions, captured contents, active downloads and per-site sleep exclusions prevent automatic disposal. See `docs/ram-results-1.3.4.md` for measured scope and limitations.

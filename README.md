@@ -2,12 +2,13 @@
 <h1 align="center">Calcium</h1>
 <p align="center">A bare bones browser.</p>
 
-A minimal Windows browser built on Electron / castLabs Chromium. Available in English and Turkish.
+A minimal Windows browser built on Electron / castLabs Chromium. Available in English and Turkish. New profiles follow the system language: Turkish for Turkish systems, English for all others. Language can be changed in Settings.
 
 ## Features
 
 - Vertical tabs and a grid of pinned tabs. Ctrl+D pins the current tab.
-- Deferred background tabs, sleeping tabs and automatic session restore.
+- Deferred background tabs, automatic session restore and gradual tab sleeping under memory pressure.
+- Automatic sleeping preserves edited forms, media permissions, captures and downloads; sites can be excluded from sleeping.
 - Built-in uBlock Origin, lightweight Calcium tracker protection and local malicious-domain filtering.
 - System, light and dark themes, with optional pitch black.
 - Centered downloads and task-manager windows, with compact history.
@@ -19,7 +20,7 @@ New installs enable vertical tabs, pitch black and the new-tab search prompt. Si
 
 ## Download
 
-Get **Calcium-Setup-1.3.3.exe** from the [latest release](https://github.com/cnrgks/Calcium/releases/latest).
+Get **Calcium-Setup-1.3.4.exe** from the [latest release](https://github.com/cnrgks/Calcium/releases/latest).
 Install new versions manually using the setup. Calcium has its own installation identity and profile folder; it does not replace Mondium or share its profile.
 
 ## Development

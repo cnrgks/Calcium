@@ -1,0 +1,49 @@
+{
+  "date": "2026-11-06",
+  "metric": "Sum of Electron app.getAppMetrics memory.privateBytes (KiB), converted to MiB",
+  "runsPerCase": 3,
+  "uboDisabled": true,
+  "simulatedMemory": {
+    "totalGiB": 8,
+    "freeMiB": 512
+  },
+  "fixtureBytesPerTab": 8388608,
+  "summary": [
+    {
+      "tabs": 1,
+      "beforeMiB": 232.015625,
+      "afterMiB": 228.4140625,
+      "reductionPercent": 1.552293083709344,
+      "beforeLoadedMiB": 232,
+      "afterLoadedMiB": 229.13671875,
+      "beforeLiveTabs": 1,
+      "afterLiveTabs": 1,
+      "beforeCyclesWC": 2,
+      "afterCyclesWC": 2
+    },
+    {
+      "tabs": 10,
+      "beforeMiB": 524.5390625,
+      "afterMiB": 303.4375,
+      "reductionPercent": 42.151591426996916,
+      "beforeLoadedMiB": 524.53125,
+      "afterLoadedMiB": 520.81640625,
+      "beforeLiveTabs": 10,
+      "afterLiveTabs": 3,
+      "beforeCyclesWC": 2,
+      "afterCyclesWC": 2
+    },
+    {
+      "tabs": 30,
+      "beforeMiB": 1156.00390625,
+      "afterMiB": 321.93359375,
+      "reductionPercent": 72.1511673092584,
+      "beforeLoadedMiB": 1155.9921875,
+      "afterLoadedMiB": 1155.91796875,
+      "beforeLiveTabs": 30,
+      "afterLiveTabs": 3,
+      "beforeCyclesWC": 2,
+      "afterCyclesWC": 2
+    }
+  ]
+}

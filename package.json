@@ -1,7 +1,7 @@
 {
   "name": "calcium",
   "productName": "Calcium",
-  "version": "1.3.3",
+  "version": "1.3.4",
   "description": "Calcium — a bare bones browser.",
   "main": "main.js",
   "license": "GPL-3.0",
@@ -15,10 +15,12 @@
     "update-ublock": "node tools/update-ublock.js",
     "prepare-security": "node tools/prepare-security.js",
     "postinstall": "node tools/prepare-security.js",
-    "test:security": "node tools/test-security.cjs && node tools/test-protection.cjs",
+    "test:security": "node tools/test-security.cjs && node tools/test-protection.cjs && node tools/test-device-policy.cjs && node tools/test-language-permissions.cjs",
     "test:electron": "node tools/run-electron-tests.cjs",
     "check:engine": "node tools/check-engine.cjs",
-    "update-protection": "node tools/update-protection.cjs"
+    "update-protection": "node tools/update-protection.cjs",
+    "bench:memory": "node tools/run-memory-bench.cjs",
+    "test:memory": "node tools/test-memory.cjs"
   },
   "dependencies": {
     "adm-zip": "0.6.1",
@@ -70,7 +72,11 @@
       "securitywarning.html",
       "private-ubo.js",
       "overlay-scrollbar.js",
-      "calcium-protection.js"
+      "calcium-protection.js",
+      "device-policy.js",
+      "memory-policy.js",
+      "bounded-work-queue.js",
+      "bounded-json.js"
     ],
     "win": {
       "target": [

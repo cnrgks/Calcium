@@ -20,6 +20,12 @@ if (location.protocol === 'file:' && /\/(newtab|welcome|history|downloads|settin
   });
 }
 
+// Preserve edited forms when automatic tab sleeping runs. Never transmit field values.
+if(/^https?:$/.test(location.protocol)){
+ let reported=false;
+ window.addEventListener('input',e=>{if(!reported&&e.isTrusted){reported=true;ipcRenderer.send('calcium-form-dirty');}},{capture:true,passive:true});
+}
+
 // Capture visible link labels; no background page or media needs to load just for a title.
 if (/^https?:$/.test(location.protocol)) {
   window.addEventListener('mousedown',e=>{
