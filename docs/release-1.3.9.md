@@ -1,5 +1,7 @@
 Fixes Windows updates closing Calcium without starting installation.
 
+Rebuilt with startup notification fixes: update checks start about one second after browser startup, and the auto-hide sidebar no longer hides the top-right update card. Opening Settings is not required. Later still suppresses future automatic offers.
+
 - Replaced the PowerShell handoff with a direct, visible native installer.
 - Calcium only closes after the installer confirms its progress window is ready.
 - The usual compact black installer shows Updating Calcium, waits for the browser to finish closing, installs the update and reopens Calcium.

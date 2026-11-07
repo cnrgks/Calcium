@@ -9,15 +9,25 @@ global.fetch=async(url,options)=>{
  checks++;return new Response(JSON.stringify({tag_name:'v'+version,draft:false,prerelease:false,assets:[{name:'Calcium-Setup-'+version+'.exe',state:'uploaded',size:4096,digest:'sha256:'+'a'.repeat(64),browser_download_url:'https://github.com/cnrgks/Calcium/releases/download/v'+version+'/Calcium-Setup-'+version+'.exe'}]}));
 };
 const entry=path.join(root,'main.js'),m=new Module(entry,module);m.filename=entry;m.paths=Module._nodeModulePaths(root);
-m._compile(fs.readFileSync(entry,'utf8')+'\nmodule.exports.test={ready:mainBlockReady,windows:()=>windows,appUpdates,newTab,SETTINGS_URL,openOverlay,closeOverlay,incognito:()=>createWindow({incognito:true})};',entry);
+m._compile(fs.readFileSync(entry,'utf8')+'\nmodule.exports.test={ready:mainBlockReady,windows:()=>windows,appUpdates,newTab,SETTINGS_URL,openOverlay,closeOverlay,openSide,scheduleUpdateCheck,incognito:()=>createWindow({incognito:true})};',entry);
 const pause=()=>new Promise(r=>setTimeout(r,100));
 (async()=>{
  await app.whenReady();const api=m.exports.test;await api.ready;for(let i=0;i<100&&!api.windows()[0]?.tabs.length;i++)await pause();const owner=api.windows()[0];assert(owner);owner.win.hide();
+ assert.equal(checks,0,'development/test mode does not check automatically');
+ const initialBounds=owner.tabs[0].view.getBounds();
+ // Exercise the actual startup scheduler without ever opening Settings first.
+ const packaged=Object.getOwnPropertyDescriptor(app,'isPackaged');Object.defineProperty(app,'isPackaged',{value:true,configurable:true});delete process.env.CALCIUM_TEST_MODE;
+ api.scheduleUpdateCheck();api.scheduleUpdateCheck();process.env.CALCIUM_TEST_MODE='1';Object.defineProperty(app,'isPackaged',packaged);
+ for(let i=0;i<40&&!owner.updateNotice;i++)await pause();
+ assert.equal(checks,1,'startup checks once, without requiring Settings');assert(owner.updateNotice,'startup offer exists on the initial page');assert(owner.updateNotice.getVisible());
+ assert.deepEqual(owner.tabs[0].view.getBounds(),initialBounds,'startup offer does not resize the initial page');
+ assert(!owner.tabs.some(t=>t.url.includes('settings.html')),'notification precedes Settings navigation');
+ api.openSide();assert(owner.updateNotice.getVisible(),'auto-hide sidebar does not suppress the top-right notification');api.closeOverlay(false);
  const tab=api.newTab(api.SETTINGS_URL+'#hakkinda'),wc=tab.view.webContents;
  for(let i=0;i<100;i++){if(await wc.executeJavaScript('!!document.querySelector("#appUpdateCheck")').catch(()=>false))break;await pause();}
- assert.equal(checks,0,'no test/development startup network request');
+ assert.equal(checks,1,'opening Settings performs no extra update check');
  assert(await wc.executeJavaScript(`!document.querySelector('#kisayollar')&&!document.querySelector('a[href="#kisayollar"]')`));
- const oldBounds=tab.view.getBounds();await api.appUpdates.check({manual:false});await pause();const notice=owner.updateNotice;assert(notice,'startup offer has a dedicated non-modal view');
+ const oldBounds=tab.view.getBounds();await pause();const notice=owner.updateNotice;assert(notice,'startup offer survives opening Settings');
  for(let i=0;i<50;i++){if(await notice.webContents.executeJavaScript('!!window.pageApi&&!!document.querySelector("#later")').catch(()=>false))break;await pause();}
  assert.equal(notice.webContents.getLastWebPreferences().sandbox,true);assert.equal(notice.webContents.getLastWebPreferences().nodeIntegration,false);assert.deepEqual(tab.view.getBounds(),oldBounds,'notice does not resize or cover the entire page');
  const bounds=notice.getBounds(),area=owner.win.getContentBounds();assert(bounds.width<=360&&bounds.height<=190);assert.equal(bounds.y,oldBounds.y+8,'notice sits directly below the toolbar');assert(bounds.x+bounds.width<=area.width);

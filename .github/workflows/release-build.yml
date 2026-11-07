@@ -1,6 +1,12 @@
 name: Release builds
 on:
   workflow_dispatch:
+    inputs:
+      replace_release:
+        description: Replace this version's existing release after all package tests pass
+        type: boolean
+        required: false
+        default: false
   push:
     tags: ['v*']
 permissions:
@@ -70,6 +76,7 @@ jobs:
       - name: Hash and publish tested packages
         env:
           GH_TOKEN: ${{ github.token }}
+          REPLACE_RELEASE: ${{ inputs.replace_release && 'true' || 'false' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -80,8 +87,13 @@ jobs:
           test -f "release-assets/Calcium-$version-arm64.dmg"
           (cd release-assets && sha256sum *.exe *.dmg *.blockmap > SHA256SUMS.txt)
           if gh release view "$tag" --json isDraft >/dev/null 2>&1; then
-            test "$(gh release view "$tag" --json isDraft --jq .isDraft)" = true
-          else
+            if test "$(gh release view "$tag" --json isDraft --jq .isDraft)" != true; then
+              test "$REPLACE_RELEASE" = true
+              gh release delete "$tag" --yes
+              gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" -f sha="$GITHUB_SHA" -F force=true
+            fi
+          fi
+          if ! gh release view "$tag" >/dev/null 2>&1; then
             gh release create "$tag" --target "$GITHUB_SHA" --title "Calcium $version" --notes-file "docs/release-$version.md" --draft
           fi
           gh release upload "$tag" release-assets/* --clobber

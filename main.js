@@ -133,7 +133,7 @@ const appUpdates=require('./app-updates').createAppUpdates({
 let updateStartupScheduled=false;
 function scheduleUpdateCheck(){
  if(updateStartupScheduled||!settings.firstRunDone||!app.isPackaged||process.platform!=='win32'||process.env.CALCIUM_TEST_MODE)return;
- updateStartupScheduled=true;setTimeout(()=>appUpdates.check({manual:false}),10000).unref();
+ updateStartupScheduled=true;setTimeout(()=>appUpdates.check({manual:false}),1000).unref();
 }
 function appUpdateData(){
  const s=appUpdates.snapshot();
@@ -148,7 +148,9 @@ function closeUpdateNotice(w){
 function layoutUpdateNotice(w){
  if(!w?.win||!w.updateNotice)return;
  const {width,height}=w.win.getContentBounds(),top=inWin(w,()=>vertical()?TOOLBAR+(hasBookmarks()?BOOKMARKS:0)+(findOpen?FINDBAR:0):uiHeight())+8;
- const visible=!(w===W?overlayOpen:w.overlayOpen)&&!w.win.isFullScreen()&&height-top>120;
+ const current=w===W,open=current?overlayOpen:w.overlayOpen,kind=current?overlayKind:w.overlayKind;
+ const blockingOverlay=open&&!['side','sidedrag','tabdrag'].includes(kind);
+ const visible=!blockingOverlay&&!w.win.isFullScreen()&&!(current?htmlFullscreen:w.htmlFullscreen)&&height-top>120;
  w.updateNotice.setVisible(visible);w.updateNotice.setBounds({x:Math.max(6,width-372),y:top,width:Math.min(360,width-12),height:Math.min(190,Math.max(1,height-top-6))});
  if(visible)w.win.contentView.addChildView(w.updateNotice);
 }
