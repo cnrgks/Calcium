@@ -64,8 +64,33 @@ m._compile(fs.readFileSync(entry,'utf8')+`\nmodule.exports.test={popupBrowserMen
  assert.equal(await w.ui.webContents.executeJavaScript('document.querySelectorAll("#pop .mi.dis").length'),1);
  assert.equal(await w.ui.webContents.executeJavaScript('document.querySelector("#pop [aria-checked=true]").getAttribute("aria-checked")'),'true');
  await w.ui.webContents.executeJavaScript('document.querySelector("#pop .mi").click()');await new Promise(r=>setTimeout(r,100));assert.equal(contextClicks,1,'custom context action survives menu closure');
+ m.exports.test.settingsSet('newTabPrompt',false);await new Promise(r=>setTimeout(r,70));
  await w.ui.webContents.executeJavaScript(`document.querySelector('#url').focus();document.querySelector('#url').setSelectionRange(0,0)`);
  m.exports.test.popupBrowserMenu([{label:'Select all',role:'selectAll'}],{x:30,y:90},w.ui.webContents);await new Promise(r=>setTimeout(r,70));await w.ui.webContents.executeJavaScript('document.querySelector("#pop .mi").click()');await new Promise(r=>setTimeout(r,70));assert(await w.ui.webContents.executeJavaScript(`document.activeElement.id==='url'&&document.activeElement.selectionEnd>document.activeElement.selectionStart`),'context edit roles restore the address input focus');
+
+ // Centered address editing uses the same prompt as Ctrl+T, without creating a tab.
+ const ui=w.ui.webContents, pause=()=>new Promise(r=>setTimeout(r,100));
+ const promptState=()=>ui.executeJavaScript(`(()=>{const q=document.querySelector('#newtabQuery');return {open:!document.querySelector('#newtabPrompt').hidden,focus:document.activeElement.id,value:q.value,start:q.selectionStart,end:q.selectionEnd}})()`);
+ const tabCount=w.tabs.length, activeId=m.exports.test.getActiveId();
+ m.exports.test.settingsSet('newTabPrompt',true);await pause();
+ await ui.executeJavaScript(`document.querySelector('#url').dispatchEvent(new MouseEvent('mousedown',{button:0,bubbles:true,cancelable:true}))`);await pause();
+ let address=await promptState();assert(address.open);assert.equal(address.focus,'newtabQuery');assert.equal(address.value,'calcium://settings');assert.equal(address.start,0);assert.equal(address.end,address.value.length);
+ await ui.executeJavaScript(`document.querySelector('#newtabQuery').value='draft survives';document.querySelector('#newtabQuery').dispatchEvent(new Event('input'))`);
+ m.exports.test.handleShortcut({key:'l',control:true});await pause();assert.equal((await promptState()).value,'draft survives','repeated focus does not erase typed text');
+ m.exports.test.handleShortcut({key:'Escape'});await pause();assert(!(await promptState()).open);assert.equal(w.tabs.length,tabCount);assert.equal(m.exports.test.getActiveId(),activeId);
+ // Programmatic/keyboard focus follows the same route; non-left clicks leave the toolbar alone.
+ await ui.executeJavaScript(`document.querySelector('#url').blur();document.querySelector('#url').dispatchEvent(new MouseEvent('mousedown',{button:2,bubbles:true}));`);await pause();assert(!(await promptState()).open);
+ ui.focus();await ui.executeJavaScript(`document.querySelector('#url').focus()`);await pause();assert((await promptState()).open);
+ await ui.executeJavaScript(`document.querySelector('#newtabQuery').value='calcium://settings#sekmeler';document.querySelector('#newtabPrompt form').requestSubmit()`);await pause();assert(!(await promptState()).open);assert.equal(w.tabs.length,tabCount);assert.equal(m.exports.test.getActiveId(),activeId);assert(wc.getURL().endsWith('#sekmeler'),'address submission navigates the existing tab');
+ for(const shortcut of [{key:'l',control:true},{key:'d',alt:true},{key:'F6'},{key:'k',control:true}]){
+   m.exports.test.handleShortcut(shortcut);await pause();address=await promptState();assert(address.open);assert.equal(address.focus,'newtabQuery');if(shortcut.key==='k')assert.equal(address.value,'');
+   m.exports.test.handleShortcut({key:'Escape'});await pause();
+ }
+ m.exports.test.handleShortcut({key:'t',control:true});await pause();address=await promptState();assert(address.open);assert.equal(address.value,'');assert.equal(w.tabs.length,tabCount);
+ m.exports.test.handleShortcut({key:'Escape'});await pause();
+ m.exports.test.settingsSet('newTabPrompt',false);await pause();m.exports.test.handleShortcut({key:'l',control:true});await pause();assert(!(await promptState()).open);assert.equal(await ui.executeJavaScript('document.activeElement.id'),'url');
+ m.exports.test.settingsSet('newTabPrompt',true);await pause();
+ console.log('PASS: centered address focus, left click, selected URL, same-tab submission, shortcuts, repeated focus, cancel and live setting toggle.');
 
  await wc.executeJavaScript(`window.confirm=()=>{throw Error('Native confirmation must not be used')};window.deleteDecision=null;confirmSiteDeletion({display:'example.com',protected:true,open:true}).then(value=>window.deleteDecision=value);void 0`);
  assert.equal(await wc.executeJavaScript('document.querySelector("#siteDeleteConfirm [role=dialog]").getAttribute("aria-modal")'),'true');

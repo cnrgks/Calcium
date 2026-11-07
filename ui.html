@@ -376,7 +376,7 @@
     <div id="grip" title="Genişliği ayarlamak için sürükleyin"></div>
   </div>
 
-<div id="newtabPrompt" hidden><form><div class="newtab-row"><span id="newtabSearchIcon"></span><input id="newtabQuery" autocomplete="off" spellcheck="false" aria-label="Yeni sekmede ara veya adres yaz" role="combobox" aria-autocomplete="list" aria-controls="newtabResults" aria-expanded="false"></div><div id="newtabResults" role="listbox"></div></form></div>
+<div id="newtabPrompt" hidden><form><div class="newtab-row"><span id="newtabSearchIcon"></span><input id="newtabQuery" autocomplete="off" spellcheck="false" aria-label="Arama yapın veya URL yazın" role="combobox" aria-autocomplete="list" aria-controls="newtabResults" aria-expanded="false"></div><div id="newtabResults" role="listbox"></div></form></div>
 <div id="sug" hidden></div>
 <div id="pop" hidden></div>
 
@@ -422,7 +422,18 @@ $('dl').onclick = (e) => send('downloads', posOf(e.currentTarget));
 // so Enter "did nothing" on an empty box. It resets only on Esc, navigation, or tab/page change.
 let dirty = false, dirtyKey = '';
 const pageKey = () => (state ? state.activeId + '|' + state.url : '');
+function openAddressPrompt() {
+  if (!state?.newTabPrompt) return false;
+  hideSug();
+  send('address-focus', dirty && dirtyKey === pageKey() ? url.value : state.url || '');
+  return true;
+}
+// Intercept the initial left press so the click cannot steal focus back from the prompt.
+url.addEventListener('mousedown', (e) => {
+  if (e.button === 0 && state?.newTabPrompt) { e.preventDefault(); openAddressPrompt(); }
+});
 url.addEventListener('focus', () => {
+  if (openAddressPrompt()) return;
   editing = true; omni.classList.add('focus');
   if (dirty && dirtyKey === pageKey()) { renderLead(); return; }
   dirty = false;
@@ -524,6 +535,7 @@ url.addEventListener('keydown', (e) => {
   }
 });
 browserApi.onFocusUrl((d) => {
+  if (state?.newTabPrompt) { send('address-focus', d.search ? '' : dirty && dirtyKey === pageKey() ? url.value : state.url || ''); return; }
   url.focus();
   if (d.search) { dirty = false; url.value = ''; typed = ''; hideSug(); }
   else if (!dirty) url.select();   // if the user started typing, don't select (and overwrite) their text
@@ -1267,10 +1279,12 @@ browserApi.onNewTabResults((r) => {
 });
 browserApi.onNewTabPrompt((d) => {
   promptRows=[];promptSelected=0;promptTyped='';$('newtabResults').replaceChildren();$('newtabQuery').setAttribute('aria-expanded','false');
-  $('newtabPrompt').hidden = false; $('newtabQuery').value = '';
+  $('newtabPrompt').hidden = false; $('newtabQuery').value = promptTyped = typeof d.value === 'string' ? d.value : '';
+  dirty = false; url.blur();
   $('newtabQuery').placeholder = (d.searchName || 'Google') + ' ile arama yapın veya adres yazın';
   $('newtabSearchIcon').innerHTML = I.search;
-  requestAnimationFrame(() => $('newtabQuery').focus());
+  // Focus synchronously: a deferred frame can select over fast typing or run after dismissal.
+  $('newtabQuery').focus(); $('newtabQuery').select();
 });
 $('newtabPrompt').querySelector('form').onsubmit = (e) => { e.preventDefault(); submitPrompt(); };
 $('newtabPrompt').onmousedown = (e) => { if (e.target === $('newtabPrompt')) send('newtab-cancel'); };

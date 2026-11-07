@@ -76,7 +76,7 @@ const DEFAULTS = {
   tabAudio: false,            // speaker icon on tabs + click to mute (both gone when off)
   memorySaver:true, sleepExcludedSites:[],
   sleepTabs: true,           // put unused background tabs to sleep (after sleepMinutes)
-  newTabPrompt: true,        // Ask for a search/address before creating a new tab
+  newTabPrompt: true,        // Centered search for new tabs and address-bar focus
   verticalTabs: true,       // vertical tabs (sidebar on the left)
   verticalWidth: 240,        // vertical sidebar width (px); at its narrowest only icons
   verticalAutoHide: true,
@@ -1513,6 +1513,7 @@ function pushState() {
     theme: W.incognito ? INCOGNITO_THEME : themeVars(),
     incognito: !!W.incognito,
     tabAudio: !!settings.tabAudio,
+    newTabPrompt: settings.newTabPrompt !== false,
     vertical: vertical(), autoHide: !!settings.verticalAutoHide, sideWidth: sideWidth(win.getContentBounds().width), sideMin: SIDE_MIN,
     sideOpen: overlayOpen && (overlayKind === 'side' || overlayKind === 'sidedrag'), sideEdge: 60,
     ubo: !!uboId && !W.incognito,
@@ -1546,7 +1547,10 @@ const goForward = () => withActive((wc) => (wc.navigationHistory ? wc.navigation
 const goHome = () => withActive((wc, t) => { t.url = newtabUrl(); go(wc, t.url); });
 const zoom = (d) => withActive((wc) => wc.setZoomLevel(d === 0 ? 0 : wc.getZoomLevel() + d));
 
-function focusUrl(search = false) { if (ui) { ui.webContents.focus(); send('focus-url', { search }); } }
+function focusUrl(search = false) {
+  if (settings.newTabPrompt !== false) { openSearchPrompt('address', search ? '' : displayUrl(activeTab()?.url || '')); return; }
+  if (ui) { ui.webContents.focus(); send('focus-url', { search }); }
+}
 function findStep(forward) { if (!findOpen) openFind(); else send('find-step', forward); }
 async function openFileDialog() {
   const r = await dialog.showOpenDialog(win, { title: 'Dosya aç', properties: ['openFile'], filters: [
@@ -1596,13 +1600,15 @@ function omniSuggest(text) {
   }
   return { items, inline };
 }
-function openNewTabPrompt() {
-  if (settings.newTabPrompt === false) { newTab(''); return; }
+function openSearchPrompt(kind = 'newtab', value = '') {
+  if (settings.newTabPrompt === false) { if (kind === 'newtab') newTab(''); return; }
   if (!win || !ui || overlayKind === 'prompt') return;
+  // Refocusing an already open prompt must not clear an in-progress query.
+  if (overlayOpen && overlayKind === kind) return;
   if (overlayOpen) closeOverlay(false);
-  overlayOpen = true; overlayKind = 'newtab';
+  overlayOpen = true; overlayKind = kind;
   raiseUi(); layout(); ui.webContents.focus();
-  send('newtab-prompt', { searchName: (SEARCH_ENGINES[settings.searchEngine] || SEARCH_ENGINES.google).name });
+  send('newtab-prompt', { kind, value, searchName: (SEARCH_ENGINES[settings.searchEngine] || SEARCH_ENGINES.google).name });
 }
 function openOmni() {
   if (!win || !ui || (overlayOpen && overlayKind === 'omni')) return;
@@ -1636,7 +1642,8 @@ ipcMain.on('ui', (e, cmd, arg) => {
     case 'reload': withActive((wc) => wc.reload()); break;
     case 'stop': withActive((wc) => wc.stop()); break;
     case 'home': goHome(); break;
-    case 'new-tab': openNewTabPrompt(); break;
+    case 'new-tab': openSearchPrompt(); break;
+    case 'address-focus': if (overlayKind !== 'newtab') openSearchPrompt('address', typeof arg === 'string' ? arg : displayUrl(activeTab()?.url || '')); break;
     case 'prompt-answer': answerPrompt(arg); break;
     case 'side-reveal': openSide(); break;
     case 'side-hide': break; // Native cursor tracking owns sidebar dismissal.
@@ -1687,9 +1694,13 @@ ipcMain.on('ui', (e, cmd, arg) => {
       break;
     }
     case 'omni-close': if (overlayKind === 'omni') closeOverlay(false); break;
-    case 'newtab-query': if (overlayKind === 'newtab' && typeof arg === 'string') send('newtab-results', { q:arg, ...omniSuggest(arg) }); break;
-    case 'newtab-submit': if (overlayKind === 'newtab' && typeof arg === 'string' && arg.trim()) { closeOverlay(false); newTab(arg.trim()); } break;
-    case 'newtab-cancel': if (overlayKind === 'newtab') closeOverlay(); break;
+    case 'newtab-query': if ((overlayKind === 'newtab' || overlayKind === 'address') && typeof arg === 'string') send('newtab-results', { q:arg, ...omniSuggest(arg) }); break;
+    case 'newtab-submit': if ((overlayKind === 'newtab' || overlayKind === 'address') && typeof arg === 'string' && arg.trim()) {
+      const sameTab = overlayKind === 'address';
+      closeOverlay(false);
+      if (sameTab) openUrl(arg.trim()); else newTab(arg.trim());
+    } break;
+    case 'newtab-cancel': if (overlayKind === 'newtab' || overlayKind === 'address') closeOverlay(); break;
     case 'navigate-tab': if (arg) newTab(arg, false, activeId); break;
   }
 });
@@ -1705,7 +1716,7 @@ function handleShortcut(input) {
   if (ctrl && input.shift && k === 't') { reopenClosed(); return true; }
   if (ctrl && input.shift && k === 'n') { newWindow(true); return true; }               // new incognito window
   if (ctrl && k === 'n') { newWindow(false); return true; }                              // new window
-  if (ctrl && k === 't') { openNewTabPrompt(); return true; }
+  if (ctrl && k === 't') { openSearchPrompt(); return true; }
   if (ctrl && input.shift && (k === 'w' || k === 'q')) { if (win) win.close(); return true; }
   if ((ctrl && k === 'w') || (ctrl && k === 'f4')) { if (activeId) closeTab(activeId); return true; }
   if (ctrl && (k === 'pagedown' || k === 'pageup')) {
@@ -2432,7 +2443,7 @@ function showTabMenu(arg) {
   if (!t) return;
   const idx = tabs.indexOf(t);
   popAt([
-    { label: 'Yeni sekme', click: () => openNewTabPrompt() },
+    { label: 'Yeni sekme', click: () => openSearchPrompt() },
     { type: 'separator' },
     { label: 'Yenile', enabled: !!t.view, click: () => t.view && t.view.webContents.reload() },
     {label:'Bu siteyi otomatik uyutma',type:'checkbox',checked:settings.sleepExcludedSites.includes(calciumSite(t.url)),enabled:!!calciumSite(t.url),click:()=>{const site=calciumSite(t.url);if(!site)return;settings.sleepExcludedSites=settings.sleepExcludedSites.includes(site)?settings.sleepExcludedSites.filter(x=>x!==site):[...settings.sleepExcludedSites,site];saveSettings();}},

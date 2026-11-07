@@ -237,7 +237,7 @@ function render() {
     ...section('sekmeler','Sekmeler ve arama',
       toggle('verticalTabs','Dikey sekmeler','Sekmeleri pencerenin solunda göster.'),
       d.verticalTabs?toggle('verticalAutoHide','Kenar çubuğunu gizle','Sol kenara gelince açılır. Ctrl+S ile değiştir.'):null,
-      toggle('newTabPrompt','Yeni sekmede arama kutusu','Ctrl+T ile önce arama veya adres kutusunu aç.'),
+      toggle('newTabPrompt','Ortada açılan arama kutusu','Ctrl+T ile veya adres çubuğuna odaklanınca arama kutusunu aç.'),
       select('engine',d.engines.map(x=>[x.key,x.name]),'Arama motoru','')),
     ...section('performans','Performans',
       toggle('sleepTabs','Kullanılmayan sekmeleri uyut','Ses çalan sekmeler açık kalır.'),
