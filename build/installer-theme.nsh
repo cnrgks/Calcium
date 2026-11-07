@@ -2,6 +2,8 @@
 !define CALCIUM_INSTALLER_THEME_INCLUDED
 !ifndef BUILD_UNINSTALLER
 !include "WinMessages.nsh"
+!include "FileFunc.nsh"
+!include "installer-update.nsh"
 !define MUI_BGCOLOR "000000"
 !define MUI_TEXTCOLOR "FFFFFF"
 !define MUI_INSTFILESPAGE_PROGRESSBAR "smooth"
@@ -94,6 +96,17 @@ Function CalciumInstallerPageShow
   ; Use one small, borderless progress window. The standard installer logic stays intact.
   GetDlgItem $1 $0 1006
   SendMessage $1 0x000C 0 "STR:$(MUI_TEXT_INSTALLING_SUBTITLE)"
+  Push $3
+  ${GetParameters} $2
+  ClearErrors
+  ${GetOptions} $2 "--updated" $3
+  IfErrors calcium_install_label_done
+  StrCmp $LANGUAGE 1055 0 +3
+    SendMessage $1 0x000C 0 "STR:Calcium güncelleniyor…"
+    Goto calcium_install_label_done
+  SendMessage $1 0x000C 0 "STR:Updating Calcium…"
+  calcium_install_label_done:
+  Pop $3
   System::Call 'user32::SetWindowPos(p r1, p 0, i 64, i 23, i 310, i 42, i 0x14)'
   GetDlgItem $1 $0 1004
   System::Call 'user32::SetWindowPos(p r1, p 0, i 20, i 98, i 360, i 6, i 0x34)'
@@ -134,6 +147,7 @@ Function CalciumInstallerPageShow
   ShowWindow $1 0
   System::Call 'user32::SetWindowPos(p $HWNDPARENT, p 0, i 0, i 0, i 400, i 132, i 0x26)'
   Call CalciumCenterInstaller
+  Call CalciumPrepareUpdate
   Pop $2
   Pop $1
   Pop $0

@@ -49,7 +49,11 @@ async function removePending(cacheDir,dir){
  await fsp.rm(resolved,{recursive:true,force:true}).catch(()=>{});
 }
 async function cleanupUpdates(cacheDir){
- try{const stat=await fsp.lstat(cacheDir);if(!stat.isDirectory()||stat.isSymbolicLink())return;for(const entry of await fsp.readdir(cacheDir,{withFileTypes:true})){if(entry.isDirectory()&&!entry.isSymbolicLink()&&/^pending-[a-zA-Z0-9]+$/.test(entry.name))await removePending(cacheDir,path.join(cacheDir,entry.name));}}catch{}
+ try{const stat=await fsp.lstat(cacheDir);if(!stat.isDirectory()||stat.isSymbolicLink())return;for(const entry of await fsp.readdir(cacheDir,{withFileTypes:true})){if(entry.isDirectory()&&!entry.isSymbolicLink()&&/^pending-[a-zA-Z0-9]+$/.test(entry.name)){
+  const dir=path.join(cacheDir,entry.name);let active=false;
+  try{const file=path.join(dir,'update-status.json'),stat=await fsp.stat(file);if(stat.size<16384){const state=JSON.parse(await fsp.readFile(file,'utf8'));active=['ready','installing','failed','completed'].includes(state.status)&&Date.now()-stat.mtimeMs<30*60*1000;}}catch{}
+  if(!active)await removePending(cacheDir,dir);
+ }}}catch{}
 }
 function createAppUpdates({currentVersion,cacheDir,fetchImpl=fetch,readPreferences=()=>({}),savePreferences=()=>{},canInstall=false,launchInstaller,onChange=()=>{}}){
  let state={status:'idle',version:null,progress:0,error:null,notice:false},release=null,checkJob=null,checkContext=null,installJob=null,controller=null,disposed=false,manualUsedThisSession=false;
@@ -95,27 +99,38 @@ function createAppUpdates({currentVersion,cacheDir,fetchImpl=fetch,readPreferenc
     try{file=await downloadInstaller({release,cacheDir,fetchImpl,signal:controller.signal,onProgress:progress=>emit({progress})});}finally{clearTimeout(timer);controller=null;}
     if(disposed)return snapshot();
     emit({status:'installing',progress:100});
-    await launchInstaller(file,release.sha256);
+    try{await launchInstaller(file,release.sha256,release.version);}catch{throw Error('launch');}
     savePreferences({updatePromptDismissed:false,updatePromptOfferedVersion:release.version});
     emit({status:'launched'});
-   }catch(error){if(file)await removePending(cacheDir,path.dirname(file));emit({status:'error',notice:false,error:['integrity','unsupported','manifest'].includes(error.message)?error.message:'download'});}
+   }catch(error){if(file&&error.message!=='launch')await removePending(cacheDir,path.dirname(file));emit({status:'error',notice:false,error:['integrity','unsupported','manifest','launch'].includes(error.message)?error.message:'download'});}
    finally{installJob=null;}
    return snapshot();
   });return installJob;
  }
  return {snapshot,check,install,later,clearNotice,dispose(){disposed=true;controller?.abort();},cleanup:()=>cleanupUpdates(cacheDir)};
 }
-function installerHandoffScript(file,digest,parentPid){
- if(!path.win32.isAbsolute(file)||!file.toLowerCase().endsWith('.exe')||!/^([a-f0-9]{64})$/i.test(digest)||!Number.isSafeInteger(parentPid)||parentPid<1)throw Error('source');
- const literal=value=>"'"+value.replaceAll("'","''")+"'";
- return "$ErrorActionPreference='Stop'; $parent=Get-Process -Id "+parentPid+" -ErrorAction SilentlyContinue; if($parent -and -not $parent.WaitForExit(60000)){exit 1}; if((Get-FileHash -LiteralPath "+literal(file)+" -Algorithm SHA256).Hash -ne "+literal(digest)+"){exit 2}; Start-Process -FilePath "+literal(file)+" -ArgumentList '/S','--updated','--force-run' -WindowStyle Hidden";
+function windowsInstallerArguments(file,{appPath=process.execPath,parentPid=process.pid,token}={}){
+ if(![file,appPath].every(p=>typeof p==='string'&&path.win32.isAbsolute(p)&&p.toLowerCase().endsWith('.exe')&&!/[\r\n\0"]/u.test(p))||!Number.isSafeInteger(parentPid)||parentPid<1||!/^[a-f0-9]{64}$/.test(token||''))throw Error('source');
+ // NSIS reads the entire unquoted remainder after /D=, including spaces.
+ return ['--updated','--force-run','--calcium-update-parent='+parentPid,'--calcium-update-token='+token,'/D='+path.win32.dirname(appPath)];
 }
-async function launchWindowsInstaller(file,digest,{parentPid=process.pid,spawnImpl=require('child_process').spawn}={}){
- const script=installerHandoffScript(file,digest,parentPid);
- const executable=path.join(process.env.SystemRoot||'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
- await new Promise((resolve,reject)=>{
-  const child=spawnImpl(executable,['-NoProfile','-NonInteractive','-WindowStyle','Hidden','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{cwd:path.dirname(file),detached:true,stdio:'ignore',windowsHide:true});
-  child.once('error',reject);child.once('spawn',()=>{child.unref();resolve();});
- });
+async function waitForInstallerReady(child,{readyFile,token,timeoutMs=15000}){
+ const until=Date.now()+timeoutMs;
+ while(Date.now()<until){
+  try{const stat=await fsp.stat(readyFile);if(stat.size===64&&(await fsp.readFile(readyFile,'utf8'))===token)return;}catch{}
+  if((child.exitCode!==null&&child.exitCode!==undefined)||child.signalCode)throw Error('launch');
+  await new Promise(resolve=>setTimeout(resolve,75));
+ }
+ throw Error('launch');
 }
-module.exports={installerHandoffScript,launchWindowsInstaller,createAppUpdates,releaseInfo,newer,downloadInstaller,cleanupUpdates,RELEASE_API,RELEASE_PAGE};
+async function launchWindowsInstaller(file,digest,{parentPid=process.pid,appPath=process.execPath,spawnImpl=require('child_process').spawn,waitForReadyImpl=waitForInstallerReady}={}){
+ if(!/^[a-f0-9]{64}$/i.test(digest))throw Error('source');
+ const token=crypto.randomBytes(32).toString('hex'),args=windowsInstallerArguments(file,{appPath,parentPid,token});
+ // Verify immediately before execution as well as while downloading.
+ const hash=crypto.createHash('sha256');for await(const bytes of fs.createReadStream(file))hash.update(bytes);
+ if(hash.digest('hex')!==digest.toLowerCase())throw Error('integrity');
+ const readyFile=path.win32.join(path.win32.dirname(file),'update-ready-'+token+'.txt');let child;
+ await new Promise((resolve,reject)=>{child=spawnImpl(file,args,{cwd:path.dirname(file),detached:true,stdio:'ignore',windowsHide:false,windowsVerbatimArguments:true});child.once('error',reject);child.once('spawn',resolve);});
+ try{await waitForReadyImpl(child,{readyFile,token});child.unref();return {pid:child.pid};}catch(error){child.kill();throw error;}
+}
+module.exports={windowsInstallerArguments,launchWindowsInstaller,waitForInstallerReady,createAppUpdates,releaseInfo,newer,downloadInstaller,cleanupUpdates,RELEASE_API,RELEASE_PAGE};

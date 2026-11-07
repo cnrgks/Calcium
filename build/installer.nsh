@@ -1,4 +1,5 @@
 !include "installer-theme.nsh"
+!include "installer-path.nsh"
 ; Calcium: registers as a browser in Windows "Default apps" (like Chrome, per user, HKCU).
 ; The user can pick Calcium in Settings > Default apps; the installer does NOT make it the default by itself.
 
@@ -11,14 +12,6 @@
   WriteRegStr HKCU "Software\Classes\${PROGID}\Application" "ApplicationIcon" "$INSTDIR\Calcium.exe,0"
   WriteRegStr HKCU "Software\Classes\${PROGID}\DefaultIcon" "" "$INSTDIR\Calcium.exe,0"
   WriteRegStr HKCU "Software\Classes\${PROGID}\shell\open\command" "" '"$INSTDIR\Calcium.exe" "%1"'
-!macroend
-
-!macro customInit
-  ; Keep the installation directory separate from legacy products.
-  ReadRegStr $0 HKCU "${INSTALL_REGISTRY_KEY}" "InstallLocation"
-  ${If} $0 == ""
-    StrCpy $INSTDIR "$LOCALAPPDATA\Programs\Calcium Browser"
-  ${EndIf}
 !macroend
 
 !macro customInstall
@@ -43,6 +36,8 @@
   WriteRegStr HKCU "Software\RegisteredApplications" "Calcium" "${CALCIUM_KEY}\Capabilities"
   ; Notify the shell that file associations changed
   System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
+  Push "completed"
+  Call CalciumWriteUpdateStatus
 !macroend
 
 !macro customUnInstall

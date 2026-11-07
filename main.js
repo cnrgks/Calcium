@@ -125,8 +125,8 @@ const appUpdates=require('./app-updates').createAppUpdates({
  canInstall:app.isPackaged&&process.platform==='win32'&&process.arch==='x64',
  readPreferences:()=>settings,savePreferences:patch=>{Object.assign(settings,patch);saveSettings(true);},
  launchInstaller:async(file,digest)=>{
-  // The hidden helper waits for this process to exit, verifies again, then starts NSIS.
-  await require('./app-updates').launchWindowsInstaller(file,digest);
+  // Close only after the themed native installer acknowledges readiness.
+  await require('./app-updates').launchWindowsInstaller(file,digest,{appPath:process.execPath});
   setTimeout(()=>app.quit(),100);
  },onChange:()=>publishAppUpdates()
 });
@@ -137,7 +137,7 @@ function scheduleUpdateCheck(){
 }
 function appUpdateData(){
  const s=appUpdates.snapshot();
- const errors={check:'Güncellemeler denetlenemedi. Bağlantını kontrol edip tekrar deneyebilirsin.',manifest:'Bu sürüm için doğrulanmış kurulum dosyası bulunamadı.',integrity:'Kurulum dosyası doğrulanamadı. Dosya çalıştırılmadı.',download:'Güncelleme tamamlanamadı. Tekrar deneyebilirsin.',unsupported:'Bu kurulumda otomatik yükleme kullanılamıyor. Sürüm sayfasından indirebilirsin.'};
+ const errors={check:'Güncellemeler denetlenemedi. Bağlantını kontrol edip tekrar deneyebilirsin.',manifest:'Bu sürüm için doğrulanmış kurulum dosyası bulunamadı.',integrity:'Kurulum dosyası doğrulanamadı. Dosya çalıştırılmadı.',download:'Güncelleme tamamlanamadı. Tekrar deneyebilirsin.',launch:'Güncelleme başlatılamadı. Calcium kapatılmadı. Tekrar deneyebilirsin.',unsupported:'Bu kurulumda otomatik yükleme kullanılamıyor. Sürüm sayfasından indirebilirsin.'};
  const labels={idle:'Yeni sürümleri buradan denetleyebilirsin.',checking:'Güncellemeler denetleniyor…',current:'Calcium güncel.',available:T('Yeni sürüm')+': '+s.version,downloading:T('Güncelleme indiriliyor…')+(uiLang()==='en'?' '+s.progress+'%':' %'+s.progress),installing:'Kurulum başlatılıyor…',launched:'Kurulum başlatıldı.'};
  return {...s,message:s.status==='error'?T(errors[s.error]||errors.download):T(labels[s.status]||labels.idle)};
 }

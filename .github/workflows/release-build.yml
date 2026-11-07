@@ -29,6 +29,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node tools/test-custom-shortcuts.cjs
+      - name: Real Windows installer update lifecycle
+        if: matrix.platform == 'win'
+        timeout-minutes: 10
+        run: node tools/test-windows-update.cjs
       - name: Package
         run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
         env:

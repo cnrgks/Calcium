@@ -13,4 +13,10 @@ if(!source.includes(marker)){
  source=source.slice(0,start)+'!ifdef ONE_CLICK\n  '+marker+'\n'+source.slice(end);
  fs.writeFileSync(file,source);
 }
+if(!source.includes('Call CalciumWaitForUpdateParent')){
+ const marker='!ifdef ONE_CLICK\n  # Calcium compact installer:';
+ if(!source.includes(marker))throw Error('Installer wait insertion point changed');
+ source=source.replace(marker,'Call CalciumWaitForUpdateParent\n\n'+marker);
+ fs.writeFileSync(file,source);
+}
 console.log('Prepared compact themed installer UI.');
