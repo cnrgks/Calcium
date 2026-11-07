@@ -947,6 +947,13 @@ function renderActions(s) {
     el = document.createElement('browser-action-list');
     el.setAttribute('partition', 'persist:main');
     el.setAttribute('alignment', 'bottom left');
+    // Capture before the library button's own handler, including clicks on badges.
+    el.addEventListener('contextmenu',event=>{
+      const action=event.composedPath().find(node=>node?.classList?.contains('action')&&/^[a-p]{32}$/.test(node.id||''));
+      if(!action)return;
+      event.preventDefault();event.stopImmediatePropagation();const bounds=action.getBoundingClientRect();
+      send('extension-menu',{id:action.id,x:event.clientX||bounds.left,y:event.clientY||bounds.bottom});
+    },true);
     $('actions').appendChild(el);
   }
   if (s.activeWcId > 0 && el.getAttribute('tab') !== String(s.activeWcId)) el.setAttribute('tab', String(s.activeWcId));

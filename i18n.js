@@ -735,6 +735,7 @@
   "En fazla 100 kısayol ekleyebilirsiniz.": "You can add up to 100 shortcuts."
 });
   Object.assign(EN,{'Güncelleme başlatılamadı. Calcium kapatılmadı. Tekrar deneyebilirsin.':'The update could not start. Calcium stayed open. You can try again.'});
+  Object.assign(EN,{'Uzantıyı kaldır':'Remove extension'});
   const PATTERNS = [
     ['{0} şunu istiyor:', '{0} wants to:'],
     ['Cihazda şu PIN görünüyor mu? {0}', 'Does the device show this PIN? {0}'],

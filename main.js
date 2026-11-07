@@ -15,7 +15,7 @@ for (const stream of [process.stdout, process.stderr]) {
  *    reload menu (normal / hard / clear cache), full URL display, force dark pages
  */
 const {
-  app, nativeImage, BrowserWindow, BaseWindow, WebContentsView, session, ipcMain, Menu, clipboard,
+  app, nativeImage, BrowserWindow, BaseWindow, WebContentsView, session, ipcMain, Menu, MenuItem, clipboard,
   dialog, shell, nativeTheme, net, Notification, webFrameMain, webContents, screen
 } = require('electron');
 // castLabs Electron (Widevine DRM). Not in stock Electron; in that case we run without DRM.
@@ -1723,6 +1723,7 @@ ipcMain.on('ui', (e, cmd, arg) => {
     case 'zoom-reset': zoom(0);break;
     case 'site-setting': updateSiteControl(arg);break;
     case 'site-dependencies': confirmSiteDependencies(arg);break;
+    case 'extension-menu': if(e.senderFrame===e.sender.mainFrame)showToolbarExtensionMenu(arg);break;
     case 'stop': withActive((wc) => wc.stop()); break;
     case 'home': goHome(); break;
     case 'new-tab': openSearchPrompt(); break;
@@ -1868,6 +1869,9 @@ function bindMenu(items) {
 let contextMenuToken=0;
 function popupBrowserMenu(items,pos,target=ui?.webContents){
  const native=Menu.buildFromTemplate(bindMenu(items));
+ return popupBuiltBrowserMenu(native,pos,target);
+}
+function popupBuiltBrowserMenu(native,pos,target=ui?.webContents){
  if(settings.uiFont==='default')return native.popup({window:win,...(pos?{x:Math.round(pos.x||0),y:Math.round(pos.y||0)}:{})});
  const owner=W,token=++contextMenuToken,actions=new Map();let id=0;
  const resumeSearch=target===ui?.webContents&&['newtab','address'].includes(overlayKind)?overlayKind:null;
@@ -2273,6 +2277,25 @@ async function removeExtension(id) {
   settings.hiddenExtensions = settings.hiddenExtensions.filter((x) => x !== id);
   saveSettings(true);
   extensionsChanged();
+}
+
+function showToolbarExtensionMenu(arg){
+ if(W.incognito||!extensions||!/^[a-p]{32}$/.test(arg?.id||''))return;
+ const extension=listExtensions().find(item=>item.id===arg.id&&item.enabled);if(!extension)return;
+ const homepage=extApi().getExtension(extension.id)?.manifest?.homepage_url;
+ const native=Menu.buildFromTemplate(bindMenu([
+  {label:extension.name,click:()=>newTab(/^https?:\/\//i.test(homepage||'')?homepage:'https://chromewebstore.google.com/detail/'+extension.id)},
+  {type:'separator'}
+ ]));
+ // Preserve the extension's own browser-action entries and their native click/checkbox state.
+ try{const items=extensions.ctx.store.buildMenuItems(extension.id,'browser_action');for(const item of items)native.append(item);if(items.length)native.append(new MenuItem({type:'separator'}));}catch(error){console.warn('Extension menu unavailable:',error.message);}
+ for(const item of bindMenu([
+  {label:'Seçenekler',enabled:!!extension.optionsUrl,click:()=>openPage(extension.optionsUrl)},
+  {type:'separator'},
+  {label:'Uzantıyı kaldır',enabled:!extension.builtin,click:()=>removeExtension(extension.id)}
+ ]))native.append(new MenuItem(item));
+ const bounds=win.getContentBounds(),pos={x:Math.max(0,Math.min(bounds.width-1,Number(arg.x)||0)),y:Math.max(0,Math.min(bounds.height-1,Number(arg.y)||0))};
+ return popupBuiltBrowserMenu(native,pos);
 }
 
 function showDeviceGrants() {

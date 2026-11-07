@@ -38,6 +38,10 @@ jobs:
       - name: Prepare Windows test runtime
         if: matrix.platform == 'win'
         run: node node_modules/electron/install.js
+      - name: Pinned extension removal menu
+        if: matrix.platform == 'win'
+        timeout-minutes: 5
+        run: node tools/run-electron-tests.cjs test-extension-menu.cjs
       - name: Real Windows installer update lifecycle
         if: matrix.platform == 'win'
         timeout-minutes: 10
