@@ -10,6 +10,6 @@ Text replacements work in the address input and ordinary web text/search/URL/tel
 
 Only submitted address-bar searches enter suggestions. Visited URLs, bookmarks and remote suggestions are excluded. Search entries are bounded to 500 and removed when browsing history is cleared. Private search entries and closed-tab lists stay in their own window's memory and are discarded on close.
 
-Windows installer launches were checked with a mocked process boundary; a real in-place installer upgrade was not exercised. macOS packages are compiled on a GitHub macOS runner, not runtime-tested on a physical Mac. Packages are unsigned and macOS builds are not notarized. DRM service playback is not guaranteed without castLabs VMP signing.
+Windows installer launches were checked with a mocked process boundary; a real in-place installer upgrade was not exercised. Packaged application startup, Settings, the custom-rule editor, the updater controls, Node isolation and clean shutdown passed on Windows x64, Intel macOS and Apple Silicon macOS runners. A full interactive macOS session was not tested. Packages are unsigned and macOS builds are not notarized. DRM service playback is not guaranteed without castLabs VMP signing.
 
-Short soak runs passed; a full two-hour soak has not been completed. See [the soak harness](soak-benchmark.md).
+The final five-minute soak completed 57 samples and eight tab cycles across three windows. Local wake latency was 60.3 ms median and 61.8 ms p95. Forms, synthetic media and downloads remained protected from simulated pressure. Test-tab sharing could not start in this environment and is not counted as passing. A full two-hour soak has not been completed. See [the soak harness](soak-benchmark.md).
