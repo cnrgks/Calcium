@@ -42,7 +42,7 @@ A loopback-only integration test checks a permitted control request, Calcium blo
 
 ## Independent installation
 
-Calcium 1.3.2 uses its own Windows app ID, NSIS installation GUID and profile folder. The installer does not write or delete Mondium registrations, and the browser does not automatically reuse Mondium or Chromium profiles.
+Calcium uses a dedicated Windows app ID, NSIS installation GUID and profile folder. It does not automatically import other browser profiles.
 
 ## 1.3.4 follow-up
 

@@ -1,8 +1,8 @@
 'use strict';
 const {app}=require('electron'),fs=require('fs'),path=require('path'),os=require('os'),assert=require('assert'),Module=require('module');
-const root=path.join(__dirname,'..'),profile=process.env.MONDIUM_PROFILE;
-if(!profile||path.dirname(path.resolve(profile))!==path.resolve(os.tmpdir())||!path.basename(profile).startsWith('mondium-startup-test-'))throw Error('Run this test through npm run test:electron with an isolated temporary profile');
-process.env.CALCIUM_TEST_MODE='1';process.env.MONDIUM_PROFILE=profile;delete process.env.MONDIUM_NO_UBO;process.env.MONDIUM_TEST_DISPLAY='0';fs.writeFileSync(path.join(profile,'malware-hosts.txt'),'blocked.test');fs.writeFileSync(path.join(profile,'ayarlar.json'),JSON.stringify({firstRunDone:true,restoreSession:false,keepLogins:false,language:'tr'}));
+const root=path.join(__dirname,'..'),profile=process.env.CALCIUM_PROFILE;
+if(!profile||path.dirname(path.resolve(profile))!==path.resolve(os.tmpdir())||!path.basename(profile).startsWith('calcium-startup-test-'))throw Error('Run this test through npm run test:electron with an isolated temporary profile');
+process.env.CALCIUM_TEST_MODE='1';process.env.CALCIUM_PROFILE=profile;delete process.env.CALCIUM_NO_UBO;process.env.CALCIUM_TEST_DISPLAY='0';fs.writeFileSync(path.join(profile,'malware-hosts.txt'),'blocked.test');fs.writeFileSync(path.join(profile,'ayarlar.json'),JSON.stringify({firstRunDone:true,restoreSession:false,keepLogins:false,language:'tr'}));
 fs.writeFileSync(path.join(profile,'calcium-trackers.txt'),fs.readFileSync(path.join(root,'vendor/protection/tracking-servers.txt'),'utf8')+'\n||tracking.calcium-test.invalid^\n');
 app.disableHardwareAcceleration();app.commandLine.appendSwitch('no-proxy-server');
 app.commandLine.appendSwitch('host-resolver-rules','MAP calcium-fixture.test 127.0.0.1, MAP tracking.calcium-test.invalid 127.0.0.1');

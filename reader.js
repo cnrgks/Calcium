@@ -2,7 +2,7 @@
 // Finds the page's main article and shows it in a clean overlay. Running it again closes the overlay.
 // No innerHTML (so it works on Trusted Types sites too); nodes are cloned and sanitized.
 (() => {
-  const ID = '__mondium_okuma';
+  const ID = '__calcium_okuma';
   const old = document.getElementById(ID);
   if (old) { old.__close ? old.__close() : old.remove(); return 'kapandi'; }
 

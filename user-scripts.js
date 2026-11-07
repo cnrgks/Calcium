@@ -1,5 +1,5 @@
 'use strict';
-// Mondium compatibility layer (main process side): chrome.userScripts.
+// Calcium compatibility layer (main process side): chrome.userScripts.
 // The extension service worker (user-scripts-sw.js) registers scripts; they are stored here, and as each web page
 // opens page-preload.js fetches matching scripts and runs them in an extension-specific isolated world. Messages flow both ways:
 //   page      -> chrome.runtime.sendMessage -> here -> extension (onUserScriptMessage)
@@ -33,7 +33,7 @@ function matchPattern(pattern, url) {
 function setupUserScripts({ ses, storeFile }) {
   const extApi = ses.extensions && typeof ses.extensions.getExtension === 'function' ? ses.extensions : ses;
   if (typeof ses.registerPreloadScript !== 'function' || !ses.serviceWorkers) return false;
-  ses.registerPreloadScript({ id: 'mondium-userscripts-sw', type: 'service-worker', filePath: path.join(__dirname, 'user-scripts-sw.js') });
+  ses.registerPreloadScript({ id: 'calcium-userscripts-sw', type: 'service-worker', filePath: path.join(__dirname, 'user-scripts-sw.js') });
 
   // ---- Registrations (persist across restarts so the first pages get scripts before the extension runs)
   let reg = {};
@@ -123,7 +123,7 @@ function setupUserScripts({ ses, storeFile }) {
         const wc = webContents.fromId(Number(args[0]));
         if (!wc || wc.isDestroyed() || wc.session !== ses || !hostAllowed(ext,wc.getURL()) || !issued.get(wc.id)?.has(extId)) return undefined;
         const reqId = nextReq++;
-        try { wc.send('mondium-us-tabmsg', extId, reqId, args[1]); } catch { return undefined; }
+        try { wc.send('calcium-us-tabmsg', extId, reqId, args[1]); } catch { return undefined; }
         return wait(reqId, wc.id);
       }
     }
@@ -138,8 +138,8 @@ function setupUserScripts({ ses, storeFile }) {
     workers.set(extId, w);
     if (attached.has(w)) return;
     attached.add(w);
-    w.ipc.handle('mondium-us', (_e, op, ...args) => swCall(extId, op, args));   // id is taken from the worker's own URL
-    w.ipc.on('mondium-us-reply', (_e, reqId, value) => settle(reqId, value, extId));
+    w.ipc.handle('calcium-us', (_e, op, ...args) => swCall(extId, op, args));   // id is taken from the worker's own URL
+    w.ipc.on('calcium-us-reply', (_e, reqId, value) => settle(reqId, value, extId));
   }
   ses.serviceWorkers.on('running-status-changed', ({ runningStatus, versionId }) => {
     if (runningStatus === 'starting' || runningStatus === 'running') attach(versionId);
@@ -156,7 +156,7 @@ function setupUserScripts({ ses, storeFile }) {
 
   // ---- Page side
   // On page open (preload, sync): scripts matching this URL
-  ipcMain.on('mondium-us-get', (e, url) => {
+  ipcMain.on('calcium-us-get', (e, url) => {
     const out = [];
     try {
       if (e.sender.session !== ses || !e.senderFrame || e.senderFrame.url !== url) { e.returnValue = out; return; }
@@ -183,7 +183,7 @@ function setupUserScripts({ ses, storeFile }) {
   });
 
   // Page -> extension message
-  ipcMain.handle('mondium-us-msg', async (e, extId, msg) => {
+  ipcMain.handle('calcium-us-msg', async (e, extId, msg) => {
     if (e.sender.session !== ses || !reg[extId] || !hostAllowed(loadedExt(extId), e.senderFrame?.url || '') || !issued.get(e.sender.id)?.has(extId)) return undefined;
     const wc = e.sender;
     const frame = e.senderFrame;
@@ -195,11 +195,11 @@ function setupUserScripts({ ses, storeFile }) {
     const w = await workerFor(extId);
     if (!w) return undefined;
     const reqId = nextReq++;
-    try { w.send('mondium-us-deliver', reqId, msg, sender); } catch { return undefined; }
+    try { w.send('calcium-us-deliver', reqId, msg, sender); } catch { return undefined; }
     return wait(reqId, extId);
   });
   // Page's reply to the extension (for chrome.tabs.sendMessage)
-  ipcMain.on('mondium-us-tabreply', (e, reqId, value) => { if(e.sender.session===ses)settle(reqId, value, e.sender.id); });
+  ipcMain.on('calcium-us-tabreply', (e, reqId, value) => { if(e.sender.session===ses)settle(reqId, value, e.sender.id); });
 
   // Purge registrations of removed extensions
   setTimeout(() => {

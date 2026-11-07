@@ -2,26 +2,23 @@
 <h1 align="center">Calcium</h1>
 <p align="center">A bare bones browser.</p>
 
-A minimal Windows browser built on Electron / castLabs Chromium. Available in English and Turkish. New profiles follow the system language: Turkish for Turkish systems, English for all others. Language can be changed in Settings.
+Calcium is a minimal Windows browser built on Electron and castLabs Chromium. It takes a debloated approach to browsing: a simple interface, no required account or sync, and telemetry and crash reporting turned off. Available in English and Turkish.
 
 ## Features
 
-- Vertical tabs and a grid of pinned tabs. Ctrl+D pins the current tab.
-- Deferred background tabs, automatic session restore and gradual tab sleeping under memory pressure.
-- Automatic sleeping preserves edited forms, media permissions, captures and downloads; sites can be excluded from sleeping.
-- Built-in uBlock Origin, lightweight Calcium tracker protection and local malicious-domain filtering.
-- System, light and dark themes, with optional pitch black.
-- Centered downloads and task-manager windows, with compact history.
-- Site-data cleanup that can preserve protected sign-in sessions.
-- Chrome Web Store extensions, image hover zoom and per-tab volume boost.
-- Full-page F11 fullscreen and optional download location prompts.
+- Vertical tabs with an auto-hiding sidebar and a grid of pinned tabs. Ctrl+D pins the current tab.
+- Session restore and sleeping background tabs to reduce memory use. Tabs with edited forms, media permissions, active captures or downloads stay awake.
+- Built-in uBlock Origin, tracker protection and local malicious-domain filtering.
+- Built-in image hover zoom as an Imagus alternative, plus a per-tab volume booster. No extra extensions needed for either.
+- Chrome Web Store extension support.
+- A simplified downloads interface, browsing history and task manager.
+- System, light and dark themes, with a pitch-black option for dark mode.
 
-New installs enable vertical tabs, pitch black and the new-tab search prompt. Sidebar auto-hide is on. Bookmarks, tab audio controls and download notifications are disabled.
+By default, vertical tabs, sidebar auto-hide, pitch black and the new-tab search prompt are enabled. The interface stays minimal with no bookmarks bar, tab audio controls or download notifications.
 
 ## Download
 
-Get **Calcium-Setup-1.3.6.exe** from the [latest release](https://github.com/cnrgks/Calcium/releases/latest).
-Install new versions manually using the setup. Calcium has its own installation identity and profile folder; it does not replace Mondium or share its profile.
+Get **Calcium-Setup-1.3.6.exe** from the [latest release](https://github.com/cnrgks/Calcium/releases/latest). To update, download and run the latest setup.
 
 ## Development
 
@@ -39,7 +36,7 @@ The installer is written to `dist/`. Build commands do not publish automatically
 
 ## Security and compatibility
 
-See [security notes](docs/security-hardening.md). uBlock is not a complete security boundary; engine updates require a new build. Private windows use uBO network filtering without the full cosmetic/scriptlet pipeline. This release is not Windows Authenticode signed. Widevine VMP signing is unavailable, so some DRM services may not play.
+See the [security notes](docs/security-hardening.md) for details. Engine updates require a new build. Private windows use uBlock Origin network filtering without its full cosmetic filtering and scriptlet support. The Windows installer is not Authenticode signed. Widevine VMP signing is unavailable, so some DRM services may not play.
 
 ## License and acknowledgements
 

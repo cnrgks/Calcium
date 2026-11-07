@@ -1,9 +1,9 @@
-// Mondium: uBlock Origin sayfalarinin ilk betigi (tools/ublock-guncelle.js her HTML'in basina ekler).
+// Calcium: uBlock Origin sayfalarinin ilk betigi (tools/update-ublock.js her HTML'in basina ekler).
 // Eksik chrome.* API'lerini electron-chrome-extensions'in ana surecteki uygulamasina baglar (kopru: mv2-bridge.js).
 // Var olan (Electron'un kendi) API'lere dokunmaz; sadece eksikleri ekler ya da genisletir.
 (() => {
   'use strict';
-  const b = self.__mondiumCrx;
+  const b = self.__calciumCrx;
   if (!b || !self.chrome || !chrome.runtime || !chrome.runtime.id) return;
   const id = chrome.runtime.id;
   const manifest = chrome.runtime.getManifest ? chrome.runtime.getManifest() : {};
@@ -112,6 +112,6 @@
     setp(st, 'managed', empty);
     if (st.managed !== empty && st.managed) setp(st.managed, 'get', emptyGet);
     if (st.sync !== st.local) setp(st, 'sync', st.local);
-    self.__mondiumManagedFix = st.managed === empty || (st.managed && st.managed.get === emptyGet);
+    self.__calciumManagedFix = st.managed === empty || (st.managed && st.managed.get === emptyGet);
   }
 })();

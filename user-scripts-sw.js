@@ -1,5 +1,5 @@
 'use strict';
-// Mondium compatibility layer (extension service worker side).
+// Calcium compatibility layer (extension service worker side).
 // Electron lacks Chrome's chrome.userScripts API. Extensions like Imagus Reborn inject their code with it;
 // without it they broke and opened their options page on every launch. This file emulates the API for the extension;
 // the real work is done by user-scripts.js in the main process. Runs only in extension service workers, not on websites.
@@ -12,10 +12,10 @@ let allowed = false;
 if(isExtension) { try { allowed = contextBridge.executeInMainWorld({func:()=>!!globalThis.chrome?.runtime?.getManifest()?.permissions?.includes('userScripts')}); } catch {} }
 if (isExtension && allowed) {
   const deliverers = [];
-  ipcRenderer.on('mondium-us-deliver', (_e, reqId, msg, sender) => { for (const fn of deliverers) fn(reqId, msg, sender); });
-  contextBridge.exposeInMainWorld('__mondiumUS', {
-    call: (op, ...args) => ipcRenderer.invoke('mondium-us', op, ...args),
-    reply: (reqId, value) => ipcRenderer.send('mondium-us-reply', reqId, value),
+  ipcRenderer.on('calcium-us-deliver', (_e, reqId, msg, sender) => { for (const fn of deliverers) fn(reqId, msg, sender); });
+  contextBridge.exposeInMainWorld('__calciumUS', {
+    call: (op, ...args) => ipcRenderer.invoke('calcium-us', op, ...args),
+    reply: (reqId, value) => ipcRenderer.send('calcium-us-reply', reqId, value),
     onDeliver: (fn) => { deliverers.push(fn); }
   });
   contextBridge.executeInMainWorld({ func: mainWorld });
@@ -23,7 +23,7 @@ if (isExtension && allowed) {
 
 // Runs in the extension's own world (cannot see outer variables, written to be self-contained)
 function mainWorld() {
-  const bridge = globalThis.__mondiumUS;
+  const bridge = globalThis.__calciumUS;
   const c = globalThis.chrome;
   if (!bridge || !c || !c.runtime) return;
   const man = (c.runtime.getManifest && c.runtime.getManifest()) || {};
@@ -76,7 +76,7 @@ function mainWorld() {
     };
   }
 
-  // ---- Harmless stub if chrome.history is missing (adding to history never touches Mondium's own history)
+  // ---- Harmless stub if chrome.history is missing (adding to history never touches Calcium's own history)
   if (perms.includes('history') && !c.history) {
     const nop = (a, cb) => done(Promise.resolve(undefined), typeof a === 'function' ? a : cb);
     c.history = { addUrl: nop, deleteUrl: nop, getVisits: (a, cb) => done(Promise.resolve([]), cb), search: (a, cb) => done(Promise.resolve([]), cb) };
@@ -85,13 +85,13 @@ function mainWorld() {
   // ---- Message to tab: the extension has no real content script, so messages go to the user script world
   if (!(man.content_scripts && man.content_scripts.length)) {
     const patchTabs = () => {
-      if (!c.tabs || c.tabs.__mondiumUS) return;
+      if (!c.tabs || c.tabs.__calciumUS) return;
       try {
         c.tabs.sendMessage = function (tabId, msg, opts, cb) {
           if (typeof opts === 'function') { cb = opts; opts = undefined; }
           return done(bridge.call('tabMessage', tabId, msg), cb);
         };
-        c.tabs.__mondiumUS = true;
+        c.tabs.__calciumUS = true;
       } catch {}
     };
     patchTabs();

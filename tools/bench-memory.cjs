@@ -27,6 +27,6 @@ const delay=ms=>new Promise(r=>setTimeout(r,ms));
  api.sleepIdleTabs(true);await delay(1500);results.push(sample('manual-sleep'));
  for(let i=0;i<20;i++){const t=api.newTab(url+'/?cycle='+i,false);await delay(50);api.closeTab(t.id);}
  await delay(1500);results.push(sample('after-20-cycles'));
- fs.writeFileSync(process.env.CALCIUM_BENCH_OUTPUT,JSON.stringify({tabs:n,electron:process.versions.electron,fixtureBytesPerTab:8*1024**2,sourceSHA256:require('crypto').createHash('sha256').update(source).digest('hex'),simulatedPressure:true,uboDisabled:!!process.env.MONDIUM_NO_UBO,results},null,2));
+ fs.writeFileSync(process.env.CALCIUM_BENCH_OUTPUT,JSON.stringify({tabs:n,electron:process.versions.electron,fixtureBytesPerTab:8*1024**2,sourceSHA256:require('crypto').createHash('sha256').update(source).digest('hex'),simulatedPressure:true,uboDisabled:!!process.env.CALCIUM_NO_UBO,results},null,2));
  console.log('BENCH',n,JSON.stringify(results));server.close();app.exit(0);
 })().catch(e=>{console.error(e);app.exit(1)});

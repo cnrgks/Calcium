@@ -3,7 +3,7 @@ const {app,BrowserWindow,ipcMain,session,nativeImage}=require('electron');
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),http=require('http');
 const root=path.join(__dirname,'..');
 ipcMain.handle('calcium-ui-font',()=>null);
-ipcMain.on('mondium-lang',e=>e.returnValue='tr');
+ipcMain.on('calcium-lang',e=>e.returnValue='tr');
 let submitted=null, moved=null;
 ipcMain.on('ui',(_e,cmd,arg)=>{if(cmd==='newtab-submit')submitted=arg;if(cmd==='move-tab')moved=arg;});
 app.whenReady().then(async()=>{

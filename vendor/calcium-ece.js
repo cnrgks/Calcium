@@ -1,9 +1,9 @@
-// Mondium: first script of uBlock Origin pages (tools/ublock-guncelle.js prepends it to every HTML file).
+// Calcium: first script of uBlock Origin pages (tools/update-ublock.js prepends it to every HTML file).
 // Wires missing chrome.* APIs to electron-chrome-extensions' main process implementation (bridge: mv2-bridge.js).
 // Leaves existing (Electron's own) APIs alone; only adds or extends missing ones.
 (() => {
   'use strict';
-  const b = self.__mondiumCrx;
+  const b = self.__calciumCrx;
   if (!b || !self.chrome || !chrome.runtime || !chrome.runtime.id) return;
   const id = chrome.runtime.id;
   const manifest = chrome.runtime.getManifest ? chrome.runtime.getManifest() : {};
@@ -112,6 +112,6 @@
     setp(st, 'managed', empty);
     if (st.managed !== empty && st.managed) setp(st.managed, 'get', emptyGet);
     if (st.sync !== st.local) setp(st, 'sync', st.local);
-    self.__mondiumManagedFix = st.managed === empty || (st.managed && st.managed.get === emptyGet);
+    self.__calciumManagedFix = st.managed === empty || (st.managed && st.managed.get === emptyGet);
   }
 })();

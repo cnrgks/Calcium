@@ -4,7 +4,7 @@
 // Z: pins the image to the screen (like Imagus): fit to screen in the center, wheel zooms toward the cursor point,
 // drag pans, double-click toggles 100% / fit. Z, Esc or clicking empty space closes. When disabled (setting) all listeners are removed; no leaks.
 (() => {
-  const KEY = Symbol.for('mondium.zoom');
+  const KEY = Symbol.for('calcium.zoom');
   if (window[KEY]) { window[KEY].on(); return; }
 
   const IMG_EXT = /\.(jpe?g|png|gif|webp|avif|bmp|svg)(?:[?#]|$)/i;
@@ -239,7 +239,7 @@
     if (e.key === 'Escape') { if (media || pinned) { hide(); if (pinned) e.stopPropagation(); } return; }
     if (e.key.toLowerCase() === 's' && !e.ctrlKey && !e.altKey && !e.metaKey && !typing(e.target) && media && box.style.display === 'block') {
       e.preventDefault(); e.stopPropagation();
-      if (!e.repeat && typeof window.mondiumZoomDownload === 'function') window.mondiumZoomDownload(media.currentSrc || media.src);
+      if (!e.repeat && typeof window.calciumZoomDownload === 'function') window.calciumZoomDownload(media.currentSrc || media.src);
       return;
     }
     if (e.key === 'Control' && !pinned) { hide(); return; }

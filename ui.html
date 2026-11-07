@@ -909,9 +909,9 @@ function renderActions(s) {
   // Hidden extensions don't show in the toolbar (still usable from the puzzle panel)
   const root = el.shadowRoot;
   if (root) {
-    let st = root.getElementById('mondium-hide');
+    let st = root.getElementById('calcium-hide');
     if (!st) {
-      st = document.createElement('style'); st.id = 'mondium-hide'; root.appendChild(st);
+      st = document.createElement('style'); st.id = 'calcium-hide'; root.appendChild(st);
       root.appendChild(Object.assign(document.createElement('style'), { textContent: '.action.peek { display:block !important; position:fixed; }' }));
     }
     const css = (s.hiddenExt || []).filter((id) => /^[a-p]{32}$/.test(id)).map((id) => `[id="${id}"]{display:none}`).join('');

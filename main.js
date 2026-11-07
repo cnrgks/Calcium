@@ -35,7 +35,7 @@ const {UI_FONTS,validUiFont,uiFontFamily}=require('./ui-fonts');
 const {contextMenuModel}=require('./context-menu-model');
 
 // Separate profile folder for tests: does not touch the user's running Calcium or data (single-instance lock is per folder too)
-if (process.env.MONDIUM_PROFILE) app.setPath('userData', process.env.MONDIUM_PROFILE);
+if (process.env.CALCIUM_PROFILE) app.setPath('userData', process.env.CALCIUM_PROFILE);
 else app.setPath('userData',path.join(app.getPath('appData'),'Calcium'));
 
 // Extension support (Chrome Web Store + chrome.* APIs). If it fails to load, the browser keeps working without extensions.
@@ -145,6 +145,7 @@ const PAGE_ALIASES = {
   'calcium://downloads': DOWNLOADS_URL, 'calcium://indirilenler': DOWNLOADS_URL,
   'calcium://settings': SETTINGS_URL, 'calcium://ayarlar': SETTINGS_URL,
   'calcium://extensions': EXTENSIONS_URL, 'calcium://uzantilar': EXTENSIONS_URL,
+  // Legacy aliases keep internal pages in older saved sessions accessible.
   'mondium://tasks': TASKS_URL, 'mondium://task-manager': TASKS_URL,
   'mondium://history': HISTORY_URL, 'mondium://gecmis': HISTORY_URL,
   'mondium://downloads': DOWNLOADS_URL, 'mondium://indirilenler': DOWNLOADS_URL,
@@ -189,7 +190,7 @@ function writeList(f, data, now) {
 }
 const saveHistory = (now = false) => writeList(HISTORY_FILE, () => history, now);
 const saveDownloads = (now = false) => writeList(DOWNLOADS_FILE, () => downloads.filter((d) => !d.incognito).map(({ item, ...d }) => d), now);
-// Session: URLs of open tabs. Local pages are stored by short name (mondium://...) so they open even if the folder moves.
+// Session: URLs of open tabs. Local pages are stored by short name (calcium://...) so they open even if the folder moves.
 const SESSION_FILE = path.join(app.getPath('userData'), 'oturum.json');
 // Incognito windows are not saved. When the last normal window closes (or on quit) the last snapshot is kept.
 let lastSessionData = null, quitting = false;
@@ -238,7 +239,7 @@ function broadcastUiFont(){
   if(pageKind(wc.getURL())||windows.some(w=>w.ui?.webContents===wc))wc.send('calcium-ui-font',family);
  }
 }
-ipcMain.on('mondium-lang', (e) => { e.returnValue = uiLang(); });
+ipcMain.on('calcium-lang', (e) => { e.returnValue = uiLang(); });
 app.commandLine.appendSwitch('lang',uiLang()==='tr'?'tr':'en-US');
 // Native menus, dialogs and notifications in the chosen language
 const trMenu = (list) => list.map((it) => ({ ...it, ...(it.label ? { label: T(it.label) } : {}), ...(Array.isArray(it.submenu) ? { submenu: trMenu(it.submenu) } : {}) }));
@@ -409,7 +410,7 @@ const uboPage=p=>uboId?`chrome-extension://${uboId}/${p}`:null;
 function ensureUBlock(target){
  if(uboLoads.has(target))return uboLoads.get(target);
  const job=(async()=>{
-  if(process.env.MONDIUM_NO_UBO)return false;
+  if(process.env.CALCIUM_NO_UBO)return false;
   await eceReady;
   if(!fs.existsSync(path.join(UBO_DIR,'manifest.json')))throw Error('uBlock Origin files are missing');
   if(target!==mainSes){
@@ -418,7 +419,7 @@ function ensureUBlock(target){
    await require('./private-ubo').attachPrivateUBlock(target,background,webContents);
    return true;
   }
-  try{target.registerPreloadScript({id:'mondium-mv2-bridge',type:'frame',filePath:path.join(__dirname,'mv2-bridge.js')});}catch{}
+  try{target.registerPreloadScript({id:'calcium-mv2-bridge',type:'frame',filePath:path.join(__dirname,'mv2-bridge.js')});}catch{}
   const api=target.extensions||target;
   const ext=await Promise.race([api.loadExtension(UBO_DIR,{allowFileAccess:false}),timeout(20000).then(()=>{throw Error('uBlock Origin load timed out')})]);
   if(target===mainSes)uboId=ext.id;
@@ -444,21 +445,21 @@ ipcMain.on('calcium-form-dirty',(e)=>{
  const tab=byWcId.get(e.sender.id);
  if(tab&&e.sender.session===tab.w.ses&&/^https?:/i.test(e.senderFrame?.url||''))tab.formDirty=true;
 });
-ipcMain.on('mondium-link-title', (e, data) => {
+ipcMain.on('calcium-link-title', (e, data) => {
   e.returnValue=false;const tab=byWcId.get(e.sender.id);
   if(!tab || e.sender.session!==tab.w.ses || !/^https?:/i.test(e.senderFrame?.url||'') || !data || typeof data.url!=='string'||typeof data.title!=='string')return;
   try {if(!/^https?:$/.test(new URL(data.url).protocol))return;}catch{return;}
   const title=data.title.replace(/\s+/g,' ').trim().slice(0,300);if(title){tab.linkTitleHint={url:data.url,title,at:Date.now()};e.returnValue=true;}
 });
-ipcMain.on('mondium-zoom-download', (e, url) => {
+ipcMain.on('calcium-zoom-download', (e, url) => {
   const tab = byWcId.get(e.sender.id);
   if (!settings.hoverZoom || !tab || !tab.view || typeof url !== 'string' || !/^https?:\/\//i.test(url)) return;
   if (!/^https?:/i.test(e.sender.getURL())) return;
   e.sender.downloadURL(url);
 });
-ipcMain.on('mondium-edge-px', (e) => { e.returnValue = 60; });
+ipcMain.on('calcium-edge-px', (e) => { e.returnValue = 60; });
 // Auto-hide mode: the sidebar opens when the mouse reaches the page's left edge (reported by page-preload)
-ipcMain.on('mondium-edge', (e) => {
+ipcMain.on('calcium-edge', (e) => {
   const w = winOfWc(e.sender);
   if (!w || !settings.verticalTabs || !settings.verticalAutoHide) return;
   useWin(w);
@@ -634,7 +635,7 @@ function answerPrompt(arg) {
 let incognitoSes = null;
 const incognitoPerms = {};
 function getIncognitoSession() {
-  if (!incognitoSes) { incognitoSes = session.fromPartition('mondium-gizli'); setupSession(incognitoSes, true); }
+  if (!incognitoSes) { incognitoSes = session.fromPartition('calcium-gizli'); setupSession(incognitoSes, true); }
   return incognitoSes;
 }
 function endIncognito() {
@@ -903,7 +904,7 @@ function registerExtensionTab(wc, w) {
 function toUrl(input) {
   const s = (input || '').trim();
   if (!s) return newtabUrl();
-  const hashAt = s.indexOf('#');   // section links like mondium://settings#korunan
+  const hashAt = s.indexOf('#');   // section links like calcium://settings#korunan
   const alias = PAGE_ALIASES[(hashAt < 0 ? s : s.slice(0, hashAt)).toLowerCase().replace(/\/+$/, '')];
   if (alias) return hashAt < 0 ? alias : alias + '#' + encodeURIComponent(s.slice(hashAt + 1));
   if (/^(https?|file|about|data|view-source|chrome-extension|blob):/i.test(s)) return s;   // extension pages are URLs too
@@ -1312,7 +1313,7 @@ function applyVolume(wc, frame, pct) {
 let ZOOM_JS = null;
 function applyHoverZoom(wc, on = settings.hoverZoom) {
   if (!wc || wc.isDestroyed() || !/^https?:/i.test(wc.getURL())) return;
-  if (!on) { wc.executeJavaScriptInIsolatedWorld(1014, [{ code: "{ const z = window[Symbol.for('mondium.zoom')]; if (z) z.off(); }" }]).catch(() => {}); return; }
+  if (!on) { wc.executeJavaScriptInIsolatedWorld(1014, [{ code: "{ const z = window[Symbol.for('calcium.zoom')]; if (z) z.off(); }" }]).catch(() => {}); return; }
   if (!ZOOM_JS) ZOOM_JS = localizeSrc(fs.readFileSync(path.join(__dirname, 'hoverzoom.js'), 'utf8'));
   wc.executeJavaScriptInIsolatedWorld(1014, [{ code: ZOOM_JS }]).catch(() => {});
 }
@@ -2958,9 +2959,9 @@ function createWindow(opts = {}) {
   windows.push(w);
   useWin(w);
   const c = incognito ? { frame: INCOGNITO_THEME.frame, toolbar: INCOGNITO_THEME.toolbar, symbol: '#e3e3e3' } : themeColors();
-  // A new window opens slightly below-right of the previous one. For tests MONDIUM_TEST_DISPLAY: on that display, without stealing focus.
+  // A new window opens slightly below-right of the previous one. For tests CALCIUM_TEST_DISPLAY: on that display, without stealing focus.
   let bounds = { width: 1280, height: 820 };
-  const testDisplay = process.env.MONDIUM_TEST_DISPLAY;
+  const testDisplay = process.env.CALCIUM_TEST_DISPLAY;
   if (testDisplay != null) {
     const ds = screen.getAllDisplays();
     const d = ds[Math.min(Number(testDisplay) || 0, ds.length - 1)];

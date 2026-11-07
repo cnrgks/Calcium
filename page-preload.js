@@ -13,7 +13,7 @@ function inMainWorld(fn) {
 //    This API is never created on other sites. The main process also checks the sender page on every command.
 if (location.protocol === 'file:' && /\/(newtab|welcome|history|downloads|settings|extensions|taskmanager|securitywarning)\.html$/.test(location.pathname)) {
   contextBridge.exposeInMainWorld('pageApi', {
-    lang: ipcRenderer.sendSync('mondium-lang'),
+    lang: ipcRenderer.sendSync('calcium-lang'),
     getFont:()=>ipcRenderer.invoke('calcium-ui-font'),
     onFont:fn=>ipcRenderer.on('calcium-ui-font',(_e,font)=>fn(font)),   // UI language: 'tr' | 'en' (see i18n.js)
     get: () => ipcRenderer.invoke('page', 'get'),
@@ -37,7 +37,7 @@ if (/^https?:$/.test(location.protocol)) {
     const card=link.closest('ytd-rich-item-renderer,ytd-video-renderer,ytd-compact-video-renderer,yt-lockup-view-model');
     const named=card?.querySelector('a#video-title,a#video-title-link,[role="heading"]');
     const title=named?.getAttribute('title')||named?.textContent||link.getAttribute('title')||link.getAttribute('aria-label')||link.textContent;
-    if(title?.trim())ipcRenderer.sendSync('mondium-link-title',{url:link.href,title:title.slice(0,300)});
+    if(title?.trim())ipcRenderer.sendSync('calcium-link-title',{url:link.href,title:title.slice(0,300)});
   },{capture:true,passive:true});
 }
 
@@ -60,11 +60,11 @@ inMainWorld(() => {
 // opens). Ignored if the setting is off. Re-arms after leaving the edge; no continuous messages.
 {
   let atEdge = false, edge = 60;
-  try { edge = ipcRenderer.sendSync('mondium-edge-px') || 60; } catch {}
+  try { edge = ipcRenderer.sendSync('calcium-edge-px') || 60; } catch {}
   window.addEventListener('mouseleave', () => { atEdge = false; });
-  ipcRenderer.on('mondium-edge-px', (_e, v) => { edge = v; });
+  ipcRenderer.on('calcium-edge-px', (_e, v) => { edge = v; });
   window.addEventListener('mousemove', (e) => {
-    if (e.clientX < edge) { if (!atEdge) { atEdge = true; ipcRenderer.send('mondium-edge'); } }
+    if (e.clientX < edge) { if (!atEdge) { atEdge = true; ipcRenderer.send('calcium-edge'); } }
     else if (e.clientX > edge + 12) atEdge = false;
   }, { capture: true, passive: true });
 }
@@ -72,8 +72,8 @@ inMainWorld(() => {
 // Built-in image zoom world (1014, see hoverzoom.js): separate img/media rule so the site's CSP doesn't block
 // the large image from another server (extension content scripts work this way in Chrome too).
 if (/^https?:$/.test(location.protocol)) {
-  contextBridge.exposeInIsolatedWorld(1014, 'mondiumZoomDownload', (url) => {
-    if (typeof url === 'string' && /^https?:\/\//i.test(url)) ipcRenderer.send('mondium-zoom-download', url);
+  contextBridge.exposeInIsolatedWorld(1014, 'calciumZoomDownload', (url) => {
+    if (typeof url === 'string' && /^https?:\/\//i.test(url)) ipcRenderer.send('calcium-zoom-download', url);
   });
   try { webFrame.setIsolatedWorldInfo(1014, { name: 'Calcium resim büyütme', securityOrigin: location.origin, csp: "default-src 'none'; img-src * data: blob:; media-src * data: blob:; style-src 'unsafe-inline'" }); } catch {}
 }
@@ -84,29 +84,29 @@ if (/^https?:$/.test(location.protocol)) {
 //    and listeners would pile up); only a single dispatcher function crosses the bridge.
 if (/^https?:$/.test(location.protocol)) {
   let packs = [];
-  try { packs = ipcRenderer.sendSync('mondium-us-get', location.href) || []; } catch {}
+  try { packs = ipcRenderer.sendSync('calcium-us-get', location.href) || []; } catch {}
   if (packs.length) {
     const dispatchers = new Map();   // extension -> dispatcher in its world
-    ipcRenderer.on('mondium-us-tabmsg', (_e, extId, reqId, msg) => {
+    ipcRenderer.on('calcium-us-tabmsg', (_e, extId, reqId, msg) => {
       const d = dispatchers.get(extId);
-      if (!d) { ipcRenderer.send('mondium-us-tabreply', reqId, undefined); return; }
-      try { d(reqId, msg); } catch { ipcRenderer.send('mondium-us-tabreply', reqId, undefined); }
+      if (!d) { ipcRenderer.send('calcium-us-tabreply', reqId, undefined); return; }
+      try { d(reqId, msg); } catch { ipcRenderer.send('calcium-us-tabreply', reqId, undefined); }
     });
     for (const p of packs) {
       try {
         // With a CSP Electron also requires a security origin; the page's own origin is used (as Chrome does)
         webFrame.setIsolatedWorldInfo(p.worldId, { name: p.name, csp: p.csp, securityOrigin: location.origin });
         // Each world already has Chromium's own "chrome" object; the bridge uses a separate name, then chrome.runtime is set up
-        contextBridge.exposeInIsolatedWorld(p.worldId, '__mondiumRuntime', {
+        contextBridge.exposeInIsolatedWorld(p.worldId, '__calciumRuntime', {
           id: p.extId,
-          send: (msg) => ipcRenderer.invoke('mondium-us-msg', p.extId, msg),
-          reply: (reqId, value) => ipcRenderer.send('mondium-us-tabreply', reqId, value),
+          send: (msg) => ipcRenderer.invoke('calcium-us-msg', p.extId, msg),
+          reply: (reqId, value) => ipcRenderer.send('calcium-us-tabreply', reqId, value),
           setDispatcher: (fn) => { dispatchers.set(p.extId, fn); }
         });
       } catch { continue; }
       const run = (list) => { if (list.length) webFrame.executeJavaScriptInIsolatedWorld(p.worldId, list).catch(() => {}); };
       run([{ code: `(() => {
-        const b = globalThis.__mondiumRuntime; delete globalThis.__mondiumRuntime;
+        const b = globalThis.__calciumRuntime; delete globalThis.__calciumRuntime;
         const listeners = new Set();
         const runtime = {
           id: b.id,

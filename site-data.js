@@ -191,7 +191,7 @@ const WIN_EPOCH_US = 11644473600000000n;
 function quotaBuckets(storagePath) {
   const src = path.join(storagePath, 'WebStorage', 'QuotaManager');
   if (!fs.existsSync(src)) return [];
-  const dst = path.join(os.tmpdir(), `mondium-qm-${process.pid}-${Date.now()}.db`);
+  const dst = path.join(os.tmpdir(), `calcium-qm-${process.pid}-${Date.now()}.db`);
   try {
     fs.copyFileSync(src, dst);
     try { fs.copyFileSync(src + '-journal', dst + '-journal'); } catch {}

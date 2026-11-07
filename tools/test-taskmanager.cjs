@@ -2,7 +2,7 @@
 const {app,BrowserWindow,ipcMain}=require('electron');
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');const root=path.join(__dirname,'..');
 ipcMain.handle('calcium-ui-font',()=>null);
-ipcMain.on('mondium-lang',e=>e.returnValue='tr');ipcMain.on('mondium-edge-px',e=>e.returnValue=60);
+ipcMain.on('calcium-lang',e=>e.returnValue='tr');ipcMain.on('calcium-edge-px',e=>e.returnValue=60);
 app.whenReady().then(async()=>{
  const source=fs.readFileSync(path.join(root,'main.js'),'utf8');
  const tabs=[{id:1,title:'YouTube',favicon:'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>',w:{},view:{webContents:{getOSProcessId:()=>10}}},{id:2,title:'KICK',w:{},view:{webContents:{getOSProcessId:()=>10}}},{id:3,title:'Uyuyan',w:{},view:null}];

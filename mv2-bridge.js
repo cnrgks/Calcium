@@ -3,7 +3,7 @@
 // electron-chrome-extensions adds APIs like chrome.browserAction / webNavigation / contextMenus / tabs.query
 // in its own preload; but on an MV2 background page (context isolation off) the "chrome" object it patches
 // is not the one the page uses later, so the APIs vanish. This preload exposes the library's message channel
-// (crx-msg / crx-add-listener) to the page; the extension's first script (mondium-ece.js) wires the APIs to the real object.
+// (crx-msg / crx-add-listener) to the page; the extension's first script (calcium-ece.js) wires the APIs to the real object.
 // The channel opens only on extension pages; the main process verifies the sending extension on every request.
 const { ipcRenderer, contextBridge } = require('electron');
 
@@ -30,7 +30,7 @@ if (location.protocol === 'chrome-extension:') {
     }
   };
   try {
-    if (process.contextIsolated) contextBridge.exposeInMainWorld('__mondiumCrx', api);
-    else window.__mondiumCrx = api;
+    if (process.contextIsolated) contextBridge.exposeInMainWorld('__calciumCrx', api);
+    else window.__calciumCrx = api;
   } catch {}
 }

@@ -87,7 +87,7 @@ function readFirefoxBookmarks(file) {
   let sqlite;
   try { sqlite = require('node:sqlite'); } catch { return null; }
   // If Firefox is open the DB is locked and recent changes are in -wal: copy both to a temp folder
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mondium-ff-'));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'calcium-ff-'));
   const copy = path.join(tmp, 'places.sqlite');
   try {
     fs.copyFileSync(file, copy);
