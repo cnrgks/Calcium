@@ -1,6 +1,7 @@
 'use strict';
 // node tools/test-packaged.cjs dist/win-unpacked/Calcium.exe
 const fs=require('fs'),path=require('path'),os=require('os'),cp=require('child_process'),assert=require('assert');
+const version=require('../package.json').version;
 const executable=path.resolve(process.argv[2]||'dist/win-unpacked/Calcium.exe'),profile=fs.mkdtempSync(path.join(os.tmpdir(),'calcium-package-test-'));
 fs.writeFileSync(path.join(profile,'ayarlar.json'),JSON.stringify({firstRunDone:true,language:'en'}));
 const env={...process.env,CALCIUM_PROFILE:profile,CALCIUM_TEST_MODE:'1',CALCIUM_TEST_DISPLAY:'0'};delete env.ELECTRON_RUN_AS_NODE;
@@ -10,7 +11,17 @@ async function targets(){return fetch('http://127.0.0.1:'+port+'/json/list').the
 async function find(suffix){for(let i=0;i<200;i++){if(child.exitCode!==null||child.signalCode)throw Error('Packaged process exited: '+child.exitCode+' '+child.signalCode+'\n'+output);const list=await targets().catch(()=>[]),t=list.find(x=>x.url.includes(suffix));if(t)return t;await pause();}throw Error('Packaged target missing: '+suffix+'\n'+output);}
 async function connect(target){const ws=new WebSocket(target.webSocketDebuggerUrl);sockets.push(ws);await new Promise((r,j)=>{ws.onopen=r;ws.onerror=j;});let id=0;return expression=>new Promise((resolve,reject)=>{const current=++id;const listener=event=>{const data=JSON.parse(event.data);if(data.id!==current)return;ws.removeEventListener('message',listener);if(data.result?.exceptionDetails||data.error)reject(Error(JSON.stringify(data)));else resolve(data.result.result?.value);};ws.addEventListener('message',listener);ws.send(JSON.stringify({id:current,method:'Runtime.evaluate',params:{expression,returnByValue:true,awaitPromise:true}}));});}
 (async()=>{const ui=await connect(await find('ui.html'));for(let i=0;i<100;i++){if(await ui('typeof browserApi!=="undefined"&&!!document.querySelector("#url")'))break;await pause();}
+ for(let i=0;i<7;i++)await pause();assert(await ui(`document.querySelector('#newtabPrompt').hidden&&!['url','newtabQuery'].includes(document.activeElement.id)`),'no automatic address focus on packaged startup');
  await ui(`browserApi.send('navigate','calcium://settings');void 0`);const settings=await connect(await find('settings.html'));for(let i=0;i<100;i++){if(await settings('document.querySelectorAll(".custom-rule-group").length===2'))break;await pause();}
- assert.equal(await settings('document.querySelectorAll(".custom-rule-group").length'),2);assert(await settings('document.body.innerText.includes("1.3.7")'));assert(await settings('!!document.querySelector("#appUpdateCheck")'));assert.equal(await settings('typeof require'),'undefined');assert(!/Cannot find module|Uncaught Exception|App threw an error/.test(output),output);
- await ui(`browserApi.send('menu-action',{id:'quit'});void 0`);for(let i=0;i<100&&child.exitCode===null;i++)await pause();assert.equal(child.exitCode,0);console.log('PASS: packaged 1.3.7 starts, loads Settings, custom rules and updater, keeps Node isolated and exits cleanly.');
+ assert.equal(await settings('document.querySelectorAll(".custom-rule-group").length'),2);assert(await settings('document.body.innerText.includes('+JSON.stringify(version)+')'));assert(await settings('!!document.querySelector("#appUpdateCheck")'));assert.equal(await settings('typeof require'),'undefined');assert(!/Cannot find module|Uncaught Exception|App threw an error/.test(output),output);
+ assert(await settings(`!document.querySelector('#kisayollar')&&!document.querySelector('a[href="#kisayollar"]')`));
+ assert(await ui(`!document.body.classList.contains('mac')||document.querySelector('#toolbar').firstElementChild.getBoundingClientRect().left>=86`),'macOS traffic-light space');
+ await settings(`pageApi.call('settings-set',{key:'theme',value:'koyu'})`);await settings(`pageApi.call('settings-set',{key:'verticalTabs',value:false})`);
+ for(const enabled of [false,true,false,true]){
+  await settings(`pageApi.call('settings-set',{key:'pitchBlack',value:${enabled}})`);
+  const expected=enabled?'rgb(0, 0, 0)':'rgb(60, 60, 60)',page=enabled?'rgb(0, 0, 0)':'rgb(31, 31, 31)';let changed=false;
+  for(let i=0;i<100;i++){if(await ui('getComputedStyle(document.querySelector("#toolbar")).backgroundColor==='+JSON.stringify(expected))&&await settings('getComputedStyle(document.body).backgroundColor==='+JSON.stringify(page))){changed=true;break;}await pause();}assert(changed,'pitch-black transition applies immediately');
+  assert(await ui(`getComputedStyle(document.querySelector('#tabs .tab.on')).backgroundColor===getComputedStyle(document.querySelector('#toolbar')).backgroundColor`),'horizontal tab and toolbar share a background');
+ }
+ await ui(`browserApi.send('menu-action',{id:'quit'});void 0`);for(let i=0;i<100&&child.exitCode===null;i++)await pause();assert.equal(child.exitCode,0);console.log('PASS: packaged '+version+' starts, loads Settings, custom rules and updater, keeps Node isolated and exits cleanly.');
 })().catch(e=>{console.error(e);child.kill();process.exitCode=1;}).finally(()=>{for(const ws of sockets)ws.close();});

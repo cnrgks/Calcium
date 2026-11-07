@@ -27,6 +27,7 @@
   /* ---------- Tab strip ---------- */
   #strip { height:42px; background:var(--frame); display:flex; align-items:flex-end; padding:0 8px; -webkit-app-region:drag; }
   body.mac #strip { padding-left:80px; }
+  body.mac.vert #toolbar, body.mac.onboarding #toolbar { padding-left:86px; }
   body.overlay #strip { padding-right:146px; }
   #tabs { display:flex; align-items:flex-end; min-width:0; flex:0 1 auto; height:100%; }
   .tab { position:relative; flex:0 1 auto; width:240px; min-width:44px; height:34px; display:flex; align-items:center;
@@ -36,6 +37,7 @@
   .tab::after { content:""; position:absolute; left:0; top:10px; width:1px; height:16px; background:var(--sep); }
   .tab:first-child::after, .tab.on::after, .tab:hover::after, .tab.on + .tab::after, .tab:hover + .tab::after { display:none; }
   .tab.on { background:var(--active-tab, var(--toolbar)); color:var(--text); border-radius:10px 10px 0 0; z-index:2; }
+  body:not(.vert) .tab.on { background:var(--toolbar); }
   .tab.on .c1, .tab.on .c2 { position:absolute; bottom:0; width:10px; height:10px; display:block; }
   .tab .c1, .tab .c2 { display:none; }
   .tab.on .c1 { left:-10px; background:radial-gradient(circle at 0 0, transparent 10px, var(--toolbar) 10.5px); }

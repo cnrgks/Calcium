@@ -1,7 +1,7 @@
 {
   "name": "calcium",
   "productName": "Calcium",
-  "version": "1.3.7",
+  "version": "1.3.8",
   "description": "Calcium — a bare bones browser.",
   "main": "main.js",
   "license": "GPL-3.0",
@@ -84,7 +84,6 @@
       "private-content.js",
       "private-content-preload.js",
       "app-updates.js",
-      "keyboard-shortcuts.js",
       "update-notice.html",
       "custom-shortcuts.js",
       "text-expansion.js"

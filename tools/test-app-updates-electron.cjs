@@ -16,7 +16,7 @@ const pause=()=>new Promise(r=>setTimeout(r,100));
  const tab=api.newTab(api.SETTINGS_URL+'#hakkinda'),wc=tab.view.webContents;
  for(let i=0;i<100;i++){if(await wc.executeJavaScript('!!document.querySelector("#appUpdateCheck")').catch(()=>false))break;await pause();}
  assert.equal(checks,0,'no test/development startup network request');
- assert(await wc.executeJavaScript('document.querySelectorAll("#kisayollar+.card kbd").length>30'));
+ assert(await wc.executeJavaScript(`!document.querySelector('#kisayollar')&&!document.querySelector('a[href="#kisayollar"]')`));
  const oldBounds=tab.view.getBounds();await api.appUpdates.check({manual:false});await pause();const notice=owner.updateNotice;assert(notice,'startup offer has a dedicated non-modal view');
  for(let i=0;i<50;i++){if(await notice.webContents.executeJavaScript('!!window.pageApi&&!!document.querySelector("#later")').catch(()=>false))break;await pause();}
  assert.equal(notice.webContents.getLastWebPreferences().sandbox,true);assert.equal(notice.webContents.getLastWebPreferences().nodeIntegration,false);assert.deepEqual(tab.view.getBounds(),oldBounds,'notice does not resize or cover the entire page');
@@ -28,5 +28,5 @@ const pause=()=>new Promise(r=>setTimeout(r,100));
  version='99.9.0';const prior=checks;await api.appUpdates.check({manual:false});assert.equal(checks,prior,'Later suppresses another automatic check');
  await wc.executeJavaScript('document.querySelector("#appUpdateCheck").click()');await pause();assert.equal(checks,prior+1);assert(!owner.updateNotice);assert((await wc.executeJavaScript('document.querySelector("#appUpdateStatus").textContent')).includes(version));
  assert.equal(await wc.executeJavaScript('document.querySelector("#appUpdatePaused").hidden'),false);
- console.log('PASS: About update controls, real shortcut list, non-modal top-right view, menu/private-window isolation, persistent Later and manual recheck without nagging.');app.exit(0);
+ console.log('PASS: About update controls, removed shortcut section, non-modal top-right view, menu/private-window isolation, persistent Later and manual recheck without nagging.');app.exit(0);
 })().catch(e=>{console.error(e);app.exit(1)});

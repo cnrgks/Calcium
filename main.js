@@ -1240,7 +1240,6 @@ function newTab(url, background = false, openerId = null, at = -1, requireView =
     if(hint && hint.url===tab.url && Date.now()-hint.at<2000){tab.title=hint.title;opener.linkTitleHint=null;}else queueTabTitle(tab);
   }
   if (!background || activeId === null) activateTab(tab.id); else pushState();
-  if (!background && isNewtab(tab.url)) { const w = W; setTimeout(() => inWin(w, () => focusUrl()), 50); }
   return tab;
 }
 
@@ -1679,7 +1678,7 @@ function navigateInput(input,{newTab:makeTab=false,background=false,closePrompt=
  if(makeTab)newTab(resolved.url,background,activeId);else openUrl(resolved.url);
 }
 function openSearchPrompt(kind = 'newtab', value = '') {
-  if (settings.newTabPrompt === false) { if (kind === 'newtab') newTab(''); return; }
+  if (settings.newTabPrompt === false) { if (kind === 'newtab') { newTab(''); focusUrl(); } return; }
   if (!win || !ui || overlayKind === 'prompt') return;
   // Refocusing an already open prompt must not clear an in-progress query.
   if (overlayOpen && overlayKind === kind) return;
@@ -1982,7 +1981,7 @@ function menuData() {
 function menuAction(id, arg) {
   const refresh = () => send('menu-data', menuData());
   switch (id) {
-    case 'new-tab': newTab(''); break;
+    case 'new-tab': openSearchPrompt(); break;
     case 'new-window': newWindow(false); break;
     case 'new-incognito': newWindow(true); break;
     case 'downloads': openPage(DOWNLOADS_URL); break;
@@ -2818,7 +2817,7 @@ function settingsData() {
       sitePerms: Object.keys(settings.sitePerms).length, deviceGrants: settings.deviceGrants.length,
     version: app.getVersion(), chrome: process.versions.chrome, electron: process.versions.electron,
     siteCommands:settings.siteCommands,textReplacements:settings.textReplacements,
-    appUpdate:appUpdateData(),keyboardShortcuts:require('./keyboard-shortcuts').keyboardShortcuts({isMac,verticalTabs:settings.verticalTabs}),
+    appUpdate:appUpdateData(),resolvedTheme:W?.incognito?INCOGNITO_THEME:themeVars(),
     widevine: (() => { try { const st = components && components.status(); const w = st && Object.values(st).find((x) => /widevine/i.test(x.title || '')); return w ? w.version : null; } catch { return null; } })()
   };
 }
@@ -3013,7 +3012,7 @@ ipcMain.handle('page', async (e, cmd, arg) => {
       scheduleUpdateCheck();
       saveSettings(true);forEachWin(()=>{layout();pushState();});
       const t = tabs.find((x) => x.view && x.view.webContents === e.sender);
-      if (t) { t.url = newtabUrl(); t.title = 'Yeni Sekme'; go(t.view.webContents, t.url); const w = W; setTimeout(() => inWin(w, () => focusUrl()), 300); }
+      if (t) { t.url = newtabUrl(); t.title = 'Yeni Sekme'; go(t.view.webContents, t.url); }
       return { ok: true };
     }
   }
