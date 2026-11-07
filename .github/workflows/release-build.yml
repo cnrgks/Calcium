@@ -49,3 +49,33 @@ jobs:
             dist/*.dmg
             dist/*.blockmap
           if-no-files-found: error
+  release:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Hash and publish tested packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          tag="v$version"
+          test -f "release-assets/Calcium-Setup-$version.exe"
+          test -f "release-assets/Calcium-$version-x64.dmg"
+          test -f "release-assets/Calcium-$version-arm64.dmg"
+          (cd release-assets && sha256sum *.exe *.dmg *.blockmap > SHA256SUMS.txt)
+          if gh release view "$tag" --json isDraft >/dev/null 2>&1; then
+            test "$(gh release view "$tag" --json isDraft --jq .isDraft)" = true
+          else
+            gh release create "$tag" --target "$GITHUB_SHA" --title "Calcium $version" --notes-file "docs/release-$version.md" --draft
+          fi
+          gh release upload "$tag" release-assets/* --clobber
+          gh release edit "$tag" --draft=false --latest
