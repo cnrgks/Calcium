@@ -1,0 +1,51 @@
+name: Release builds
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            arch: x64
+          - os: macos-15
+            platform: mac
+            arch: x64
+          - os: macos-15
+            platform: mac
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node tools/test-custom-shortcuts.cjs
+      - name: Package
+        run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Windows packaged smoke test
+        if: matrix.platform == 'win'
+        timeout-minutes: 5
+        run: node tools/test-packaged.cjs dist/win-unpacked/Calcium.exe
+      - name: macOS packaged smoke test
+        if: matrix.platform == 'mac'
+        timeout-minutes: 5
+        run: node tools/test-packaged.cjs dist/mac${{ matrix.arch == 'arm64' && '-arm64' || '' }}/Calcium.app/Contents/MacOS/Calcium
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Calcium-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.blockmap
+          if-no-files-found: error

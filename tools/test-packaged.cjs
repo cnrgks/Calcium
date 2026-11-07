@@ -1,0 +1,16 @@
+'use strict';
+// node tools/test-packaged.cjs dist/win-unpacked/Calcium.exe
+const fs=require('fs'),path=require('path'),os=require('os'),cp=require('child_process'),assert=require('assert');
+const executable=path.resolve(process.argv[2]||'dist/win-unpacked/Calcium.exe'),profile=fs.mkdtempSync(path.join(os.tmpdir(),'calcium-package-test-'));
+fs.writeFileSync(path.join(profile,'ayarlar.json'),JSON.stringify({firstRunDone:true,language:'en'}));
+const env={...process.env,CALCIUM_PROFILE:profile,CALCIUM_TEST_MODE:'1',CALCIUM_TEST_DISPLAY:'0'};delete env.ELECTRON_RUN_AS_NODE;
+const port=19371,child=cp.spawn(executable,['--remote-debugging-port='+port],{env,windowsHide:true,stdio:['ignore','pipe','pipe']});let output='';child.stdout.on('data',d=>output=(output+d).slice(-12000));child.stderr.on('data',d=>output=(output+d).slice(-12000));
+const pause=()=>new Promise(r=>setTimeout(r,100));let sockets=[];
+async function targets(){return fetch('http://127.0.0.1:'+port+'/json/list').then(r=>r.json());}
+async function find(suffix){for(let i=0;i<200;i++){const list=await targets().catch(()=>[]),t=list.find(x=>x.url.includes(suffix));if(t)return t;await pause();}throw Error('Packaged target missing: '+suffix+'\n'+output);}
+async function connect(target){const ws=new WebSocket(target.webSocketDebuggerUrl);sockets.push(ws);await new Promise((r,j)=>{ws.onopen=r;ws.onerror=j;});let id=0;return expression=>new Promise((resolve,reject)=>{const current=++id;const listener=event=>{const data=JSON.parse(event.data);if(data.id!==current)return;ws.removeEventListener('message',listener);if(data.result?.exceptionDetails||data.error)reject(Error(JSON.stringify(data)));else resolve(data.result.result?.value);};ws.addEventListener('message',listener);ws.send(JSON.stringify({id:current,method:'Runtime.evaluate',params:{expression,returnByValue:true,awaitPromise:true}}));});}
+(async()=>{const ui=await connect(await find('ui.html'));for(let i=0;i<100;i++){if(await ui('typeof browserApi!=="undefined"&&!!document.querySelector("#url")'))break;await pause();}
+ await ui(`browserApi.send('navigate','calcium://settings');void 0`);const settings=await connect(await find('settings.html'));for(let i=0;i<100;i++){if(await settings('document.querySelectorAll(".custom-rule-group").length===2'))break;await pause();}
+ assert.equal(await settings('document.querySelectorAll(".custom-rule-group").length'),2);assert(await settings('document.body.innerText.includes("1.3.7")'));assert(await settings('!!document.querySelector("#appUpdateCheck")'));assert.equal(await settings('typeof require'),'undefined');assert(!/Cannot find module|Uncaught Exception|App threw an error/.test(output),output);
+ await ui(`browserApi.send('menu-action',{id:'quit'});void 0`);for(let i=0;i<100&&child.exitCode===null;i++)await pause();assert.equal(child.exitCode,0);console.log('PASS: packaged 1.3.7 starts, loads Settings, custom rules and updater, keeps Node isolated and exits cleanly.');
+})().catch(e=>{console.error(e);child.kill();process.exitCode=1;}).finally(()=>{for(const ws of sockets)ws.close();});

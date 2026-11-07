@@ -59,9 +59,16 @@
 
   /* Theme picker */
   .themes { display:grid; grid-template-columns:repeat(auto-fill, minmax(92px, 1fr)); gap:12px; padding:16px 20px 20px; }
-  .th { border:2px solid transparent; border-radius:12px; padding:0; background:none; text-align:center; }
-  .th .pv { height:52px; border-radius:10px; overflow:hidden; display:flex; flex-direction:column; border:1px solid var(--border); }
-  .th .pv i { height:16px; display:block; } .th .pv b { flex:1; display:block; }
+  .th { position:relative;border:2px solid transparent; border-radius:12px; padding:0; background:none; text-align:center; }
+  .th .pv { border-radius:7px;overflow:hidden;display:flex;align-items:center;justify-content:center;border:1px solid rgba(128,128,128,.15); }
+  .th .pv svg { width:40px;height:40px; }
+  .th .light-bone { background:#f5f5f5;color:#101010; }
+  .th .dark-bone { background:#080808;color:#f5f5f5; }
+  .th .system-bone { border:0;box-shadow:none;background:linear-gradient(45deg,#f5f5f5 50%,#080808 50%); }
+  .theme-check { position:absolute;top:9px;right:9px;width:14px;height:14px;border-radius:50%;background:var(--accent);color:var(--accent-fg);display:none;align-items:center;justify-content:center; }
+  .theme-check svg { width:10px;height:10px; }
+  .th.on .theme-check { display:flex; }
+  .th:focus-visible { outline:2px solid var(--accent);outline-offset:2px; }
   .th .nm { margin:6px 0 4px; font-size:12px; color:var(--dim); }
   .th.on { border-color:var(--accent); }
   .th.on .nm { color:var(--text); font-weight:600; }
@@ -131,7 +138,7 @@
   .brand { width:auto; padding-left:28px; font-size:20px; font-weight:600; }
   .brand::before { content:'Calcium';margin-right:8px;color:var(--text); }
   .brand svg { display:none; }
-  nav { top:76px;width:232px;padding:0 12px; }
+  nav { top:76px;width:232px;padding:0 12px;max-height:calc(100vh - 88px);overflow-y:auto;scrollbar-width:thin; }
   nav a,nav button { border-radius:8px;padding:0 16px;height:38px;font-size:13px; }
   main { margin-left:232px;padding-top:4px; }
   h2 { margin-top:28px;font-size:15px; }
@@ -140,7 +147,7 @@
   .row .ds { font-size:12px;line-height:1.5;max-width:460px; }
   .themes { display:grid;grid-template-columns:repeat(3,90px);gap:10px;padding:0; }
   .th { width:90px;padding:6px;border-radius:8px; }
-  .th .pv { height:46px;border-radius:5px; }
+  .th .pv { height:60px;border-radius:5px; }
   .th .nm { font-size:12px;margin-top:6px; }
   .advanced { border-top:1px solid var(--border); }
   .advanced summary { cursor:pointer;padding:14px 20px;color:var(--dim);font-size:13px; }
@@ -168,6 +175,8 @@
   @media(max-width:620px){.site-card .tools{flex-wrap:wrap}.site-card .tools .txt{flex-basis:100%}.site-card .tools select{flex:1;min-width:0}.site-card .li{padding:12px 16px;gap:10px;flex-wrap:wrap}.site-card .li .nm{flex-basis:100%}.site-card .li .acts{justify-content:flex-start}}
 .dlg:focus{outline:none}
 button:disabled,select:disabled{cursor:default}
+  .shortcut-group{padding:0}.shortcut-group[open]{padding-bottom:12px}.shortcut-group+.shortcut-group{border-top:1px solid var(--border)}.shortcut-group summary{font-size:13px;font-weight:600;padding:14px 20px;cursor:pointer}.shortcut-row{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:7px 20px;line-height:1.5}.shortcut-keys{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px;max-width:65%}.shortcut-keys kbd{font:12px "Segoe UI",system-ui,sans-serif;white-space:nowrap;border:1px solid var(--border);border-radius:4px;padding:2px 6px;background:var(--field)}.update-row{align-items:flex-start;flex-wrap:wrap}.update-row .tx{min-width:170px}.update-actions{display:flex;flex-wrap:wrap;gap:8px}.update-note{font-size:12px;line-height:1.5;color:var(--dim);margin-top:6px}.update-row button:disabled{opacity:.55;cursor:default}@media(max-width:600px){.shortcut-group summary{padding:14px}.shortcut-row{align-items:flex-start;flex-direction:column;gap:5px;padding:7px 14px}.shortcut-keys{justify-content:flex-start;max-width:100%}}
+ .custom-rule-group{padding:18px 20px}.custom-rule-group+.custom-rule-group{border-top:1px solid var(--border)}.custom-rule-group h3{font-size:14px;margin:0 0 8px}.custom-rule-group .ds,.custom-shortcut-note{color:var(--dim);font-size:12px;line-height:1.6}.custom-rule-list{margin:14px 0}.custom-rule{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0}.custom-rule+.custom-rule{border-top:1px solid var(--border)}.custom-rule>div:first-child{min-width:0;flex:1}.custom-rule code{font-size:13px}.custom-rule p{white-space:pre-wrap;overflow-wrap:anywhere;max-height:4.8em;overflow:hidden}.custom-rule-actions{display:flex;flex-wrap:wrap;gap:8px}.custom-rule-form{margin-top:16px;padding-top:16px;border-top:1px solid var(--border)}.custom-rule-form label{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}.custom-rule-form .txt{width:100%;max-width:100%}.custom-rule-form textarea{height:auto;padding:9px 10px;resize:vertical}.custom-rule-form .msg{padding:0;margin:10px 0;color:#c5221f}.custom-shortcut-note{padding:0 20px 18px;margin:0}@media(max-width:600px){.custom-rule-group{padding:16px 14px}.custom-rule{align-items:flex-start;flex-direction:column}.custom-shortcut-note{padding:0 14px 16px}}
 </style>
 </head>
 <body>
@@ -176,7 +185,7 @@ button:disabled,select:disabled{cursor:default}
   </header>
 
   <nav id="nav" aria-label="Ayarlar">
-    <a href="#gorunum">Görünüm</a><a href="#sekmeler">Sekmeler ve arama</a><a href="#performans">Performans</a><a href="#gizlilik">Gizlilik ve güvenlik</a><a href="#siteler">Siteler ve çerezler</a><a href="#araclar">Araçlar</a><a href="#indirmeler">İndirmeler</a><a href="#uzantilar">Uzantılar</a><a href="#hakkinda">Calcium hakkında</a><div class="sep"></div><button id="toHist">Geçmiş</button>
+    <a href="#gorunum">Görünüm</a><a href="#sekmeler">Sekmeler ve arama</a><a href="#performans">Performans</a><a href="#gizlilik">Gizlilik ve güvenlik</a><a href="#siteler">Siteler ve çerezler</a><a href="#araclar">Araçlar</a><a href="#ozel-kisayollar">Özel kısayollar</a><a href="#kisayollar">Klavye kısayolları</a><a href="#indirmeler">İndirmeler</a><a href="#uzantilar">Uzantılar</a><a href="#hakkinda">Calcium hakkında</a><div class="sep"></div><button id="toHist">Geçmiş</button>
   </nav>
 
   <main><div class="wrap" id="root"></div></main>
@@ -219,15 +228,72 @@ function select(key, options, label, desc) {
   s.onchange = () => set(key, typeof d[key] === 'number' ? Number(s.value) : s.value);
   return row(label, desc, s);
 }
-const button = (text, fn) => { const b = el('button', 'btn', text); b.onclick = (e) => { e.stopPropagation(); fn(); }; return b; };
+const button = (text, fn) => { const b = el('button', 'btn', text); b.type='button'; b.onclick = (e) => { e.stopPropagation(); fn(); }; return b; };
 const section = (id, title, ...rows) => { const h = el('h2', null, title); h.id = id; const c = el('div', 'card'); c.append(...rows.filter(Boolean)); return [h, c]; };
 let toastTimer = null;
 function toast(msg) { $('toastT').textContent = msg; $('toast').classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('show'), 3000); }
 
 // ---------- Rendering
+function customInputSection(){
+ const heading=el('h2',null,'Özel kısayollar');heading.id='ozel-kisayollar';const card=el('div','card custom-shortcuts');
+ for(const kind of ['site','text']){
+  const prefix=kind==='site'?'!':'#',rules=kind==='site'?(d.siteCommands||[]):(d.textReplacements||[]),box=el('section','custom-rule-group');
+  box.append(el('h3',null,kind==='site'?'Site içinde arama ve gezinme':'Metin değiştirme'),el('p','ds',kind==='site'?'!y doğa videoları ile site içinde arayın; yalnızca !y yazarak siteyi açın. Komutlar siz ekleyince çalışır.':'#adres gibi kısayolları yazıp Boşluk, Tab veya Enter ile kendi metninize dönüştürün. Parola ve giriş alanlarında çalışmaz.'));
+  const list=el('div','custom-rule-list'),form=el('form','custom-rule-form');form.hidden=true;form.dataset.kind=kind;let original='';
+  const field=(name,label,type='input')=>{const wrap=el('label'),control=el(type,'txt');control.name=name;control.autocomplete='off';control.spellcheck=false;wrap.append(el('span',null,label),control);form.append(wrap);return control;};
+  const key=field('trigger','Kısayol');key.placeholder=prefix+(kind==='site'?'y':'adres');key.maxLength=33;key.required=true;
+  let url,searchUrl,value;
+  if(kind==='site'){url=field('url','Site adresi');url.type='url';url.required=true;url.placeholder='https://www.youtube.com/';searchUrl=field('searchUrl','Arama adresi (isteğe bağlı)');searchUrl.type='url';searchUrl.placeholder='https://www.youtube.com/results?search_query={query}';form.append(el('p','ds','Arama kelimelerinin yerine {query} yazın. Boş bırakırsanız komut yalnızca siteyi açar.'));}
+  else{value=field('value','Dönüştürülecek metin','textarea');value.required=true;value.maxLength=4096;value.rows=3;}
+  const message=el('p','msg');message.setAttribute('role','alert');
+  const actions=el('div','custom-rule-actions'),save=button('Kaydet',()=>form.requestSubmit()),cancel=button('İptal',()=>{form.hidden=true;original='';});actions.append(save,cancel);form.append(message,actions);
+  const edit=rule=>{original=rule?.trigger||'';key.value=prefix+(rule?.trigger||'');if(kind==='site'){url.value=rule?.url||'';searchUrl.value=rule?.searchUrl||'';}else value.value=rule?.value||'';message.textContent='';form.hidden=false;key.focus();};
+  for(const rule of rules){const row=el('div','custom-rule'),text=el('div');text.append(el('code',null,prefix+rule.trigger),el('p','ds',kind==='site'?rule.url:rule.value));const controls=el('div','custom-rule-actions');controls.append(button('Düzenle',()=>edit(rule)),button('Sil',()=>api.call('shortcut-remove',{kind,trigger:rule.trigger}).then(load)));row.append(text,controls);list.append(row);}
+  if(!rules.length)list.append(el('p','ds','Henüz kısayol eklenmedi.'));
+  const add=el('div','custom-rule-actions');add.append(button('Kısayol ekle',()=>edit(null)));
+  if(kind==='site')for(const [name,keyName,site,search]of [['YouTube','y','https://www.youtube.com/','https://www.youtube.com/results?search_query={query}'],['Wikipedia','w','https://'+(window.LANG==='en'?'en':'tr')+'.wikipedia.org/','https://'+(window.LANG==='en'?'en':'tr')+'.wikipedia.org/w/index.php?search={query}']])add.append(button(name+' '+L('örneği','example'),()=>{edit(null);key.value='!'+keyName;url.value=site;searchUrl.value=search;}));
+  form.onsubmit=async event=>{event.preventDefault();save.disabled=true;try{const result=await api.call('shortcut-save',{kind,original,trigger:key.value,...(kind==='site'?{url:url.value,searchUrl:searchUrl.value}:{value:value.value})});if(result.error)message.textContent=result.error;else await load();}catch{message.textContent=L('Kısayol kaydedilemedi.','Could not save the shortcut.');}finally{save.disabled=false;}};
+  box.append(list,add,form);card.append(box);
+ }
+ card.append(el('p','custom-shortcut-note','Adres önerileri yalnızca daha önce arattığınız sorgulardan gelir. Gezinti geçmişini temizlemek bu aramaları da siler.'));
+ return [heading,card];
+}
+function shortcutSection(){
+  const heading=el('h2',null,'Klavye kısayolları');heading.id='kisayollar';const card=el('div','card');
+  for(const group of d.keyboardShortcuts||[]){const box=el('details','shortcut-group');box.append(el('summary',null,group.title));for(const item of group.items){const r=el('div','shortcut-row'),keys=el('span','shortcut-keys');for(const key of item.keys)keys.append(el('kbd',null,key));r.append(el('span',null,item.label),keys);box.append(r);}card.append(box);}
+  return [heading,card];
+}
+function appUpdateCommand(command){api.call(command).then(updateAppUpdateRow).catch(()=>updateAppUpdateRow({status:'error',message:'Güncellemeler denetlenemedi. Bağlantını kontrol edip tekrar deneyebilirsin.'}));}
+function appUpdateRow(){
+  const r=el('div','row update-row'),text=el('div','tx');text.append(el('div','lb','Güncellemeler'));
+  const status=el('div','ds');status.id='appUpdateStatus';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+  const note=el('div','update-note','“Sonra” seçildi. Güncelleme bildirimleri tekrar gösterilmeyecek.');note.id='appUpdatePaused';
+  const actions=el('div','update-actions');
+  for(const [id,label,command] of [['appUpdateCheck','Güncellemeleri denetle','app-update-check'],['appUpdateInstall','Güncelle','app-update-install']]){const b=button(label,()=>appUpdateCommand(command));b.id=id;actions.append(b);}
+  const release=button('Sürüm sayfasını aç',()=>api.call('app-update-release'));release.id='appUpdateRelease';actions.append(release);
+  const installNote=el('div','update-note','Yalnızca Güncelle dediğinde indirilir. Kurulum başlarken Calcium kapanır.');
+  text.append(status,note,installNote);r.append(text,actions);return r;
+}
+function updateAppUpdateRow(state){
+  if(!$('appUpdateStatus'))return;const u=state||{status:'idle',message:'Yeni sürümleri buradan denetleyebilirsin.'};
+  $('appUpdateStatus').textContent=u.message;$('appUpdatePaused').hidden=!u.notificationsPaused;
+  const busy=['checking','downloading','installing','launched'].includes(u.status),available=!!u.version&&u.status!=='current';
+  $('appUpdateCheck').disabled=busy;$('appUpdateInstall').disabled=busy;$('appUpdateInstall').hidden=!available||!u.canInstall;$('appUpdateRelease').hidden=!available||u.canInstall;
+}
+const THEME_BONE="<g transform=\"rotate(-45 12 12)\" fill=\"currentColor\"><rect x=\"5\" y=\"9\" width=\"14\" height=\"6\" rx=\"2\"/><circle cx=\"5\" cy=\"9\" r=\"3\"/><circle cx=\"5\" cy=\"15\" r=\"3\"/><circle cx=\"19\" cy=\"9\" r=\"3\"/><circle cx=\"19\" cy=\"15\" r=\"3\"/></g>";
+function themePreview(theme) {
+  const preview=el('div','pv '+(theme.mode==='system'?'system-bone':theme.mode==='dark'?'dark-bone':'light-bone'));
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
+  svg.innerHTML=theme.mode==='system'?'<defs><clipPath id="settings-system-light"><polygon points="0,0 0,24 24,24"/></clipPath><clipPath id="settings-system-dark"><polygon points="0,0 24,0 24,24"/></clipPath></defs><g clip-path="url(#settings-system-light)" color="#101010">'+THEME_BONE+'</g><g clip-path="url(#settings-system-dark)" color="#f5f5f5">'+THEME_BONE+'</g>':THEME_BONE;
+  preview.append(svg);return preview;
+}
 function render() {
   const themes=el('div','themes');
-  for(const t of d.themes){const b=el('button','th'+(d.theme===t.key?' on':''));const preview=el('div','pv');const top=el('i'),body=el('b');const dark=t.mode==='dark',system=t.mode==='system';top.style.background=system?'linear-gradient(90deg,#e3e3e3 50%,#111 50%)':dark?'#111':'#e3e3e3';body.style.background=system?'linear-gradient(90deg,#fff 50%,#292929 50%)':dark?'#292929':'#fff';preview.append(top,body);b.append(preview,el('div','nm',t.name));b.setAttribute('aria-pressed',String(d.theme===t.key));b.onclick=()=>set('theme',t.key);themes.append(b);}
+  for(const t of d.themes){
+    const b=el('button','th'+(d.theme===t.key?' on':''));b.type='button';b.dataset.theme=t.key;
+    const check=el('span','theme-check');check.setAttribute('aria-hidden','true');check.innerHTML='<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
+    b.append(themePreview(t),el('div','nm',t.name),check);b.setAttribute('aria-pressed',String(d.theme===t.key));b.onclick=()=>set('theme',t.key);themes.append(b);
+  }
   const advanced=(title,...rows)=>{const box=el('details','advanced');box.append(el('summary',null,title),...rows.filter(Boolean));return box;};
   const themeCard=el('div','card');themeCard.append(row('Tema','',themes),select('language',[['tr','Türkçe'],['en','English']],'Dil',''),select('uiFont',d.uiFonts.map(f=>[f.key,f.name]),'Tarayıcı yazı tipi','Yalnızca tarayıcı arayüzünü değiştirir; web sayfalarını etkilemez.'),toggle('pitchBlack','Tam siyah','Koyu temada siyah zemin kullan.'),toggle('forceDarkPages','Web sitelerini koyu göster','Yeniden başlatma gerekir.'));
   const appearance=el('h2',null,'Görünüm');appearance.id='gorunum';
@@ -254,14 +320,17 @@ function render() {
         row('Cihaz izinleri','USB, Bluetooth ve diğer cihazlar.',button('Göster',()=>api.call('device-grants'))))),
     ...siteSection(),
     ...section('araclar','Araçlar',row('Ses yükseltme','Her sekmenin sesini ayrı ayarla. En fazla %600.',null),toggle('hoverZoom','Resim büyütme','Resmin üzerine gel. Z ile sabitle, S ile indir.')),
+    ...customInputSection(),
+    ...shortcutSection(),
     ...section('indirmeler','İndirmeler',row('Kayıt konumu',d.downloadsDir,button('Klasörü aç',()=>api.call('open-downloads-folder'))),toggle('askDownloadLocation','İndirirken nereye kaydedileceğini sor','Her indirmede kayıt konumunu seç.')),
     ...section('uzantilar','Uzantılar ve reklam engelleme',
       toggle('calciumProtection','Calcium koruması','Bilinen üçüncü taraf reklam ve izleyicilerini engelle.'),
       row('Koruma listeleri','Otomatik güncellenir. Sorun yaşayan sitelerde sağ tık menüsünden Calcium korumasını kapatabilirsin.',button('Listeleri güncelle',()=>api.call('update-filters').then(r=>toast(r?.ok?'Güncelleme kontrolü tamamlandı.':'Bazı listeler güncellenemedi; mevcut koruma sürüyor.')))),
       row('uBlock Origin',d.uboError?'Başlatılamadı. Tarayıcıyı yeniden başlatın.':!d.ubo?'Yükleniyor…':'Her zaman açık.',button('uBlock ayarları',()=>api.call('ubo-dashboard'))),
       row('Uzantılar','Yüklü uzantıları yönet.',button('Yönet',()=>api.call('open-page','extensions')))),
-    ...section('hakkinda','Calcium hakkında',row('Calcium '+d.version,'Chromium '+d.chrome+' · Electron '+d.electron,null))
+    ...section('hakkinda','Calcium hakkında',row('Calcium '+d.version,'Chromium '+d.chrome+' · Electron '+d.electron,null),appUpdateRow())
   );
+  updateAppUpdateRow(d.appUpdate);
 }
 
 // ================================================================ Protected sites
@@ -599,7 +668,7 @@ async function load() {
   if (firstLoad) { firstLoad = false; setTimeout(hashAction, 50); }
 }
 if (api) {
-  api.onUpdate((p) => { applyTheme(p.theme); if (!p.changed || p.changed === 'settings') load(); });
+  api.onUpdate((p) => { if(p.theme)applyTheme(p.theme);if(p.changed==='app-update'){updateAppUpdateRow(p.updateState);return;} if (!p.changed || p.changed === 'settings') load(); });
   api.get().then((p) => applyTheme(p.theme)).catch(() => {});
   load();
 }

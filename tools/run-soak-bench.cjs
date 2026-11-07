@@ -1,0 +1,20 @@
+'use strict';
+const fs=require('fs'),os=require('os'),path=require('path'),{spawn}=require('child_process');
+const root=path.join(__dirname,'..');
+const arg=name=>{const i=process.argv.indexOf(name);return i<0?null:process.argv[i+1];};
+const minutes=Number(arg('--minutes')||120);
+if(!Number.isFinite(minutes)||minutes<1||minutes>1440)throw Error('--minutes must be between 1 and 1440');
+const output=path.join(root,'dist','soak',new Date().toISOString().replace(/[:.]/g,'-'));fs.mkdirSync(output,{recursive:true});
+const profile=fs.mkdtempSync(path.join(os.tmpdir(),'calcium-soak-'));
+fs.writeFileSync(path.join(profile,'ayarlar.json'),JSON.stringify({firstRunDone:true,language:'en',askDownloadLocation:false,keepLogins:false}));
+const env={...process.env,CALCIUM_PROFILE:profile,CALCIUM_TEST_MODE:'1',CALCIUM_SOAK_MINUTES:String(minutes),CALCIUM_SOAK_OUTPUT:output};delete env.ELECTRON_RUN_AS_NODE;
+console.log('Isolated uBlock-enabled soak:',minutes,'minutes; output:',output);
+const child=spawn(require('electron'),[path.join(__dirname,'bench-soak.cjs')],{cwd:root,env,stdio:'inherit',windowsHide:true});
+let timedOut=false;const watchdog=setTimeout(()=>{timedOut=true;child.kill();},(minutes*60+180)*1000);
+child.on('error',e=>{console.error(e);process.exitCode=1;});
+child.on('close',code=>{
+ clearTimeout(watchdog);
+ if(path.dirname(path.resolve(profile))!==path.resolve(os.tmpdir())||!path.basename(profile).startsWith('calcium-soak-'))throw Error('Unsafe profile cleanup');
+ fs.rmSync(profile,{recursive:true,force:true,maxRetries:5,retryDelay:200});
+ process.exitCode=timedOut?1:code??1;
+});

@@ -1,5 +1,12 @@
 'use strict';
 const { contextBridge, ipcRenderer, webFrame } = require('electron');
+// Keep Ctrl+wheel consistent inside WebContentsView, including scrollable panels.
+let lastZoomWheel=0;
+window.addEventListener('wheel',event=>{
+ if(!event.isTrusted||!event.ctrlKey||!event.deltaY)return;
+ event.preventDefault();const now=performance.now();if(now-lastZoomWheel<80)return;lastZoomWheel=now;
+ ipcRenderer.send('calcium-zoom-wheel',event.deltaY<0?1:-1);
+},{capture:true,passive:false});
 
 // Run in the main world BEFORE the page's own scripts
 function inMainWorld(fn) {
@@ -11,7 +18,7 @@ function inMainWorld(fn) {
 
 // 1) The browser's own local pages (new tab, welcome, history, downloads): shortcuts, theme, list API.
 //    This API is never created on other sites. The main process also checks the sender page on every command.
-if (location.protocol === 'file:' && /\/(newtab|welcome|history|downloads|settings|extensions|taskmanager|securitywarning)\.html$/.test(location.pathname)) {
+if (location.protocol === 'file:' && /\/(newtab|welcome|history|downloads|settings|extensions|taskmanager|securitywarning|update-notice)\.html$/.test(location.pathname)) {
   contextBridge.exposeInMainWorld('pageApi', {
     lang: ipcRenderer.sendSync('calcium-lang'),
     getFont:()=>ipcRenderer.invoke('calcium-ui-font'),
@@ -28,6 +35,13 @@ if(/^https?:$/.test(location.protocol)){
  window.addEventListener('input',e=>{if(!reported&&e.isTrusted){reported=true;ipcRenderer.send('calcium-form-dirty');}},{capture:true,passive:true});
 }
 
+// User-configured text expansion stays in its own isolated world and ignores secret/login fields.
+if(/^https?:$/.test(location.protocol)){
+ let source=null;
+ const apply=rules=>{if(source)webFrame.executeJavaScriptInIsolatedWorld(1017,[{code:'('+source+')('+JSON.stringify(rules)+')'}]).catch(()=>{});};
+ ipcRenderer.invoke('calcium-text-shortcuts').then(pack=>{if(!pack)return;source=pack.script;webFrame.setIsolatedWorldInfo(1017,{name:'Calcium text replacements',securityOrigin:location.origin,csp:"default-src 'none'"});apply(pack.rules);}).catch(()=>{});
+ ipcRenderer.on('calcium-text-shortcuts-changed',(_e,rules)=>apply(rules));
+}
 // Capture visible link labels; no background page or media needs to load just for a title.
 if (/^https?:$/.test(location.protocol)) {
   window.addEventListener('mousedown',e=>{

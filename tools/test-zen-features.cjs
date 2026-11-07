@@ -4,8 +4,8 @@ const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('ass
 const root=path.join(__dirname,'..');
 ipcMain.handle('calcium-ui-font',()=>null);
 ipcMain.on('calcium-lang',e=>e.returnValue='tr');
-let submitted=null, moved=null;
-ipcMain.on('ui',(_e,cmd,arg)=>{if(cmd==='newtab-submit')submitted=arg;if(cmd==='move-tab')moved=arg;});
+let submitted=null, moved=null, activated=null;
+ipcMain.on('ui',(_e,cmd,arg)=>{if(cmd==='newtab-submit')submitted=arg;if(cmd==='activate')activated=arg;if(cmd==='move-tab')moved=arg;if(['menu-close','newtab-cancel'].includes(cmd))_e.sender.send('menu-closed',{refocus:true});});
 app.whenReady().then(async()=>{
  const win=new BrowserWindow({show:false,width:1100,height:760,webPreferences:{preload:path.join(root,'vendor','ui-sandbox-preload.js'),sandbox:true,contextIsolation:true}});
  let preloadError=null;win.webContents.on('preload-error',(_e,_p,e)=>preloadError=e);
@@ -44,6 +44,25 @@ app.whenReady().then(async()=>{
    const p=grid.querySelector('.placeholder'),placeholder={opacity:getComputedStyle(p).opacity,filter:getComputedStyle(p.querySelector('.ico')).filter,iconOpacity:getComputedStyle(p.querySelector('.ico')).opacity,shadow:getComputedStyle(p).boxShadow};window.dispatchEvent(new MouseEvent('mouseup',{button:0}));return {order,awake,sleeping,placeholder};
  })()`);
  assert.equal(dragResult.order[3],1);assert.deepEqual(dragResult.sleeping,dragResult.awake);assert.equal(dragResult.placeholder.opacity,'1');assert.equal(dragResult.placeholder.filter,'none');assert.equal(dragResult.placeholder.iconOpacity,'1');assert(dragResult.placeholder.shadow.includes('255, 0, 0'));
+
+ const normalGhost=await win.webContents.executeJavaScript(`(()=>{const el=document.querySelector('#tabs .tab'),r=el.getBoundingClientRect(),panel=document.querySelector('#vtabs'),height=panel.scrollHeight;el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0,clientX:r.left+30,clientY:r.top+10}));window.dispatchEvent(new MouseEvent('mousemove',{clientX:r.left+30,clientY:r.top+300}));const ghost=document.querySelector('.tab-drag-ghost'),result=ghost&&ghost.parentElement===document.body&&getComputedStyle(ghost).position==='fixed'&&panel.scrollHeight===height;window.dispatchEvent(new MouseEvent('mouseup',{clientX:r.left+30,clientY:r.top+300}));return result&&!document.querySelector('.tab-drag-ghost');})()`);assert(normalGhost,'normal vertical dragging floats outside clipping without adding overflow');
+ // Tab rows have one entry point and support arrow navigation plus explicit activation.
+ const expectedActivated=await win.webContents.executeJavaScript(`(()=>{const active=document.querySelector('.tab[aria-selected="true"]');active.focus();active.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true}));document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));return Number(document.activeElement.dataset.id);})()`);await new Promise(r=>setTimeout(r,30));assert.equal(activated,expectedActivated);assert.notEqual(activated,state.activeId);
+ // Shared overlay focus rules: safe default, trapped Tab, nested Escape, and return target.
+ await win.webContents.executeJavaScript(`document.querySelector('#url').focus()`);
+ win.webContents.send('menu-open',{kind:'context',anchor:{x:20,y:80},data:{restoreUi:true,items:[{label:'First',act:'noop'},{label:'Disabled',dis:true},{label:'Submenu',children:[{label:'Child',act:'noop'}]}]}});await new Promise(r=>setTimeout(r,50));
+ const key=async(key,shiftKey=false)=>{await win.webContents.executeJavaScript('document.activeElement.dispatchEvent(new KeyboardEvent("keydown",'+JSON.stringify({key,shiftKey,bubbles:true,cancelable:true})+'))');await new Promise(r=>setTimeout(r,30));};
+ assert.equal(await win.webContents.executeJavaScript('document.activeElement.textContent'),'First');
+ await key('ArrowDown');assert((await win.webContents.executeJavaScript('document.activeElement.textContent')).includes('Submenu'),'arrow navigation skips disabled items');
+ await key('ArrowRight');assert.equal(await win.webContents.executeJavaScript('document.activeElement.textContent'),'Child');
+ await key('Escape');assert.equal(await win.webContents.executeJavaScript('document.querySelectorAll("#pop .panel").length'),1,'Escape closes only the submenu first');
+ await key('Tab');assert.equal(await win.webContents.executeJavaScript('document.activeElement.textContent'),'First','Tab stays in the menu');
+ await key('Escape');assert.equal(await win.webContents.executeJavaScript('document.activeElement.id'),'url','dismissal restores address editing without opening search');
+ win.webContents.send('prompt-open',{id:1,title:'Permission',rows:[],cancel:'Block',ok:'Allow'});await new Promise(r=>setTimeout(r,30));
+ assert.equal(await win.webContents.executeJavaScript('document.activeElement.textContent'),'Block','permission starts on safe action');
+ await key('Tab',true);assert.equal(await win.webContents.executeJavaScript('document.activeElement.className'),'bx');
+ await key('Tab',true);assert.equal(await win.webContents.executeJavaScript('document.activeElement.textContent'),'Allow','Shift+Tab wraps within permission bubble');
+ win.webContents.send('prompt-close');await new Promise(r=>setTimeout(r,20));
  win.webContents.send('newtab-prompt',{searchName:'Google'});await new Promise(r=>setTimeout(r,100));
  assert.equal(await win.webContents.executeJavaScript(`document.querySelector('#newtabPrompt').hidden`),false);
  const inputTop=await win.webContents.executeJavaScript(`document.querySelector('#newtabQuery').getBoundingClientRect().top`);
@@ -74,6 +93,7 @@ app.whenReady().then(async()=>{
  const grayPixels=Buffer.alloc(4*4*4,160);for(let i=3;i<grayPixels.length;i+=4)grayPixels[i]=255;tab.favicon=nativeImage.createFromBitmap(grayPixels,{width:4,height:4}).toDataURL();await ctx.updateIconColor(tab);assert.equal(tab.iconColor,'#a0a0a0','monochrome icon has a stable neutral accent');
  let shown=0;const reveal={settings:{verticalAutoHide:true},W:{sideClosing:true},vertical:()=>true,clearTimeout:()=>{},openSide:()=>shown++,Date};vm.createContext(reveal);vm.runInContext(source.slice(source.indexOf('function revealPinChange('),source.indexOf('function togglePin(')),reveal);reveal.revealPinChange();assert.equal(shown,1);assert.equal(reveal.W.sideClosing,false);assert(reveal.W.sideHoldUntil>Date.now()+1000);
  let pins=0,bookmarks=0;const keys={isMac:false,settings:{bookmarksEnabled:false},activeId:1,togglePin:()=>pins++,revealPinChange:()=>{},toggleBookmark:()=>bookmarks++};vm.createContext(keys);vm.runInContext(source.slice(source.indexOf('function handleShortcut('),source.indexOf('// ---------------------------------------------------------------- Menus')),keys);keys.handleShortcut({key:'d',control:true});assert.equal(pins,1);assert.equal(bookmarks,0);keys.settings.bookmarksEnabled=true;keys.handleShortcut({key:'d',control:true});assert.equal(bookmarks,1);
+ let menus=0;keys.send=()=>menus++;assert.equal(keys.handleShortcut({key:'F10',shift:true}),false,'Shift+F10 is reserved for the focused item context menu');keys.handleShortcut({key:'F10'});assert.equal(menus,1);
  console.log('PASS: pinned grid + floating horizontal drag, sleeping grayscale, favicon accent, bookmarks off + Ctrl+D pin, centered search and deferred titles.');
  server.close();win.destroy();app.quit();
 }).catch(e=>{console.error(e);app.exit(1)});

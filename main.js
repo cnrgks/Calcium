@@ -1,4 +1,9 @@
 'use strict';
+// A terminal/test runner may close its output pipe while Electron is still
+// running. Logging to that pipe must not produce a main-process error dialog.
+for (const stream of [process.stdout, process.stderr]) {
+  stream?.on('error', error => { if (error.code !== 'EPIPE') throw error; });
+}
 /*
  * Calcium - lightweight, privacy-focused browser (Electron / Chromium engine)
  *  - NO required Google account / sync / sign-in
@@ -33,6 +38,7 @@ const {createWorkQueue}=require('./bounded-work-queue');
 const {readBoundedJson}=require('./bounded-json');
 const {UI_FONTS,validUiFont,uiFontFamily}=require('./ui-fonts');
 const {contextMenuModel}=require('./context-menu-model');
+const customShortcuts=require('./custom-shortcuts');
 
 // Separate profile folder for tests: does not touch the user's running Calcium or data (single-instance lock is per folder too)
 if (process.env.CALCIUM_PROFILE) app.setPath('userData', process.env.CALCIUM_PROFILE);
@@ -64,6 +70,8 @@ const DEFAULTS = {
   theme: 'sistem',
   uiFont:'default',
   firstRunDone: false,
+  updatePromptDismissed:false,updatePromptOfferedVersion:'',
+  siteCommands:[],textReplacements:[],
   shortcuts: [],             // favorites on the new tab page {title, url, icon}
   bookmarksEnabled: false,
   bookmarks: [],
@@ -99,6 +107,9 @@ if (!settings.isolationSecurityMigration) { settings.strictIsolation=true;settin
 if(!Array.isArray(settings.calciumAllowedSites))settings.calciumAllowedSites=[];
 if(!Array.isArray(settings.sleepExcludedSites))settings.sleepExcludedSites=[];
 if(!Array.isArray(settings.deviceGrants))settings.deviceGrants=[];
+settings.siteCommands=customShortcuts.normalizeRules('site',settings.siteCommands);settings.textReplacements=customShortcuts.normalizeRules('text',settings.textReplacements);
+settings.updatePromptDismissed=settings.updatePromptDismissed===true;
+if(typeof settings.updatePromptOfferedVersion!=='string'||settings.updatePromptOfferedVersion.length>32)settings.updatePromptOfferedVersion='';
 settings.bookmarksEnabled=false;settings.tabAudio=false;settings.downloadNotify=false;
 settings.restoreSession=true;delete settings.adblockEngine;delete settings.checkUpdates;delete settings.newtabTitle;
 if(!['sistem','acik','koyu'].includes(settings.theme))settings.theme=['gece','orman','murdum'].includes(settings.theme)?'koyu':'acik';
@@ -108,6 +119,53 @@ function saveSettings(now = false) {
   const write = () => { try { fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true }); fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2)); } catch (e) { console.warn('Could not save settings:', e.message); } };
   if (now) write(); else saveTimer = setTimeout(write, 300);
 }
+// Application updates are opt-in to download/install; startup only reads release metadata.
+const appUpdates=require('./app-updates').createAppUpdates({
+ currentVersion:app.getVersion(),cacheDir:path.join(app.getPath('userData'),'updates'),
+ canInstall:app.isPackaged&&process.platform==='win32'&&process.arch==='x64',
+ readPreferences:()=>settings,savePreferences:patch=>{Object.assign(settings,patch);saveSettings(true);},
+ launchInstaller:async(file,digest)=>{
+  // The hidden helper waits for this process to exit, verifies again, then starts NSIS.
+  await require('./app-updates').launchWindowsInstaller(file,digest);
+  setTimeout(()=>app.quit(),100);
+ },onChange:()=>publishAppUpdates()
+});
+let updateStartupScheduled=false;
+function scheduleUpdateCheck(){
+ if(updateStartupScheduled||!settings.firstRunDone||!app.isPackaged||process.platform!=='win32'||process.env.CALCIUM_TEST_MODE)return;
+ updateStartupScheduled=true;setTimeout(()=>appUpdates.check({manual:false}),10000).unref();
+}
+function appUpdateData(){
+ const s=appUpdates.snapshot();
+ const errors={check:'Güncellemeler denetlenemedi. Bağlantını kontrol edip tekrar deneyebilirsin.',manifest:'Bu sürüm için doğrulanmış kurulum dosyası bulunamadı.',integrity:'Kurulum dosyası doğrulanamadı. Dosya çalıştırılmadı.',download:'Güncelleme tamamlanamadı. Tekrar deneyebilirsin.',unsupported:'Bu kurulumda otomatik yükleme kullanılamıyor. Sürüm sayfasından indirebilirsin.'};
+ const labels={idle:'Yeni sürümleri buradan denetleyebilirsin.',checking:'Güncellemeler denetleniyor…',current:'Calcium güncel.',available:T('Yeni sürüm')+': '+s.version,downloading:T('Güncelleme indiriliyor…')+(uiLang()==='en'?' '+s.progress+'%':' %'+s.progress),installing:'Kurulum başlatılıyor…',launched:'Kurulum başlatıldı.'};
+ return {...s,message:s.status==='error'?T(errors[s.error]||errors.download):T(labels[s.status]||labels.idle)};
+}
+function closeUpdateNotice(w){
+ const view=w.updateNotice;if(!view)return;w.updateNotice=null;
+ try{w.win?.contentView.removeChildView(view);if(!view.webContents.isDestroyed())view.webContents.close();}catch{}
+}
+function layoutUpdateNotice(w){
+ if(!w?.win||!w.updateNotice)return;
+ const {width,height}=w.win.getContentBounds(),top=inWin(w,()=>vertical()?TOOLBAR+(hasBookmarks()?BOOKMARKS:0)+(findOpen?FINDBAR:0):uiHeight())+8;
+ const visible=!(w===W?overlayOpen:w.overlayOpen)&&!w.win.isFullScreen()&&height-top>120;
+ w.updateNotice.setVisible(visible);w.updateNotice.setBounds({x:Math.max(6,width-372),y:top,width:Math.min(360,width-12),height:Math.min(190,Math.max(1,height-top-6))});
+ if(visible)w.win.contentView.addChildView(w.updateNotice);
+}
+function publishAppUpdates(){
+ const state=appUpdateData();const owner=windows.find(w=>w.updateNotice)||lastWin(true);
+ for(const w of windows){
+  if(!state.notice||w!==owner||w.incognito){closeUpdateNotice(w);}else if(!w.updateNotice){
+   const view=w.updateNotice=new WebContentsView({webPreferences:{session:mainSes,preload:path.join(__dirname,'page-preload.js'),sandbox:true,contextIsolation:true,nodeIntegration:false,spellcheck:false}});
+   view.setBackgroundColor('#00000000');view.webContents.setWindowOpenHandler(()=>({action:'deny'}));view.webContents.on('will-navigate',event=>event.preventDefault());
+   view.webContents.loadFile(path.join(__dirname,'update-notice.html'));w.win.contentView.addChildView(view);
+  }
+  layoutUpdateNotice(w);
+  for(const tab of w.tabs){if(tab.view&&pageKind(tab.url)==='settings')try{tab.view.webContents.send('page-update',{changed:'app-update',updateState:state});}catch{}}
+  if(w.updateNotice&&!w.updateNotice.webContents.isDestroyed())w.updateNotice.webContents.send('page-update',{updateState:state});
+ }
+}
+
 // Once on old installs: the user wanted site logins to persist; Google clearing is turned off
 if (!settings.keepLoginsSet) { settings.clearGoogleOnExit = false; settings.keepLogins = true; settings.keepLoginsSet = true; saveSettings(true); }
 // Nov 2026: image zoom is now on by default (turned on once, since old installs have "off" saved in the file)
@@ -134,6 +192,7 @@ const WELCOME_URL = pathToFileURL(path.join(__dirname, 'welcome.html')).href;
 const HISTORY_URL = pathToFileURL(path.join(__dirname, 'history.html')).href;
 const DOWNLOADS_URL = pathToFileURL(path.join(__dirname, 'downloads.html')).href;
 const SETTINGS_URL = pathToFileURL(path.join(__dirname, 'settings.html')).href;
+const UPDATE_NOTICE_URL=pathToFileURL(path.join(__dirname,'update-notice.html')).href;
 const SECURITY_URL = pathToFileURL(path.join(__dirname, 'securitywarning.html')).href;
 const TASKS_URL = pathToFileURL(path.join(__dirname, 'taskmanager.html')).href;
 const EXTENSIONS_URL = pathToFileURL(path.join(__dirname, 'extensions.html')).href;
@@ -155,6 +214,7 @@ const PAGE_ALIASES = {
 function pageKind(u) {
   const b = baseOf(u);
   if (b === SECURITY_URL) return 'security';
+  if (b === UPDATE_NOTICE_URL) return 'update-notice';
   if (b === TASKS_URL) return 'tasks';
   if (b === HISTORY_URL) return 'history';
   if (b === DOWNLOADS_URL) return 'downloads';
@@ -190,6 +250,24 @@ function writeList(f, data, now) {
 }
 const saveHistory = (now = false) => writeList(HISTORY_FILE, () => history, now);
 const saveDownloads = (now = false) => writeList(DOWNLOADS_FILE, () => downloads.filter((d) => !d.incognito).map(({ item, ...d }) => d), now);
+const SEARCH_HISTORY_FILE=path.join(app.getPath('userData'),'aramalar.json');
+let searchHistory=readJsonArray(SEARCH_HISTORY_FILE).filter(h=>h&&typeof h.query==='string'&&h.query.length<=1024&&h.t>Date.now()-90*864e5).slice(0,500);
+const saveSearchHistory=(now=false)=>writeList(SEARCH_HISTORY_FILE,()=>searchHistory,now);
+function recordSearch(query){
+ if(!query||query.length>1024)return;const list=W.incognito?(W.searchHistory||(W.searchHistory=[])):searchHistory;
+ const key=query.toLocaleLowerCase('tr'),next=[{query,t:Date.now()},...list.filter(h=>h.query.toLocaleLowerCase('tr')!==key)].slice(0,500);
+ if(W.incognito)W.searchHistory=next;else{searchHistory=next;saveSearchHistory();}
+}
+ipcMain.handle('calcium-text-shortcuts',e=>{
+ const tab=byWcId.get(e.sender.id);if(!tab||e.sender.session!==tab.w.ses||!/^https?:/i.test(e.senderFrame?.url||''))return null;
+ return {rules:settings.textReplacements,script:require('./text-expansion').installTextExpansion.toString()};
+});
+ipcMain.on('calcium-zoom-wheel',(event,direction)=>{
+ const tab=byWcId.get(event.sender.id);if(!tab||event.senderFrame!==event.sender.mainFrame||![1,-1].includes(direction))return;
+ setPageZoom(event.sender,direction);
+});
+function broadcastTextShortcuts(){for(const t of allTabs())if(t.view&&!t.view.webContents.isDestroyed())t.view.webContents.send('calcium-text-shortcuts-changed',settings.textReplacements);}
+
 // Session: URLs of open tabs. Local pages are stored by short name (calcium://...) so they open even if the folder moves.
 const SESSION_FILE = path.join(app.getPath('userData'), 'oturum.json');
 // Incognito windows are not saved. When the last normal window closes (or on quit) the last snapshot is kept.
@@ -386,7 +464,7 @@ function useWin(w) {
   return w;
 }
 const downloadPanels=new Map(),taskPanels=new Map();
-const winOfWc = (wc) => { const t = wc && !wc.isDestroyed() ? byWcId.get(wc.id) : null; return t ? t.w : [...downloadPanels,...taskPanels].find(([,p])=>p.webContents===wc)?.[0] || null; };
+const winOfWc = (wc) => { const t = wc && !wc.isDestroyed() ? byWcId.get(wc.id) : null; return t ? t.w : windows.find(w=>w.updateNotice?.webContents===wc) || [...downloadPanels,...taskPanels].find(([,p])=>p.webContents===wc)?.[0] || null; };
 const allTabs = () => windows.flatMap((w) => w.tabs);
 // Run a job in another window, then switch back to the previous one
 function inWin(w, fn) {
@@ -404,7 +482,7 @@ const uiHeight = () => (htmlFullscreen ? 0
 const UBO_DIR=path.join(__dirname,'vendor','ublock').replace(/app\.asar(?=[\\/])/,'app.asar.unpacked');
 let uboId=null,eceReadyResolve,mainBlockResolve;
 const eceReady=new Promise(r=>eceReadyResolve=r),mainBlockReady=new Promise(r=>mainBlockResolve=r);
-const uboLoads=new WeakMap(),uboErrors=new WeakMap();
+const uboLoads=new WeakMap(),uboErrors=new WeakMap(),privateContent=new WeakMap();
 const bridgeFor=w=>w.incognito?null:extensions;
 const uboPage=p=>uboId?`chrome-extension://${uboId}/${p}`:null;
 function ensureUBlock(target){
@@ -416,7 +494,11 @@ function ensureUBlock(target){
   if(target!==mainSes){
    if(!await ensureUBlock(mainSes))throw Error('uBlock Origin is unavailable');
    const background=()=>webContents.getAllWebContents().find(w=>!w.isDestroyed()&&w.session===mainSes&&w.getURL().startsWith(uboPage('background.html')));
-   await require('./private-ubo').attachPrivateUBlock(target,background,webContents);
+   const content=require('./private-content').attachPrivateContent({ses:target,getBackground:background,ipcMain,preloadPath:path.join(__dirname,'private-content-preload.js')});
+   privateContent.set(target,content);
+   await require('./private-ubo').attachPrivateUBlock(target,background,webContents,content.prepare);
+   // A cosmetic adapter failure must not remove the already working network filter.
+   try{await background().executeJavaScript(content.install);}catch(error){console.warn('Private cosmetic filtering:',error.message);}
    return true;
   }
   try{target.registerPreloadScript({id:'calcium-mv2-bridge',type:'frame',filePath:path.join(__dirname,'mv2-bridge.js')});}catch{}
@@ -641,6 +723,7 @@ function getIncognitoSession() {
 function endIncognito() {
   if (!incognitoSes || windows.some((w) => w.incognito)) return;
   devicePolicies.get(incognitoSes)?.clear();
+  privateContent.get(incognitoSes)?.clear();
   for(const key of iconColors.keys())if(key.startsWith('private:'))iconColors.delete(key);
   incognitoSes.clearStorageData().catch(() => {});
   incognitoSes.clearCache().catch(() => {});
@@ -979,7 +1062,8 @@ function createView(tab) {
     if (e.isMainFrame && !e.isSameDocument) { navigationEpoch.set(wc,(navigationEpoch.get(wc)||0)+1); tab.blocked = 0; tab.favicon = null; tab.iconColor=null; }
   });
   on('did-navigate', (_e, url, code) => { tab.formDirty=false;tab.mediaPermission=false;tab.url = url; if (!code || code < 400) recordVisit(tab, url, wc); pushState(); });
-  on('did-navigate-in-page', (_e, url, isMain) => {
+  on('did-navigate-in-page', (_e, url, isMain, frameProcessId, frameRoutingId) => {
+    if(tab.w.incognito){try{wc.sendToFrame([frameProcessId,frameRoutingId],'calcium-private-content-refresh');}catch{}}
     if (!isMain) return;
     tab.url = url;
     if (!tab.hist || tab.hist.url.split('#')[0] !== url.split('#')[0]) recordVisit(tab, url, wc);   // single-page sites like YouTube
@@ -992,10 +1076,19 @@ function createView(tab) {
   on('dom-ready', () => { if (settings.hoverZoom) applyHoverZoom(wc); });
   // While volume boost is on, apply it to newly loaded pages and embedded players too
   on('did-frame-finish-load', (_e, isMain, pid, rid) => {
+    if(!isMain){
+      const frame=webFrameMain.fromId(pid,rid);
+      if(frame&&/^(https?:|about:)/.test(frame.url)){
+        const install=require('./overlay-scrollbar').installOverlayScrollbars.toString();
+        frame.executeJavaScript(`(${install})(css=>{const sheet=new CSSStyleSheet();sheet.replaceSync(css);document.adoptedStyleSheets=[...document.adoptedStyleSheets,sheet];})`).catch(()=>{});
+      }
+    }
     if ((tab.volume || 100) === 100) return;
     applyVolume(wc, isMain ? null : webFrameMain.fromId(pid, rid), tab.volume);
   });
   on('render-process-gone', () => { tab.title = 'Sayfa çöktü - yenileyin'; tab.loading = false; pushState(); });
+  wc.setZoomMode('manual');wc.setZoomFactor(tab.zoomFactor||1);
+  on('zoom-changed',(event,direction)=>{event.preventDefault();setPageZoom(wc,direction==='in'?1:-1);});
   on('before-input-event', (e, input) => { if (handleShortcut(input)) e.preventDefault(); });
   on('context-menu', (_e, p) => showContextMenu(wc, p));
   on('found-in-page', (_e, r) => send('found', { active: r.activeMatchOrdinal, total: r.matches }));
@@ -1406,6 +1499,7 @@ const vertical = () => !!settings.verticalTabs && !htmlFullscreen;
 function layout() {
   if (!win || !ui) return;
   const fullscreen=htmlFullscreen||win.isFullScreen();ui.setVisible(!fullscreen);
+  if(fullscreen&&W?.updateNotice)W.updateNotice.setVisible(false);
   if(fullscreen){const {width,height}=win.getContentBounds();ui.setBounds({x:0,y:0,width,height:0});const t=activeTab();if(t?.view){t.view.setBounds({x:0,y:0,width,height});win.contentView.addChildView(t.view);if(W)W.uiAbove=false;}return;}
   const { width, height } = win.getContentBounds();
   const t = activeTab();
@@ -1419,11 +1513,12 @@ function layout() {
       t.view.setBounds({ x: sw, y: top, width: Math.max(0, width - sw), height: Math.max(0, height - top) });
       if (!overlayOpen && W && !W.sideClosing && W.uiAbove) { win.contentView.addChildView(t.view); W.uiAbove = false; }   // page back on top
     }
-    return;
+    layoutUpdateNotice(W);return;
   }
   const h = uiHeight();
   ui.setBounds({ x: 0, y: 0, width, height: overlayOpen ? height : h });
   if (t && t.view) t.view.setBounds({ x: 0, y: h, width, height: Math.max(0, height - h) });
+  layoutUpdateNotice(W);
 }
 // Bring the UI to the top (menus, bubbles, revealed sidebar)
 function raiseUi() { win.contentView.addChildView(ui); if (W) W.uiAbove = true; }
@@ -1473,7 +1568,7 @@ function openSide() {
     if (!windows.includes(w) || w.win.isDestroyed()) { clearInterval(w.sideWatch); return; }
     inWin(w, () => {
       if (!overlayOpen || overlayKind !== 'side') { clearInterval(w.sideWatch); return; }
-      if (w.tabDragging) return;
+      if (w.tabDragging || w.sideKeyboardFocus) return;
       const p = screen.getCursorScreenPoint(), b = win.getContentBounds();
       const x = p.x - b.x, y = p.y - b.y;
       const top = TOOLBAR + (hasBookmarks() ? BOOKMARKS : 0) + (findOpen ? FINDBAR : 0);
@@ -1506,6 +1601,7 @@ function pushState() {
     onboarding:!settings.firstRunDone,
     tabs: tabs.map((x) => ({
       id: x.id, title: x.title, favicon: x.favicon, loading: x.loading && !!x.view,
+      sleepExcluded:settings.sleepExcludedSites.includes(calciumSite(x.url)),
       iconColor: x.iconColor || null, sleeping: !x.view || !!x.pendingNavigation, audible: x.audible, pinned: !!x.pinned, muted: !!x.muted, volume: x.volume || 100
     })),
     activeId,
@@ -1514,12 +1610,14 @@ function pushState() {
     incognito: !!W.incognito,
     tabAudio: !!settings.tabAudio,
     newTabPrompt: settings.newTabPrompt !== false,
+    textReplacements:settings.textReplacements,
     vertical: vertical(), autoHide: !!settings.verticalAutoHide, sideWidth: sideWidth(win.getContentBounds().width), sideMin: SIDE_MIN,
     sideOpen: overlayOpen && (overlayKind === 'side' || overlayKind === 'sidedrag'), sideEdge: 60,
     ubo: !!uboId && !W.incognito,
     windows: windows.length,
     extSupport: !!extensions && !W.incognito,
     hiddenExt: settings.hiddenExtensions,
+    zoom:wc?Math.round(wc.getZoomFactor()*100):Math.round((t?.zoomFactor||1)*100),
     volume: t ? (t.volume || 100) : 100,
     canVolume: !!t && /^https?:/i.test(t.url),
     url: t ? displayUrl(t.url) : '',
@@ -1545,7 +1643,12 @@ const withActive = (fn) => { const t = activeTab(); if (t && t.view) fn(t.view.w
 const goBack = () => withActive((wc) => (wc.navigationHistory ? wc.navigationHistory.goBack() : wc.goBack()));
 const goForward = () => withActive((wc) => (wc.navigationHistory ? wc.navigationHistory.goForward() : wc.goForward()));
 const goHome = () => withActive((wc, t) => { t.url = newtabUrl(); go(wc, t.url); });
-const zoom = (d) => withActive((wc) => wc.setZoomLevel(d === 0 ? 0 : wc.getZoomLevel() + d));
+function setPageZoom(wc,direction){
+ const tab=byWcId.get(wc.id);if(!tab||wc.isDestroyed())return;
+ const current=Math.round(wc.getZoomFactor()*100),next=direction===0?100:Math.max(25,Math.min(500,Math.round(current/10)*10+(direction>0?10:-10)));
+ wc.setZoomFactor(next/100);tab.zoomFactor=next/100;inWin(tab.w,()=>schedulePush());
+}
+const zoom=direction=>withActive(wc=>setPageZoom(wc,direction));
 
 function focusUrl(search = false) {
   if (settings.newTabPrompt !== false) { openSearchPrompt('address', search ? '' : displayUrl(activeTab()?.url || '')); return; }
@@ -1566,39 +1669,14 @@ function closeFind() {
   withActive((wc) => wc.focus());
 }
 
-// From local history and bookmarks only. Keystrokes are NOT sent to the search engine.
-const SEARCH_PAGE = /\/search\?|[?&](q|text|query)=/i;
-function omniSuggest(text) {
-  const q = String(text || '').trim().toLocaleLowerCase('tr');
-  if (!q) return { items: [], inline: '' };
-  const words = q.split(/\s+/).filter(Boolean);
-  const found = new Map();
-  const now = Date.now();
-  const consider = (url, title, kind, t, favicon) => {
-    if (!/^https?:/i.test(url) || (kind === 'hist' && SEARCH_PAGE.test(url))) return;
-    const prev = found.get(url);
-    if (prev) { prev.score += 6; if (!prev.favicon && favicon) prev.favicon = favicon; return; }   // frequently visited ranks higher
-    const hp = url.toLowerCase().replace(/^https?:\/\/(www\.)?/, '');
-    const ti = String(title || '').toLocaleLowerCase('tr');
-    if (!words.every((w) => hp.includes(w) || ti.includes(w))) return;
-    let score = hp.startsWith(q) ? 100 : hp.includes(q) ? 30 : 0;
-    if (ti.startsWith(q)) score += 20;
-    if (kind === 'bm') score += 40;
-    score += Math.max(0, 20 - (now - t) / 864e5);
-    found.set(url, { url, title: title || '', kind, score, favicon: favicon || null });
-  };
-  for (const b of settings.bookmarksEnabled === false ? [] : settings.bookmarks) consider(b.url, b.title, 'bm', now, b.favicon);
-  for (const h of history) consider(h.url, h.title, 'hist', h.t, h.favicon);
-  const items = [...found.values()].sort((a, b) => b.score - a.score).slice(0, 6)
-    .map(({ url, title, kind, favicon }) => ({ url, title, kind, favicon: favicon && /^(https?|data):/.test(favicon) ? favicon : null }));
-  // Inline completion like Chrome: if the input is a prefix of the top result's domain, the rest is filled in
-  let inline = '';
-  if (!/\s/.test(q)) {
-    for (const it of items) {
-      try { const host = new URL(it.url).host.replace(/^www\./, ''); if (host.startsWith(q) && host !== q) { inline = host; break; } } catch {}
-    }
-  }
-  return { items, inline };
+// Only previously submitted search terms are suggested. No URL/bookmark/network completion.
+function omniSuggest(text){return customShortcuts.suggestions(W.incognito?(W.searchHistory||[]):searchHistory,text);}
+function navigateInput(input,{newTab:makeTab=false,background=false,closePrompt=false}={}){
+ const resolved=customShortcuts.resolveInput(input,{siteCommands:settings.siteCommands,textReplacements:settings.textReplacements,searchUrl:searchUrl()});
+ if(resolved.kind==='text'){send('input-expanded',{value:resolved.value});return;}
+ if(closePrompt)closeOverlay(false);
+ if(resolved.query)recordSearch(resolved.query);
+ if(makeTab)newTab(resolved.url,background,activeId);else openUrl(resolved.url);
 }
 function openSearchPrompt(kind = 'newtab', value = '') {
   if (settings.newTabPrompt === false) { if (kind === 'newtab') newTab(''); return; }
@@ -1636,16 +1714,21 @@ ipcMain.on('ui', (e, cmd, arg) => {
   if (!w) return;
   useWin(w);
   switch (cmd) {
-    case 'navigate': openUrl(arg); break;
+    case 'navigate': if(typeof arg==='string'&&arg.trim())navigateInput(arg); break;
     case 'back': goBack(); break;
     case 'forward': goForward(); break;
     case 'reload': withActive((wc) => wc.reload()); break;
+    case 'zoom-wheel': if(arg===1||arg===-1)zoom(arg); break;
+    case 'zoom-reset': zoom(0);break;
+    case 'site-setting': updateSiteControl(arg);break;
+    case 'site-dependencies': confirmSiteDependencies(arg);break;
     case 'stop': withActive((wc) => wc.stop()); break;
     case 'home': goHome(); break;
     case 'new-tab': openSearchPrompt(); break;
     case 'address-focus': if (overlayKind !== 'newtab') openSearchPrompt('address', typeof arg === 'string' ? arg : displayUrl(activeTab()?.url || '')); break;
     case 'prompt-answer': answerPrompt(arg); break;
     case 'side-reveal': openSide(); break;
+    case 'side-focus': W.sideKeyboardFocus=arg===true; if(W.sideKeyboardFocus)openSide();else W.sideHoldUntil=Date.now()+250; break;
     case 'side-hide': break; // Native cursor tracking owns sidebar dismissal.
     case 'tab-drag-start': W.tabDragging = true; if (!overlayOpen) { overlayOpen = true; overlayKind = 'tabdrag'; raiseUi(); layout(); } break;
     case 'tab-drag-end': W.tabDragging = false; W.sideHoldUntil = Date.now() + 500; if (overlayKind === 'tabdrag') closeOverlay(false); break;
@@ -1666,7 +1749,8 @@ ipcMain.on('ui', (e, cmd, arg) => {
     case 'find': withActive((wc) => { if (arg.text) wc.findInPage(arg.text, { forward: arg.forward !== false, findNext: !!arg.next }); else wc.stopFindInPage('clearSelection'); }); break;
     case 'find-close': closeFind(); break;
     case 'menu': openOverlay(arg); break;
-    case 'menu-close': closeOverlay(); break;
+    case 'menu-close': closeOverlay(true, true); break;
+    case 'restore-ui-focus': if (!overlayOpen && win?.isFocused()) ui.webContents.focus(); break;
     case 'chooser-select': finishChooser(arg); break;
     case 'context-action': runContextAction(arg); break;
     case 'menu-action': menuAction(arg && arg.id, arg && arg.arg); break;
@@ -1697,19 +1781,20 @@ ipcMain.on('ui', (e, cmd, arg) => {
     case 'newtab-query': if ((overlayKind === 'newtab' || overlayKind === 'address') && typeof arg === 'string') send('newtab-results', { q:arg, ...omniSuggest(arg) }); break;
     case 'newtab-submit': if ((overlayKind === 'newtab' || overlayKind === 'address') && typeof arg === 'string' && arg.trim()) {
       const sameTab = overlayKind === 'address';
-      closeOverlay(false);
-      if (sameTab) openUrl(arg.trim()); else newTab(arg.trim());
+      navigateInput(arg.trim(),{newTab:!sameTab,closePrompt:true});
     } break;
     case 'newtab-cancel': if (overlayKind === 'newtab' || overlayKind === 'address') closeOverlay(); break;
-    case 'navigate-tab': if (arg) newTab(arg, false, activeId); break;
+    case 'navigate-tab': if(typeof arg==='string'&&arg.trim())navigateInput(arg,{newTab:true}); break;
   }
 });
 
 // ---------------------------------------------------------------- Shortcuts
-function handleShortcut(input) {
+function handleShortcut(input, fromUi = false) {
   if (input.type && input.type !== 'keyDown') return false;
   const ctrl = isMac ? input.meta : input.control;
   const k = (input.key || '').toLowerCase();
+  // The UI owns nested menus, suggestions and focus restoration before dismissal.
+  if (k === 'escape' && overlayOpen && fromUi && overlayKind !== 'side') return false;
   if (k === 'escape' && htmlFullscreen) { withActive((wc) => wc.executeJavaScript('document.exitFullscreen && document.exitFullscreen()').catch(() => {})); return true; }
   if (k === 'escape' && overlayOpen) { closeOverlay(); return true; }
   if (k === 'escape' && findOpen) { closeFind(); return true; }
@@ -1726,7 +1811,7 @@ function handleShortcut(input) {
     return true;
   }
   if (ctrl && (k === 'e' || k === 'k')) { focusUrl(true); return true; }
-  if ((input.alt && (k === 'f' || k === 'e')) || k === 'f10') { send('open-menu'); return true; }
+  if ((input.alt && (k === 'f' || k === 'e')) || k === 'f10' && !input.shift) { send('open-menu'); return true; }
   if (ctrl && input.shift && k === 'delete') { clearData(); return true; }
   if (ctrl && !input.shift && k === 'u') { withActive((wc) => newTab('view-source:' + wc.getURL(), false, activeId)); return true; }
   // Ctrl+S: toggle auto-hide mode with vertical tabs (user request); save page is Ctrl+Shift+S
@@ -1784,16 +1869,17 @@ function popupBrowserMenu(items,pos,target=ui?.webContents){
  const native=Menu.buildFromTemplate(bindMenu(items));
  if(settings.uiFont==='default')return native.popup({window:win,...(pos?{x:Math.round(pos.x||0),y:Math.round(pos.y||0)}:{})});
  const owner=W,token=++contextMenuToken,actions=new Map();let id=0;
+ const resumeSearch=target===ui?.webContents&&['newtab','address'].includes(overlayKind)?overlayKind:null;
  const model=contextMenuModel(native,item=>{const key=++id;actions.set(key,item);return {token,id:key};});
  if(!pos){const point=screen.getCursorScreenPoint(),bounds=win.getContentBounds();pos={x:point.x-bounds.x,y:point.y-bounds.y};}
- openOverlay({kind:'context',...pos,data:{items:model}});
- owner.contextMenu={token,actions,target,native};
+ openOverlay({kind:'context',...pos,data:{items:model,restoreUi:target===ui?.webContents,resumeSearch}});
+ owner.contextMenu={token,actions,target,native,resumeSearch};
 }
 function runContextAction(arg){
  const context=W?.contextMenu;if(!context||context.token!==arg?.token)return;
  const item=context.actions.get(arg.id);if(!item||!item.enabled)return;
  const owner=W,target=context.target;
- closeOverlay(false);if(!target||target.isDestroyed())return;
+ closeOverlay(false, true);if(!target||target.isDestroyed())return;
  target.focus();
  const roles={undo:'undo',redo:'redo',cut:'cut',copy:'copy',paste:'paste',pasteandmatchstyle:'pasteAndMatchStyle',selectall:'selectAll',delete:'delete'};
  const role=roles[String(item.role).toLowerCase()];
@@ -1826,16 +1912,18 @@ function openOverlay(arg) {
   raiseUi();
   layout();
   ui.webContents.focus();
-  send('menu-open', { kind: (arg && arg.kind) || 'main', anchor: arg || {}, data: arg?.kind==='context'?arg.data:menuData() });
+  send('menu-open', { kind: (arg && arg.kind) || 'main', anchor: arg || {}, data: ['context','site'].includes(arg?.kind)?arg.data:menuData() });
 }
-function closeOverlay(refocus = true) {
+function closeOverlay(refocus = true, resumeContext = false) {
   if (!overlayOpen) return;
   overlayOpen = false;
   const kind = overlayKind;
-  if(W)W.contextMenu=null;
+  const resumeSearch=resumeContext?W?.contextMenu?.resumeSearch:null;
+  if(W){W.contextMenu=null;W.siteDependencies=null;}
   overlayKind = null;
   if (kind === 'chooser' && chooser) finishChooser(null);   // clicked outside: cancel
   if (kind === 'side') {
+    W.sideKeyboardFocus=false;
     // The revealed sidebar slides back left as it came; the UI stays on top until the animation ends
     send('side-reveal', false);
     const w = W;
@@ -1843,10 +1931,13 @@ function closeOverlay(refocus = true) {
     w.sideClosing = true;
     clearTimeout(w.sideCloseTimer);
     w.sideCloseTimer = setTimeout(() => { if (windows.includes(w) && !w.win.isDestroyed()) inWin(w, () => { w.sideClosing = false; layout(); }); }, 220);
+    if(refocus)withActive(wc=>wc.focus());
     return;
   }
+  if(resumeSearch){overlayOpen=true;overlayKind=resumeSearch;raiseUi();}
   layout();
-  send('menu-closed');
+  send('menu-closed', { refocus, resumeSearch });
+  if(resumeSearch){if(refocus)ui.webContents.focus();return;}
   if (kind === 'sidedrag') send('side-reveal', false);
   if (kind === 'prompt') {   // clicked outside / Esc: deny this once
     const p = prompts.find((x) => x.w === W && x.shown);
@@ -1896,7 +1987,7 @@ function menuAction(id, arg) {
     case 'new-incognito': newWindow(true); break;
     case 'downloads': openPage(DOWNLOADS_URL); break;
     case 'history': openPage(HISTORY_URL); break;
-    case 'settings': openPage(SETTINGS_URL); break;
+    case 'settings': openPage(SETTINGS_URL+(arg?'#'+encodeURIComponent(arg):'')); break;
     case 'reopen': reopenClosed(Number(arg) || 0); break;
     case 'reader': withActive((wc) => toggleReader(wc)); break;
     case 'pip': withActive((wc) => pictureInPicture(wc)); break;
@@ -2248,6 +2339,7 @@ async function runClear(opts) {
     history = history.filter((h) => h.t < cutoff);
     out.history = n - history.length;
     for (const t of allTabs()) if (t.hist && !history.includes(t.hist)) t.hist = null;
+    searchHistory=searchHistory.filter(h=>h.t<cutoff);saveSearchHistory(true);
     saveHistory(true); notifyPages('history');
   }
   if (o.downloads) {
@@ -2267,29 +2359,23 @@ async function runClear(opts) {
   return out;
 }
 
-// Site icon in the address bar: site info menu
-function showSiteMenu(pos) {
-  const t = activeTab();
-  if (!t || W.incognito || !/^https?:/i.test(t.url)) return;
-  const site = siteData.siteOfOrigin(t.url);
-  if (!site) return;
-  const on = (settings.protectedSites || []).includes(site);
-  popAt([
-    { label: siteData.displaySite(site), enabled: false },
-    { type: 'separator' },
-    { label: 'Bu siteyi temizlikten koru', type: 'checkbox', checked: on, click: () => {
-      const r = siteData.setSite(site, !on);
-      if (r.deps && r.deps.length) {
-        dialog.showMessageBox(win, { type: 'info', buttons: ['Bunları da koru', 'Gerek yok'], defaultId: 0, cancelId: 1,
-          message: `${siteData.displaySite(site)} korunuyor.`,
-          detail: `Bu sitede şu hesapla giriş yapıyorsanız oturumun sürmesi için onu da korumanız gerekebilir: ${r.deps.map((d) => d.name + ' (' + d.display + ')').join(', ')}. Calcium bunları kendiliğinden eklemez.` })
-          .then((x) => { if (x.response === 0) for (const d of r.deps) siteData.setSite(d.site, true); });
-      }
-    } },
-    { label: 'Çerezler ve site verileri...', click: () => openSettingsAt('siteler') }
-  ], pos);
+// Site controls live in the browser UI, anchored to the site identity button.
+function siteControlData(tab){
+ const site=calciumSite(tab?.url);if(!site)return null;
+ return {tabId:tab.id,site,display:siteData.displaySite(site),private:!!tab.w.incognito,sleepExcluded:settings.sleepExcludedSites.includes(site),protected:settings.protectedSites.includes(site),deps:W.siteDependencies?.site===site?W.siteDependencies.deps:[]};
 }
-
+function showSiteMenu(pos){const tab=activeTab(),data=siteControlData(tab);if(!data)return;openOverlay({kind:'site',...(pos||{}),data});}
+function updateSiteControl(arg){
+ const tab=getTab(arg?.tabId),site=calciumSite(tab?.url);if(!site||arg.site!==site||typeof arg.on!=='boolean')return;
+ if(arg.key==='sleep'){settings.sleepExcludedSites=arg.on?[...new Set([...settings.sleepExcludedSites,site])]:settings.sleepExcludedSites.filter(s=>s!==site);saveSettings(true);forEachWin(()=>pushState());notifyPages('settings');}
+ if(arg.key==='cookies'&&!W.incognito){const result=siteData.setSite(site,arg.on);W.siteDependencies=result.deps?.length?{site,deps:result.deps}:null;}
+ if(overlayKind==='menu')send('menu-data',siteControlData(tab));
+}
+function confirmSiteDependencies(arg){
+ const pending=W.siteDependencies,tab=activeTab();if(!pending||calciumSite(tab?.url)!==pending.site)return;
+ W.siteDependencies=null;if(arg===true&&!W.incognito)for(const dep of pending.deps)siteData.setSite(dep.site,true);
+ if(overlayKind==='menu')send('menu-data',siteControlData(tab));
+}
 // Thorium: right-click menu on the reload button
 function showReloadMenu(pos) {
   popAt([
@@ -2446,7 +2532,7 @@ function showTabMenu(arg) {
     { label: 'Yeni sekme', click: () => openSearchPrompt() },
     { type: 'separator' },
     { label: 'Yenile', enabled: !!t.view, click: () => t.view && t.view.webContents.reload() },
-    {label:'Bu siteyi otomatik uyutma',type:'checkbox',checked:settings.sleepExcludedSites.includes(calciumSite(t.url)),enabled:!!calciumSite(t.url),click:()=>{const site=calciumSite(t.url);if(!site)return;settings.sleepExcludedSites=settings.sleepExcludedSites.includes(site)?settings.sleepExcludedSites.filter(x=>x!==site):[...settings.sleepExcludedSites,site];saveSettings();}},
+    {label:'Bu siteyi otomatik uyutma',type:'checkbox',checked:settings.sleepExcludedSites.includes(calciumSite(t.url)),enabled:!!calciumSite(t.url),click:()=>{const site=calciumSite(t.url);if(!site)return;settings.sleepExcludedSites=settings.sleepExcludedSites.includes(site)?settings.sleepExcludedSites.filter(x=>x!==site):[...settings.sleepExcludedSites,site];saveSettings(true);forEachWin(()=>pushState());notifyPages('settings');}},
     { label: 'Sekmeyi uyut', enabled: !!t.view && (t.id !== activeId || tabs.length > 1), click: () => sleepTab(t.id) },
     { label: 'Kopyala', click: () => newTab(t.url, false, t.id) },
     { label: t.pinned ? 'Sabitlemeyi kaldır' : 'Sabitle', click: () => togglePin(t.id) },
@@ -2731,6 +2817,8 @@ function settingsData() {
     ubo: uboId ? (extApi().getExtension(uboId) || {}).version || '' : null,
       sitePerms: Object.keys(settings.sitePerms).length, deviceGrants: settings.deviceGrants.length,
     version: app.getVersion(), chrome: process.versions.chrome, electron: process.versions.electron,
+    siteCommands:settings.siteCommands,textReplacements:settings.textReplacements,
+    appUpdate:appUpdateData(),keyboardShortcuts:require('./keyboard-shortcuts').keyboardShortcuts({isMac,verticalTabs:settings.verticalTabs}),
     widevine: (() => { try { const st = components && components.status(); const w = st && Object.values(st).find((x) => /widevine/i.test(x.title || '')); return w ? w.version : null; } catch { return null; } })()
   };
 }
@@ -2770,6 +2858,14 @@ ipcMain.handle('page', async (e, cmd, arg) => {
   const from = (e.senderFrame && e.senderFrame.url) || '';
   const kind = pageKind(from);
   if (!kind) throw new Error('izin yok');
+  if(kind==='update-notice'){
+   if(!ow||ow.updateNotice?.webContents!==e.sender||e.senderFrame!==e.sender.mainFrame)throw Error('izin yok');
+   if(cmd==='get')return pageData();
+   if(cmd==='app-update-state')return appUpdateData();
+   if(cmd==='app-update-later'){appUpdates.later();return {ok:true};}
+   if(cmd==='app-update-install'){if(appUpdates.snapshot().canInstall)appUpdates.install();else{appUpdates.clearNotice();inWin(ow,()=>openPage(SETTINGS_URL+'#hakkinda'));}return {ok:true};}
+   return null;
+  }
   if (kind==='security') {
     const target=blockedNavigations.get(e.sender.id);
     if(cmd==='get')return {...pageData(),blockedHost:target?hostOf(target):null};
@@ -2782,6 +2878,16 @@ ipcMain.handle('page', async (e, cmd, arg) => {
     if (settings.bookmarksEnabled === false && /^bm-/.test(cmd)) return { sources: [], groups: [], total: 0, error: 'Yer işaretleri kapalı.' };
     switch (cmd) {
       case 'settings-get': return settingsData();
+      case 'shortcut-save': {
+       if(e.senderFrame!==e.sender.mainFrame)throw Error('izin yok');
+       try{const field=arg?.kind==='site'?'siteCommands':arg?.kind==='text'?'textReplacements':null;if(!field)throw Error('Geçersiz kısayol türü.');settings[field]=customShortcuts.saveRule(arg.kind,settings[field],arg);saveSettings(true);forEachWin(()=>pushState());broadcastTextShortcuts();return {ok:true};}catch(error){return {error:T(error.message)};}
+      }
+      case 'shortcut-remove': {
+       if(e.senderFrame!==e.sender.mainFrame)throw Error('izin yok');const field=arg?.kind==='site'?'siteCommands':arg?.kind==='text'?'textReplacements':null;if(!field)return {error:T('Geçersiz kısayol türü.')};settings[field]=settings[field].filter(r=>r.trigger!==arg.trigger);saveSettings(true);forEachWin(()=>pushState());broadcastTextShortcuts();return {ok:true};
+      }
+      case 'app-update-check': if(e.senderFrame!==e.sender.mainFrame)throw Error('izin yok');await appUpdates.check();return appUpdateData();
+      case 'app-update-install': if(e.senderFrame!==e.sender.mainFrame)throw Error('izin yok');await appUpdates.install();return appUpdateData();
+      case 'app-update-release': if(e.senderFrame!==e.sender.mainFrame)throw Error('izin yok');shell.openExternal(require('./app-updates').RELEASE_PAGE);return {ok:true};
       case 'settings-set': { const ok = settingsSet(arg && arg.key, arg && arg.value); notifyPages('settings'); return { ok }; }
       case 'clear-data': clearData(); return { ok: true };
       case 'ps-list': return { sites: siteData.list() };
@@ -2904,6 +3010,7 @@ ipcMain.handle('page', async (e, cmd, arg) => {
     case 'theme': if (THEMES[arg]) { settings.theme = arg; saveSettings(); applyTheme(); } return { ok: true };
     case 'welcome-done': {
       settings.firstRunDone = true;
+      scheduleUpdateCheck();
       saveSettings(true);forEachWin(()=>{layout();pushState();});
       const t = tabs.find((x) => x.view && x.view.webContents === e.sender);
       if (t) { t.url = newtabUrl(); t.title = 'Yeni Sekme'; go(t.view.webContents, t.url); const w = W; setTimeout(() => inWin(w, () => focusUrl()), 300); }
@@ -2963,7 +3070,7 @@ function createWindow(opts = {}) {
   const incognito = !!opts.incognito;
   const w = {
     id: nextWinId++, incognito, ses: incognito ? getIncognitoSession() : mainSes, win: null, ui: null,
-    tabs: [], closedTabs: [], activeId: null, findOpen: false, htmlFullscreen: false, overlayOpen: false, overlayKind: null,
+    tabs: [], closedTabs: [], searchHistory:[], activeId: null, findOpen: false, htmlFullscreen: false, overlayOpen: false, overlayKind: null,
     pushTimer: null, focusedAt: Date.now()
   };
   const from = W;
@@ -3007,8 +3114,9 @@ function createWindow(opts = {}) {
     const ctrl = isMac ? input.meta : input.control;
     const k = (input.key || '').toLowerCase();
     if (ctrl && !input.shift && ['c', 'v', 'x', 'a', 'z', 'y'].includes(k)) return;
-    if (handleShortcut(input)) e.preventDefault();
+    if (handleShortcut(input, true)) e.preventDefault();
   });
+  uw.setZoomMode('manual');uw.on('zoom-changed',(event,direction)=>{event.preventDefault();inWin(w,()=>zoom(direction==='in'?1:-1));});
   uw.on('context-menu',(_e,p)=>{if(p.isEditable||p.selectionText)inWin(w,()=>showContextMenu(uw,p));});
   uw.on('did-finish-load', () => { useWin(w); pushState(); });
   uw.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -3035,6 +3143,8 @@ function createWindow(opts = {}) {
 
 // Window closed: close the web contents of its tabs and UI (memory), remove it from the list
 function closedWindow(w) {
+  if(w.incognito){w.closedTabs.length=0;w.searchHistory=[];}
+  closeUpdateNotice(w);
   if (W === w) saveCtx();
   for (const t of w.tabs) {
     iconQueue.cancel(t);
@@ -3123,6 +3233,8 @@ app.whenReady().then(async () => {
   useWin(windows[0]);
   if (startUrl) newTab(startUrl);
   else if (!restored) newTab(settings.firstRunDone ? '' : WELCOME_URL);
+  scheduleUpdateCheck();
+  if(app.isPackaged&&!process.env.CALCIUM_TEST_MODE)appUpdates.cleanup();
   setInterval(sleepIdleTabs, 30e3);
   setInterval(keepSessionCookies, 15 * 60e3);
 });
@@ -3133,10 +3245,11 @@ app.on('before-quit', (e) => {
   if (cleanedUp) return;
   e.preventDefault();
   cleanedUp = true;
+  appUpdates.dispose();
   saveSession(true);
   quitting = true;
   saveSettings(true);
-  saveHistory(true);
+  saveHistory(true);saveSearchHistory(true);
   saveDownloads(true);
   saveSession(true);
   const job = (async () => {

@@ -1,15 +1,15 @@
 'use strict';
 // A thin overlay for the document and browser tab lists. Content keeps the full
 // viewport width; only the transparent edge hit target receives pointer events.
-const { webFrame } = require('electron');
-if (window.top === window && /^(https?:|file:)$/.test(location.protocol)) {
-  webFrame.insertCSS(':root::-webkit-scrollbar,body::-webkit-scrollbar,#vtabs::-webkit-scrollbar,#pinnedtabs::-webkit-scrollbar,[data-calcium-scrollable]::-webkit-scrollbar{width:0!important;height:0!important}:root,body,#vtabs,#pinnedtabs,[data-calcium-scrollable]{scrollbar-width:none!important}');
+function installOverlayScrollbars(insertCSS) {
+if (/^(https?:|file:|about:)$/.test(location.protocol)) {
+  insertCSS('*::-webkit-scrollbar{width:0!important;height:0!important}*{scrollbar-width:none!important}');
   const start = () => {
     const entries = new Map();
     let pending = false;
     const schedule = () => { if (!pending) { pending = true; requestAnimationFrame(update); } };
     function add(target) {
-      if (!target || entries.has(target)) return;
+      if (!target || entries.has(target) || entries.size >= 96) return;
       const host = document.createElement('div');
       host.setAttribute('data-calcium-scrollbar',target===document.scrollingElement?'document':'panel');
       if(target!==document.scrollingElement)target.setAttribute('data-calcium-scrollable','');
@@ -25,6 +25,9 @@ if (window.top === window && /^(https?:|file:)$/.test(location.protocol)) {
       track.setAttribute('aria-orientation', 'vertical');track.setAttribute('aria-valuemin','0');
       const entry = { target, host, track, thumb, dragging: null, top: 0, height: 0, thumbHeight: 0, max: 0 };
       entries.set(target, entry); document.documentElement.append(host);
+      const horizontal=document.createElement('div');horizontal.setAttribute('data-calcium-scrollbar-horizontal','');horizontal.style.cssText='all:initial!important;position:fixed!important;z-index:2147483647!important;height:10px!important;pointer-events:none!important;';
+      const hs=horizontal.attachShadow({mode:'closed'}),ht=document.createElement('div'),hb=document.createElement('div'),hc=new CSSStyleSheet();hc.replaceSync('.track{position:absolute;inset:0;pointer-events:auto;touch-action:none}.thumb{position:absolute;bottom:1px;height:1px;border-radius:4px;background:#808080;opacity:.7;transition:height .12s}.track:hover .thumb,.track.drag .thumb{height:4px;opacity:1}');hs.adoptedStyleSheets=[hc];ht.className='track';hb.className='thumb';ht.append(hb);hs.append(ht);document.documentElement.append(horizontal);Object.assign(entry,{horizontal,ht,hb});ht.tabIndex=0;ht.setAttribute('role','scrollbar');ht.setAttribute('aria-label','Scroll');ht.setAttribute('aria-orientation','horizontal');ht.setAttribute('aria-valuemin','0');
+      let hdrag=null;const hscroll=x=>{target.scrollLeft=Math.max(0,Math.min(entry.hmax,x));schedule();};ht.addEventListener('pointerdown',event=>{if(event.button!==0)return;event.preventDefault();ht.setPointerCapture(event.pointerId);const offset=event.clientX-entry.left,current=target.scrollLeft/entry.hmax*(entry.width-entry.thumbWidth);if(offset<current||offset>current+entry.thumbWidth)hscroll((offset-entry.thumbWidth/2)/Math.max(1,entry.width-entry.thumbWidth)*entry.hmax);hdrag={x:event.clientX,scroll:target.scrollLeft};ht.classList.add('drag');});ht.addEventListener('pointermove',event=>{if(hdrag)hscroll(hdrag.scroll+(event.clientX-hdrag.x)/Math.max(1,entry.width-entry.thumbWidth)*entry.hmax);});const hstop=()=>{hdrag=null;ht.classList.remove('drag');};ht.addEventListener('pointerup',hstop);ht.addEventListener('lostpointercapture',hstop);ht.addEventListener('keydown',event=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();hscroll(event.key==='Home'?0:event.key==='End'?entry.hmax:target.scrollLeft+(event.key==='ArrowLeft'?-40:40));}});
       const scrollTo = y => { target.scrollTop = Math.max(0, Math.min(entry.max, y)); schedule(); };
       track.addEventListener('pointerdown', e => {
         if(e.button!==0)return;
@@ -37,7 +40,7 @@ if (window.top === window && /^(https?:|file:)$/.test(location.protocol)) {
       const stop=()=>{entry.dragging=null;track.classList.remove('drag');};
       track.addEventListener('pointerup',stop);track.addEventListener('lostpointercapture',stop);
       track.addEventListener('keydown',e=>{const delta={ArrowDown:40,ArrowUp:-40,PageDown:entry.height,PageUp:-entry.height};if(e.key==='Home'||e.key==='End'||e.key in delta){e.preventDefault();scrollTo(e.key==='Home'?0:e.key==='End'?entry.max:target.scrollTop+delta[e.key]);}});
-      track.addEventListener('wheel',e=>{e.preventDefault();scrollTo(target.scrollTop+e.deltaY*(e.deltaMode===1?20:e.deltaMode===2?entry.height:1));},{passive:false});
+      track.addEventListener('wheel',e=>{if(e.ctrlKey||e.metaKey)return;e.preventDefault();scrollTo(target.scrollTop+e.deltaY*(e.deltaMode===1?20:e.deltaMode===2?entry.height:1));},{passive:false});
       target.addEventListener('scroll',schedule,{passive:true});
       observer.observe(target);
     }
@@ -50,10 +53,13 @@ if (window.top === window && /^(https?:|file:)$/.test(location.protocol)) {
       for(const dialog of dialogs)add(dialog);
       const activeDialog=dialogs.find(d=>d.getClientRects().length&&getComputedStyle(d).visibility!=='hidden');
       for (const [target, e] of entries) {
-        if(!target.isConnected){e.host.remove();observer.unobserve(target);entries.delete(target);continue;}
+        if(!target.isConnected){e.host.remove();e.horizontal.remove();observer.unobserve(target);entries.delete(target);continue;}
         const root=target===document.scrollingElement,r=root?{top:0,right:innerWidth,bottom:innerHeight,height:innerHeight}:target.getBoundingClientRect();
         const height=root?innerHeight:target.clientHeight,max=target.scrollHeight-height;
         e.host.style.setProperty('display',max>1&&r.right>0&&r.bottom>0&&height>0&&(!activeDialog||activeDialog===target)?'block':'none','important');
+        const visible=(!activeDialog||activeDialog===target)&&r.right>0&&r.bottom>0&&height>0;
+        const width=root?innerWidth:target.clientWidth,left=Math.max(0,root?0:r.left),visibleWidth=Math.max(0,Math.min(width,innerWidth-left));e.left=left;e.width=visibleWidth;e.hmax=target.scrollWidth-width;e.thumbWidth=Math.min(visibleWidth,Math.max(24,visibleWidth*width/Math.max(1,target.scrollWidth)));
+        e.horizontal.style.setProperty('display',visible&&e.hmax>1?'block':'none','important');e.horizontal.style.setProperty('left',left+'px','important');e.horizontal.style.setProperty('top',(Math.min(innerHeight,r.bottom)-10)+'px','important');e.horizontal.style.setProperty('width',visibleWidth+'px','important');e.hb.style.width=e.thumbWidth+'px';e.hb.style.left=(e.hmax>0?Math.max(0,target.scrollLeft)/e.hmax*(visibleWidth-e.thumbWidth):0)+'px';e.ht.setAttribute('aria-valuemax',String(Math.max(0,e.hmax)));e.ht.setAttribute('aria-valuenow',String(target.scrollLeft));
         if(max<=1)continue;
         const top=Math.max(0,r.top),visibleHeight=Math.min(height,innerHeight-top);
         e.top=top;e.height=visibleHeight;e.max=max;e.thumbHeight=Math.min(visibleHeight,Math.max(24,visibleHeight*height/target.scrollHeight));
@@ -64,7 +70,9 @@ if (window.top === window && /^(https?:|file:)$/.test(location.protocol)) {
     }
     // Web pages often animate classes/styles continuously. Size and scroll events
     // are enough there; observe DOM mutations only for our own dynamic dialogs.
-    if(location.protocol==='file:')new MutationObserver(records=>{if(records.some(r=>!r.target.hasAttribute?.('data-calcium-scrollbar')))schedule();}).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','class','style']});
+    if(location.protocol==='file:')new MutationObserver(records=>{if(records.some(r=>!r.target.hasAttribute?.('data-calcium-scrollbar')&&!r.target.hasAttribute?.('data-calcium-scrollbar-horizontal')))schedule();}).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','class','style']});
+    const discover=event=>{for(const node of event.composedPath()){if(node?.nodeType!==1||node.hasAttribute('data-calcium-scrollbar'))continue;const style=getComputedStyle(node);if((/auto|scroll/.test(style.overflowY)&&node.scrollHeight>node.clientHeight+1)||(/auto|scroll/.test(style.overflowX)&&node.scrollWidth>node.clientWidth+1))add(node);}schedule();};
+    document.addEventListener('pointerover',discover,{capture:true,passive:true});document.addEventListener('wheel',discover,{capture:true,passive:true});document.addEventListener('focusin',discover,true);
     window.addEventListener('load',schedule,true);
     observer.observe(document.documentElement);if(document.body)observer.observe(document.body);
     window.addEventListener('scroll',schedule,{passive:true});window.addEventListener('resize',schedule);document.addEventListener('transitionend',schedule,true);
@@ -72,3 +80,7 @@ if (window.top === window && /^(https?:|file:)$/.test(location.protocol)) {
   };
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 }
+
+}
+if(typeof module!=='undefined')module.exports={installOverlayScrollbars};
+if(typeof window!=='undefined')installOverlayScrollbars(css=>require('electron').webFrame.insertCSS(css));

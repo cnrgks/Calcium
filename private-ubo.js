@@ -15,7 +15,7 @@ const install = `(async()=>{
   return result===1;
  });
 })()`;
-async function attachPrivateUBlock(ses, getBackground, webContents) {
+async function attachPrivateUBlock(ses, getBackground, webContents, prepareDocument) {
  const bg=getBackground();if(!bg)throw Error('uBO background is unavailable');
  await bg.executeJavaScript(install);
  const types={mainFrame:'main_frame',subFrame:'sub_frame',xhr:'xmlhttprequest',webSocket:'websocket',cspReport:'csp_report'};
@@ -24,7 +24,12 @@ async function attachPrivateUBlock(ses, getBackground, webContents) {
   const batch=queue.splice(0,64);if(!batch.length){scheduled=false;return;}
   const background=getBackground();
   const done=results=>{
-   batch.forEach((r,i)=>{try{r.callback({cancel:results?.[i]!==false})}catch{}});
+   batch.forEach((r,i)=>{
+    const cancel=results?.[i]!==false;
+    const reply=()=>{try{r.callback({cancel})}catch{}};
+    if(!cancel&&prepareDocument&&r.details.resourceType==='mainFrame')Promise.resolve().then(()=>prepareDocument(r.details)).then(reply,reply);
+    else reply();
+   });
    if(queue.length)setImmediate(flush);else scheduled=false;
   };
   if(!background){done();}else{
@@ -44,7 +49,7 @@ async function attachPrivateUBlock(ses, getBackground, webContents) {
   const pageUrl=wc&&!wc.isDestroyed()?wc.getURL():'';
   const top=details.resourceType==='mainFrame'?details.url:pageUrl||details.referrer||details.url;
   const document=details.frame?.url||details.referrer||top;
-  queue.push({callback,data:{url:details.url,type:types[details.resourceType]||details.resourceType||'other',document:details.resourceType==='mainFrame'?details.url:document,top}});
+  queue.push({callback,details,data:{url:details.url,type:types[details.resourceType]||details.resourceType||'other',document:details.resourceType==='mainFrame'?details.url:document,top}});
   if(!scheduled){scheduled=true;setImmediate(flush);}
  });
 }

@@ -2,7 +2,7 @@
 <h1 align="center">Calcium</h1>
 <p align="center">A bare bones browser.</p>
 
-Calcium is a minimal Windows browser built on Electron and castLabs Chromium. It takes a debloated approach to browsing: a simple interface, no required account or sync, and telemetry and crash reporting turned off. Available in English and Turkish.
+Calcium is a minimal browser for Windows and macOS, built on Electron and castLabs Chromium. It takes a debloated approach to browsing: a simple interface, no required account or sync, and telemetry and crash reporting turned off. Available in English and Turkish.
 
 ## Features
 
@@ -13,16 +13,19 @@ Calcium is a minimal Windows browser built on Electron and castLabs Chromium. It
 - Chrome Web Store extension support.
 - A simplified downloads interface, browsing history and task manager.
 - System, light and dark themes, with a pitch-black option for dark mode.
+- Custom site commands such as `!y nature videos` and text replacements such as `#address`. Add your own rules in Settings; no commands are enabled by default.
+- Address suggestions drawn only from your previous searches, plus per-tab zoom with Ctrl+scroll and a one-click reset.
+- Site controls for keeping tabs awake and protecting sign-in cookies. Private windows can reopen their own closed tabs until the window closes.
 
 By default, vertical tabs, sidebar auto-hide, pitch black and the new-tab search prompt are enabled. The interface stays minimal with no bookmarks bar, tab audio controls or download notifications.
 
 ## Download
 
-Get **Calcium-Setup-1.3.6.exe** from the [latest release](https://github.com/cnrgks/Calcium/releases/latest). To update, download and run the latest setup.
+Get the Windows installer or macOS disk image from the [latest release](https://github.com/cnrgks/Calcium/releases/latest). Installed Windows builds can check and update from Settings → About Calcium. Startup offers a new release once; choosing Later stops further prompts until you choose to update. macOS builds link to the release page for manual installation.
 
 ## Development
 
-Node.js 22.12+ and Windows 10/11.
+Node.js 22.12+, with Windows 10/11 or macOS. Build each package on its target OS.
 
 ```sh
 npm ci
@@ -36,7 +39,7 @@ The installer is written to `dist/`. Build commands do not publish automatically
 
 ## Security and compatibility
 
-See the [security notes](docs/security-hardening.md) for details. Engine updates require a new build. Private windows use uBlock Origin network filtering without its full cosmetic filtering and scriptlet support. The Windows installer is not Authenticode signed. Widevine VMP signing is unavailable, so some DRM services may not play.
+See the [security notes](docs/security-hardening.md) for details. Engine updates require a new build. Private windows include network blocking, cosmetic CSS and scriptlets in the main document; some advanced and subframe filters remain limited. Packages are unsigned; macOS builds are not notarized. Widevine VMP signing is unavailable, so some DRM services may not play. Extension compatibility varies; see the [validation notes](docs/release-validation.md).
 
 ## License and acknowledgements
 

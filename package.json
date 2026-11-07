@@ -1,7 +1,7 @@
 {
   "name": "calcium",
   "productName": "Calcium",
-  "version": "1.3.6",
+  "version": "1.3.7",
   "description": "Calcium — a bare bones browser.",
   "main": "main.js",
   "license": "GPL-3.0",
@@ -15,12 +15,13 @@
     "update-ublock": "node tools/update-ublock.js",
     "prepare-security": "node tools/prepare-security.js",
     "postinstall": "node tools/prepare-security.js",
-    "test:security": "node tools/test-security.cjs && node tools/test-protection.cjs && node tools/test-device-policy.cjs && node tools/test-language-permissions.cjs && node tools/test-private-ubo.cjs",
+    "test:security": "node tools/test-security.cjs && node tools/test-protection.cjs && node tools/test-device-policy.cjs && node tools/test-language-permissions.cjs && node tools/test-private-ubo.cjs && node tools/test-private-content-unit.cjs && node tools/test-stdio.cjs && node tools/test-app-updates.cjs && node tools/test-custom-shortcuts.cjs",
     "test:electron": "node tools/run-electron-tests.cjs",
     "check:engine": "node tools/check-engine.cjs",
     "update-protection": "node tools/update-protection.cjs",
     "bench:memory": "node tools/run-memory-bench.cjs",
-    "test:memory": "node tools/test-memory.cjs"
+    "test:memory": "node tools/test-memory.cjs",
+    "bench:soak": "node tools/run-soak-bench.cjs"
   },
   "dependencies": {
     "adm-zip": "0.6.1",
@@ -79,7 +80,14 @@
       "bounded-json.js",
       "ui-fonts.js",
       "browser-font.js",
-      "context-menu-model.js"
+      "context-menu-model.js",
+      "private-content.js",
+      "private-content-preload.js",
+      "app-updates.js",
+      "keyboard-shortcuts.js",
+      "update-notice.html",
+      "custom-shortcuts.js",
+      "text-expansion.js"
     ],
     "win": {
       "target": [
@@ -122,7 +130,8 @@
     "mac": {
       "target": [
         "dmg"
-      ]
+      ],
+      "artifactName": "Calcium-${version}-${arch}.dmg"
     },
     "directories": {
       "buildResources": "build",

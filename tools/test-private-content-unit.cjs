@@ -1,0 +1,24 @@
+'use strict';
+const assert=require('assert'),{attachPrivateContent,install}=require('../private-content'),vm=require('vm');
+(async()=>{
+ new vm.Script(install);
+ const handlers={},ses={registerPreloadScript(spec){assert.equal(spec.type,'frame');}},requests=[];
+ let release=null;
+ const bg={executeJavaScript:async code=>{const request=JSON.parse(code.slice('self.calciumPrivateContent('.length,-1));requests.push(request);if(release)return new Promise(resolve=>{release.resolve=resolve;});return {css:'.ad{display:none}',mainWorld:'',isolatedWorld:''};}};
+ const api=attachPrivateContent({ses,getBackground:()=>bg,ipcMain:{on:(name,fn)=>handlers[name]=fn,handle:(name,fn)=>handlers[name]=fn},preloadPath:'unused'});
+ const frame={processId:10,routingId:20,url:'https://private.example/',parent:null};frame.top=frame;
+ const sender={id:7,session:ses,isDestroyed:()=>false};const event=()=>({sender,senderFrame:frame});
+ const start=handlers['calcium-private-content-start'],query=handlers['calcium-private-content-query'];
+ await api.prepare({frame,webContentsId:7,url:frame.url,resourceType:'mainFrame'});
+ let e=event();start(e,'https://spoof.example/');assert.equal(e.returnValue,null);
+ e=event();start(e,frame.url);assert(e.returnValue.css);e=event();start(e,frame.url);assert.equal(e.returnValue,null,'document pack consumed only once');
+ const count=requests.length;
+ assert.equal(await query({sender:{...sender,session:{}},senderFrame:frame},frame.url,[],true),null);
+ assert.equal(await query(event(),frame.url,Array(513).fill(1),true),null);
+ assert.equal(await query(event(),frame.url,[-1],true),null);
+ assert.equal(requests.length,count,'unauthorized requests never reach the engine');
+ release={};const pending=query(event(),frame.url,[1],false);while(!release.resolve)await new Promise(r=>setImmediate(r));frame.url='https://other.example/';release.resolve({css:'stale'});assert.equal(await pending,null,'navigation discards stale replies');
+ release=null;frame.url='https://private.example/';await api.prepare({frame,webContentsId:7,url:frame.url,resourceType:'mainFrame'});api.clear();e=event();start(e,frame.url);assert.equal(e.returnValue,null);
+ release={};const preparing=api.prepare({frame,webContentsId:7,url:frame.url,resourceType:'mainFrame'});while(!release.resolve)await new Promise(r=>setImmediate(r));api.clear();release.resolve({css:'late'});await preparing;e=event();start(e,frame.url);assert.equal(e.returnValue,null,'closing private windows invalidates in-flight packs');
+ api.clear();console.log('PASS: private content origin/session checks, bounded IPC, one-use packs, navigation and private-session cleanup.');
+})().catch(e=>{console.error(e);process.exitCode=1});

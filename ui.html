@@ -327,11 +327,13 @@
   #findn { color:var(--dim); padding:0 8px; font-size:12px; white-space:nowrap; }
   #find .btn { width:28px; height:28px; }
   #find .btn svg { width:18px; height:18px; }
+.tab:focus-visible,.mi:focus-visible,.dr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+ #zoomPct{height:20px;min-width:34px;border:0;border-radius:4px;padding:0 5px;margin-right:5px;background:var(--hover);color:var(--text);font-size:11px;flex:none}#zoomPct:hover{background:var(--press)}.awake-badge{position:absolute;right:3px;top:1px;font:10px/13px "Segoe UI Emoji","Apple Color Emoji",sans-serif;pointer-events:none}.site-control-row{display:flex;gap:16px;align-items:center;padding:10px 0}.site-control-row>div{flex:1}.site-control-detail{font-size:12px;color:var(--dim);line-height:1.5;margin-top:4px}.site-switch{flex:none;width:34px;height:20px;border:0;border-radius:12px;padding:3px;background:var(--border)}.site-switch::after{content:'';display:block;width:14px;height:14px;border-radius:50%;background:var(--text);transition:transform .12s}.site-switch[aria-checked=true]{background:var(--accent)}.site-switch[aria-checked=true]::after{transform:translateX(14px);background:var(--toolbar)}.site-switch:disabled{opacity:.4}.site-switch:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 </style>
 </head>
 <body>
   <div id="strip">
-    <div id="tabs"></div>
+    <div id="tabs" role="tablist"></div>
     <button id="newtab" title="Yeni sekme (Ctrl+T)"><svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></button>
     <div id="incog" hidden title="Gizli pencere: geçmiş, çerezler ve site verileri pencere kapanınca silinir"></div>
   </div>
@@ -341,9 +343,10 @@
     <button class="btn" id="fwd" title="İleri (Alt+Sağ ok)"><svg viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg></button>
     <button class="btn" id="reload" title="Yeniden yükle (Ctrl+R) - sağ tık: diğer seçenekler"></button>
     <div id="omni">
-      <div class="lead" id="lead"></div>
+      <div class="lead" id="lead" role="button" tabindex="0" aria-label="Site ayarları"></div>
       <input id="url" spellcheck="false" autocomplete="off" placeholder="Arama yapın veya URL yazın">
       <button id="star" title="Bu sayfaya yer işareti koy (Ctrl+D)" hidden></button>
+      <button id="zoomPct" title="Yakınlaştırmayı %100’e sıfırla" hidden></button>
       <button id="vol" title="Ses yükseltme" hidden></button>
     </div>
     <div id="actions"></div>
@@ -368,15 +371,15 @@
     <div id="sidehead">
       <span id="sidetitle"></span>
     </div>
-    <div id="pinnedtabs"></div>
+    <div id="pinnedtabs" role="tablist"></div>
     <div id="pinnedSeparator" role="separator"></div>
-    <div id="vtabs"></div>
+    <div id="vtabs" role="tablist" aria-orientation="vertical"></div>
     <div id="sidespace" title="Pencereyi taşımak için sürükleyin"></div>
     <div id="sidefoot"><button id="snew" title="Yeni sekme (Ctrl+T)"><svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg><span>Yeni sekme</span></button></div>
     <div id="grip" title="Genişliği ayarlamak için sürükleyin"></div>
   </div>
 
-<div id="newtabPrompt" hidden><form><div class="newtab-row"><span id="newtabSearchIcon"></span><input id="newtabQuery" autocomplete="off" spellcheck="false" aria-label="Arama yapın veya URL yazın" role="combobox" aria-autocomplete="list" aria-controls="newtabResults" aria-expanded="false"></div><div id="newtabResults" role="listbox"></div></form></div>
+<div id="newtabPrompt" role="dialog" aria-modal="true" hidden><form><div class="newtab-row"><span id="newtabSearchIcon"></span><input id="newtabQuery" autocomplete="off" spellcheck="false" aria-label="Arama yapın veya URL yazın" role="combobox" aria-autocomplete="list" aria-controls="newtabResults" aria-expanded="false"></div><div id="newtabResults" role="listbox"></div></form></div>
 <div id="sug" hidden></div>
 <div id="pop" hidden></div>
 
@@ -413,6 +416,8 @@ $('fwd').onclick = () => send('forward');
 $('reload').onclick = () => send(state && state.loading ? 'stop' : 'reload');
 $('newtab').onclick = () => send('new-tab');
 $('reload').oncontextmenu = (e) => { e.preventDefault(); send('reload-menu', posOf(e.currentTarget)); };
+$('lead').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('lead').click();}};
+$('zoomPct').onclick=()=>send('zoom-reset');
 $('star').onclick = () => send('bookmark-toggle');
 const posOf = (el) => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.bottom + 2 }; };
 $('dl').onclick = (e) => send('downloads', posOf(e.currentTarget));
@@ -423,7 +428,7 @@ $('dl').onclick = (e) => send('downloads', posOf(e.currentTarget));
 let dirty = false, dirtyKey = '';
 const pageKey = () => (state ? state.activeId + '|' + state.url : '');
 function openAddressPrompt() {
-  if (!state?.newTabPrompt) return false;
+  if (!state?.newTabPrompt || restoringOverlayFocus) return false;
   hideSug();
   send('address-focus', dirty && dirtyKey === pageKey() ? url.value : state.url || '');
   return true;
@@ -446,7 +451,7 @@ url.addEventListener('copy', (e) => {
 });
 url.addEventListener('blur', () => { editing = false; omni.classList.remove('focus'); hideSug(); renderOmni(); });
 
-// ---------- Address bar suggestions (local history and bookmarks only; typed text never leaves the browser)
+// ---------- Address bar suggestions (previous search terms only; no network or URL completion)
 const sug = $('sug');
 let sugRows = [], sugSel = 0, typed = '', lastWasDelete = false;
 const looksUrl = (v) => /^(https?:\/\/|(?:calcium|mondium):\/\/|file:|localhost)/i.test(v) || (!/\s/.test(v) && /^[^\s/]+\.[a-z]{2,}(:\d+)?(\/.*)?$/i.test(v));
@@ -458,7 +463,7 @@ function hideSug() {
 function go(where) {
   const r = sugRows[sugSel];
   const text=url.value.trim();
-  const v = r && r.url ? r.url : !dirty && state && text===prettyUrl(state.url) ? state.url : text;
+  const v = r && (r.value||r.url) ? (r.value||r.url) : !dirty && state && text===prettyUrl(state.url) ? state.url : text;
   if (!v) return;
   dirty = false;
   hideSug(); url.blur();
@@ -483,7 +488,7 @@ function drawSug(res) {
       if (r.favicon) { const im = document.createElement('img'); im.src = r.favicon; im.alt = ''; im.onerror = () => { ic.innerHTML = I.globe; }; ic.appendChild(im); }
       else ic.innerHTML = r.kind === 'bm' ? I.starSmall : I.clock;
       t.textContent = r.title || prettyUrl(r.url);
-      const u = document.createElement('span'); u.className = 'su'; u.textContent = prettyUrl(r.url);
+      const u = document.createElement('span'); u.className = 'su'; u.textContent = r.value ? 'Arama geçmişi' : prettyUrl(r.url);
       el.append(ic, t, u);
     }
     el.onmousedown = (e) => e.preventDefault();      // keep address bar focus
@@ -499,7 +504,7 @@ function selectSug(i, fill) {
   if (!sugRows.length) return;
   sugSel = (i + sugRows.length) % sugRows.length;
   [...sug.children].forEach((el, k) => el.classList.toggle('sel', k === sugSel));
-  if (fill) url.value = sugSel === 0 ? typed : prettyUrl(sugRows[sugSel].url);
+  if (fill) url.value = sugSel === 0 ? typed : sugRows[sugSel].value || prettyUrl(sugRows[sugSel].url);
 }
 url.addEventListener('input', (e) => {
   typed = url.value;
@@ -511,14 +516,17 @@ url.addEventListener('input', (e) => {
 browserApi.onOmni((r) => {
   if (!editing || r.q !== typed) return;          // stale reply
   if (!r.items.length) { hideSug(); return; }
-  // Chrome-like inline completion (not while deleting)
-  if (r.inline && !lastWasDelete && url.selectionStart === typed.length && r.inline.startsWith(typed.toLowerCase())) {
-    url.value = typed + r.inline.slice(typed.length);
-    url.setSelectionRange(typed.length, url.value.length);
-  }
   drawSug(r);
 });
+function expandTextInput(input,event){
+ if(event.isComposing||event.ctrlKey||event.metaKey||event.altKey||![' ','Enter','Tab'].includes(event.key)||input.selectionStart!==input.selectionEnd)return false;
+ const end=input.selectionEnd,match=/#([\p{L}\p{N}_-]{1,32})$/u.exec(input.value.slice(Math.max(0,end-33),end));
+ if(!match)return false;const rule=(state?.textReplacements||[]).find(r=>r.trigger===match[1].normalize('NFC').toLowerCase());if(!rule)return false;
+ event.preventDefault();input.setRangeText(rule.value+(event.key===' '?' ':''),end-match[0].length,end,'end');input.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertReplacementText',data:rule.value}));return true;
+}
+browserApi.onInputExpanded(data=>{const input=$('newtabPrompt').hidden?url:$('newtabQuery');input.value=data.value;input.focus();input.setSelectionRange(input.value.length,input.value.length);input.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertReplacementText',data:data.value}));});
 url.addEventListener('keydown', (e) => {
+  if(expandTextInput(url,e))return;
   if (e.key === 'ArrowDown' && !sug.hidden) { e.preventDefault(); selectSug(sugSel + 1, true); }
   else if (e.key === 'ArrowUp' && !sug.hidden) { e.preventDefault(); selectSug(sugSel - 1, true); }
   else if (e.key === 'Enter') {
@@ -590,6 +598,17 @@ function tabEl(t, active, existing) {
   d.replaceChildren();
   d.className = 'tab' + (active ? ' on' : '') + (t.sleeping ? ' sleep' : '') + (t.pinned ? ' pin' : '');
   d.dataset.id = t.id;
+  d.tabIndex=active?0:-1;d.setAttribute('role','tab');d.setAttribute('aria-selected',String(active));d.setAttribute('aria-label',t.title||'Yeni Sekme');
+  d.onkeydown=e=>{
+    if(e.target!==d||e.ctrlKey||e.metaKey||e.altKey)return;
+    const list=[...document.querySelectorAll('.tab[data-id]')].filter(el=>el.getClientRects().length),index=list.indexOf(d);
+    if(['ArrowDown','ArrowRight','ArrowUp','ArrowLeft','Home','End'].includes(e.key)){
+      e.preventDefault();const next=e.key==='Home'?0:e.key==='End'?list.length-1:(index+(['ArrowDown','ArrowRight'].includes(e.key)?1:-1)+list.length)%list.length;
+      list[next]?.focus({preventScroll:true});list[next]?.scrollIntoView({block:'nearest'});
+    }else if(e.key==='Enter'||e.key===' '){e.preventDefault();send('activate',t.id);}
+    else if(e.key==='Delete'){e.preventDefault();send('close-tab',t.id);}
+    else if(e.key==='ContextMenu'||e.key==='F10'&&e.shiftKey){e.preventDefault();const r=d.getBoundingClientRect();send('tab-menu',{id:t.id,x:r.left,y:r.bottom});}
+  };
   d.style.setProperty('--tab-accent',/^#[0-9a-f]{6}$/i.test(t.iconColor||'')?t.iconColor:'#808080');
   d.title = (t.title || 'Yeni Sekme') + (t.sleeping ? '\n(Uyutuldu - bellek boşaltıldı)' : '') + (t.muted ? '\n(Sesi kapalı)' : '') + (t.volume !== 100 ? '\nSes: %' + t.volume : '');
   const c1 = document.createElement('span'); c1.className = 'c1'; d.appendChild(c1);
@@ -615,10 +634,12 @@ function tabEl(t, active, existing) {
     d.appendChild(a);
   }
   const x = document.createElement('button'); x.className = 'x'; x.innerHTML = I.close; x.title = 'Sekmeyi kapat';
+  x.tabIndex=-1;
   x.onmousedown = (e) => e.stopPropagation();
   x.onclick = (e) => { e.stopPropagation(); send('close-tab', t.id); };
   d.appendChild(x);
   const c2 = document.createElement('span'); c2.className = 'c2'; d.appendChild(c2);
+  if(t.sleepExcluded){const badge=document.createElement('span');badge.className='awake-badge';badge.textContent='☕';badge.title=L('Bu site otomatik uyutulmaz','This site stays awake');d.appendChild(badge);}
 
   d.onmousedown = (e) => {
     if (e.button === 1) { e.preventDefault(); send('close-tab', t.id); return; }
@@ -631,6 +652,7 @@ function tabEl(t, active, existing) {
   return d;
 }
 
+let lastZoomWheel=0;window.addEventListener('wheel',event=>{if(!event.isTrusted||!event.ctrlKey||!event.deltaY)return;event.preventDefault();const now=performance.now();if(now-lastZoomWheel<80)return;lastZoomWheel=now;send('zoom-wheel',event.deltaY<0?1:-1);},{capture:true,passive:false});
 // Reorder tabs by dragging
 window.addEventListener('mousemove', (e) => {
   if (!drag) return;
@@ -644,7 +666,7 @@ window.addEventListener('mousemove', (e) => {
       const r = drag.el.getBoundingClientRect();
       drag.slots = [...$('pinnedtabs').children].map((el) => { const b=el.getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/2}; });
       drag.ghost = drag.el.cloneNode(true); drag.ghost.removeAttribute('data-id');
-      drag.ghost.className = 'pinned-ghost tab';
+      drag.ghost.className = 'pinned-ghost tab';drag.ghost.tabIndex=-1;drag.ghost.setAttribute('aria-hidden','true');
       Object.assign(drag.ghost.style, { width:r.width+'px', height:r.height+'px', left:r.left+'px', top:r.top+'px' });
       document.body.append(drag.ghost); drag.el.classList.add('placeholder');
       send('tab-drag-start');
@@ -668,9 +690,14 @@ window.addEventListener('mousemove', (e) => {
     }
     return;
   }
+  if(!drag.moved){
+    const r=drag.el.getBoundingClientRect();drag.ghost=drag.el.cloneNode(true);drag.ghost.removeAttribute('data-id');
+    drag.ghost.classList.add('tab-drag-ghost');drag.ghost.tabIndex=-1;drag.ghost.setAttribute('aria-hidden','true');
+    Object.assign(drag.ghost.style,{position:'fixed',zIndex:'140',pointerEvents:'none',width:r.width+'px',height:r.height+'px',left:r.left+'px',top:r.top+'px',margin:'0'});
+    document.body.append(drag.ghost);drag.el.classList.add('placeholder');send('tab-drag-start');
+  }
   drag.moved = true;
-  drag.el.classList.add('drag');
-  drag.el.style.transform = vert ? `translateY(${dx}px)` : `translateX(${dx}px)`;
+  drag.ghost.style.transform = vert ? `translateY(${dx}px)` : `translateX(${dx}px)`;
 });
 window.addEventListener('mouseup', (e) => {
   if (!drag) return;
@@ -784,6 +811,7 @@ function render(s) {
   renderBookmarks(s);
   $('ext').hidden = !s.extSupport;
   // Volume button is always visible; dimmed on non-web tabs (new tab, settings...)
+  $('zoomPct').hidden=!s.zoom||s.zoom===100;$('zoomPct').textContent=window.LANG==='en'?(s.zoom||100)+'%':'%'+(s.zoom||100);
   const vol = $('vol');
   vol.hidden = false;
   vol.disabled = !s.canVolume;
@@ -868,6 +896,8 @@ window.addEventListener('mouseup', () => {
   send('side-drag-end');
 });
 // Visibility comes from the main process; DOM replacement cannot dismiss the sidebar.
+$('side').addEventListener('focusin',()=>send('side-focus',true));
+$('side').addEventListener('focusout',(e)=>{if(!$('side').contains(e.relatedTarget))send('side-focus',false);});
 browserApi.onSideReveal((v) => { document.body.classList.toggle('reveal', !!v); });
 function renderBookmarks(s) {
   document.body.classList.toggle('bbar', !!s.bookmarksBar);
@@ -994,7 +1024,27 @@ const PI = {
   incognito: '<svg viewBox="0 0 24 24"><path d="M17.5 12c-1.7 0-3.13 1.15-3.56 2.71a3.47 3.47 0 00-3.88 0A3.7 3.7 0 006.5 12 3.5 3.5 0 1010 15.5c0-.07 0-.14-.01-.21a2.07 2.07 0 014.02 0c-.01.07-.01.14-.01.21A3.5 3.5 0 1017.5 12zm-11 5.5a2 2 0 110-4 2 2 0 010 4zm11 0a2 2 0 110-4 2 2 0 010 4zM22 10.5H2V12h20v-1.5zm-6.47-7.87c-.22-.49-.78-.75-1.31-.58L12 2.79l-2.23-.74-.05-.01c-.53-.15-1.09.13-1.29.64L6 9h12l-2.44-6.32-.03-.05z"/></svg>'
 };
 const pop = $('pop');
-let contextFocusReturn=null;
+let contextFocusReturn=null, restoringOverlayFocus=false;
+function focusableIn(root) {
+  return [...root.querySelectorAll('button,input,select,textarea,[tabindex]')].filter(el=>!el.disabled&&!el.closest('.dis')&&el.tabIndex>=0&&el.getClientRects().length&&!el.closest('[hidden]'));
+}
+function focusOverlay(root, preferred) { (preferred || focusableIn(root)[0] || root).focus({preventScroll:true}); }
+function restoreOverlayFocus() {
+  const el=contextFocusReturn;contextFocusReturn=null;
+  if(!el?.isConnected||!el.getClientRects().length||el.closest('[hidden]'))return;
+  restoringOverlayFocus=true;try{el.focus({preventScroll:true});}finally{restoringOverlayFocus=false;}
+  send('restore-ui-focus');
+}
+function overlayRoot() { return !pop.hidden ? pop : !$('newtabPrompt').hidden ? $('newtabPrompt') : null; }
+function trapOverlayTab(e) {
+  const root=overlayRoot();if(e.key!=='Tab'||!root)return false;
+  const items=focusableIn(root);if(!items.length){e.preventDefault();return true;}
+  const index=items.indexOf(document.activeElement);
+  e.preventDefault();
+  const next=index<0?(e.shiftKey?items.length-1:0):(index+(e.shiftKey?-1:1)+items.length)%items.length;
+  items[next].focus({preventScroll:true});
+  return true;
+}
 let menu = null;         // { kind, anchor, data }
 let subTimer = null;
 
@@ -1049,19 +1099,20 @@ function menuAct(id, arg, keep) {
 
 function closeMenu(notify=true) {
   if (!menu && !chooser) return;
-  const restoreFocus=contextFocusReturn;contextFocusReturn=null;
+  const resumeSearch=menu?.data?.resumeSearch;
+
   menu = null;
   chooser = null;
   clearTimeout(subTimer);
   pop.hidden = true;
   pop.replaceChildren();
-  if(restoreFocus?.isConnected)restoreFocus.focus({preventScroll:true});
-  if(notify)send('menu-close');
+  if(notify)send('menu-close');else{if(resumeSearch)$('newtabPrompt').hidden=false;restoreOverlayFocus();}
 }
 
 function contextModel(items){return items.map(item=>({...item,...(item.children?{sub:()=>contextModel(item.children)}:{})}));}
 function buildPanel(items, isSub) {
   const panel = document.createElement('div');
+  panel.setAttribute('role','menu');
   panel.className = 'panel' + (isSub ? ' sub' : '');
   for (const it of items) {
     if (it.sep) { const s = document.createElement('div'); s.className = 'sep'; panel.appendChild(s); continue; }
@@ -1221,8 +1272,22 @@ function openSub(row, items) {
   sub.style.top = y + 'px';
 }
 
+function drawSiteControls(){
+ const data=menu.data,focused=document.activeElement?.dataset.siteKey;
+ const {box,body,foot}=bubbleShell(data.display,null,closeMenu);
+ for(const [key,label,description,on,disabled] of [['sleep','Bu siteyi otomatik uyutma','Bu sitedeki sekmeleri açık tut.',data.sleepExcluded,false],['cookies','Bu siteyi çerez temizliğinden koru','Çerezleri temizlerken bu sitedeki oturumunu koru.',data.protected,data.private]]){
+  const row=document.createElement('div');row.className='site-control-row';const text=document.createElement('div'),title=document.createElement('div'),detail=document.createElement('div');title.textContent=label;detail.className='site-control-detail';detail.textContent=description;text.append(title,detail);
+  const toggle=document.createElement('button');toggle.className='site-switch';toggle.dataset.siteKey=key;toggle.type='button';toggle.setAttribute('role','switch');toggle.setAttribute('aria-label',label);toggle.setAttribute('aria-checked',String(on));toggle.disabled=disabled;toggle.onclick=()=>send('site-setting',{tabId:data.tabId,site:data.site,key,on:!on});row.append(text,toggle);body.append(row);
+ }
+ if(data.deps?.length){
+  const note=document.createElement('div');note.className='note';note.append(document.createTextNode(L('Oturumunun sürmesi için bu siteleri de çerez temizliğinden koruyabilirsin:','You can also protect these sites from cookie clearing to stay signed in:')+' '+data.deps.map(dep=>dep.display).join(', ')));body.append(note);
+  footButton(foot,'Gerek yok',()=>send('site-dependencies',false));footButton(foot,'Bunları da koru',()=>send('site-dependencies',true));
+ }else footButton(foot,'Çerezler ve site verileri…',()=>{closeMenu();send('menu-action',{id:'settings',arg:'siteler'});});
+ placeBubble(box);focusOverlay(box,focused?body.querySelector('[data-site-key="'+focused+'"]'):null);
+}
 function drawMenu() {
   if (!menu) return;
+  if(menu.kind==='site'){drawSiteControls();return;}
   const openLabel = pop.querySelector('.mi.open .lb');
   const reopen = openLabel ? openLabel.textContent : null;
   pop.replaceChildren();
@@ -1244,18 +1309,22 @@ function drawMenu() {
   }
 }
 
-browserApi.onMenuOpen((m) => { if(m.kind==='context')contextFocusReturn=document.activeElement;chooser = null; menu = m; pop.hidden = false; drawMenu(); });
+browserApi.onMenuOpen((m) => {
+  contextFocusReturn=m.kind==='context' ? (m.data?.resumeSearch ? $('newtabQuery') : m.data?.restoreUi ? document.activeElement : null) : $({volume:'vol',extensions:'ext',site:'lead'}[m.kind]||'menu');
+  chooser = null; menu = m; pop.hidden = false; drawMenu(); focusOverlay(pop);
+});
 browserApi.onMenuData((d) => { if (menu && menu.kind !== 'volume' && menu.kind !== 'context') { menu.data = d; drawMenu(); } });
 let promptRows = [], promptSelected = 0, promptTyped = '';
 function selectPromptResult(index, fill = false) {
   promptSelected = (index + promptRows.length) % Math.max(1,promptRows.length);
   [...$('newtabResults').children].forEach((el,i) => { el.classList.toggle('sel',i===promptSelected); el.setAttribute('aria-selected', String(i===promptSelected)); });
-  if (fill) $('newtabQuery').value = promptSelected === 0 ? promptTyped : prettyUrl(promptRows[promptSelected].url);
+  if(promptRows.length)$('newtabQuery').setAttribute('aria-activedescendant','newtab-result-'+promptSelected);else $('newtabQuery').removeAttribute('aria-activedescendant');
+  if (fill) $('newtabQuery').value = promptSelected === 0 ? promptTyped : promptRows[promptSelected].value || prettyUrl(promptRows[promptSelected].url);
 }
-function submitPrompt() { const r=promptRows[promptSelected]; const value=r && r.url ? r.url : $('newtabQuery').value.trim(); if(value) send('newtab-submit',value); }
+function submitPrompt() { const r=promptRows[promptSelected]; const value=r && (r.value||r.url) ? (r.value||r.url) : $('newtabQuery').value.trim(); if(value) send('newtab-submit',value); }
 $('newtabQuery').oninput = () => {
   promptTyped = $('newtabQuery').value; promptSelected=0;
-  if(!promptTyped.trim()) { promptRows=[];$('newtabResults').replaceChildren();$('newtabQuery').setAttribute('aria-expanded','false');return; }
+  if(!promptTyped.trim()) { promptRows=[];$('newtabResults').replaceChildren();$('newtabQuery').setAttribute('aria-expanded','false');$('newtabQuery').removeAttribute('aria-activedescendant');return; }
   // Keep the current suggestions visible until their replacement arrives.
   if(promptRows.length) { promptRows[0]={title:promptTyped};const label=$('newtabResults').firstElementChild?.querySelector('.result-label');if(label)label.textContent=promptTyped;selectPromptResult(0); }
   send('newtab-query',promptTyped);
@@ -1266,7 +1335,7 @@ browserApi.onNewTabResults((r) => {
   $('newtabQuery').setAttribute('aria-expanded',String(promptRows.length>0));
   const existing=new Map([...$('newtabResults').children].map(row=>[row.dataset.key,row]));
   $('newtabResults').replaceChildren(...promptRows.map((item,i)=>{
-    const key=item.url||'query';const row=existing.get(key)||document.createElement('button');row.dataset.key=key;row.type='button';row.setAttribute('role','option');
+    const key=item.value||item.url||'query';const row=existing.get(key)||document.createElement('button');row.dataset.key=key;row.id='newtab-result-'+i;row.type='button';row.setAttribute('role','option');
     let icon=row.firstElementChild;if(!icon){icon=document.createElement('span');row.append(icon);}
     const iconKey=item.favicon||(i===0?'search':item.kind||'history');
     if(row.dataset.icon!==iconKey){row.dataset.icon=iconKey;icon.innerHTML=i===0?I.search:item.kind==='bm'?I.starSmall:I.clock;
@@ -1278,7 +1347,7 @@ browserApi.onNewTabResults((r) => {
   }));selectPromptResult(0);
 });
 browserApi.onNewTabPrompt((d) => {
-  promptRows=[];promptSelected=0;promptTyped='';$('newtabResults').replaceChildren();$('newtabQuery').setAttribute('aria-expanded','false');
+  promptRows=[];promptSelected=0;promptTyped='';$('newtabResults').replaceChildren();$('newtabQuery').setAttribute('aria-expanded','false');$('newtabQuery').removeAttribute('aria-activedescendant');
   $('newtabPrompt').hidden = false; $('newtabQuery').value = promptTyped = typeof d.value === 'string' ? d.value : '';
   dirty = false; url.blur();
   $('newtabQuery').placeholder = (d.searchName || 'Google') + ' ile arama yapın veya adres yazın';
@@ -1288,23 +1357,32 @@ browserApi.onNewTabPrompt((d) => {
 });
 $('newtabPrompt').querySelector('form').onsubmit = (e) => { e.preventDefault(); submitPrompt(); };
 $('newtabPrompt').onmousedown = (e) => { if (e.target === $('newtabPrompt')) send('newtab-cancel'); };
-$('newtabQuery').onkeydown = (e) => { if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && promptRows.length) { e.preventDefault(); selectPromptResult(promptSelected+(e.key==='ArrowDown'?1:-1),true); } else if (e.key === 'Escape') { e.preventDefault(); send('newtab-cancel'); } };
-browserApi.onMenuClosed(() => {
-  $('newtabPrompt').hidden = true;
+$('newtabQuery').onkeydown = (e) => { if(expandTextInput($('newtabQuery'),e))return; if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && promptRows.length) { e.preventDefault(); selectPromptResult(promptSelected+(e.key==='ArrowDown'?1:-1),true); } else if (e.key === 'Escape') { e.preventDefault(); send('newtab-cancel'); } };
+browserApi.onMenuClosed((d) => {
+  $('newtabPrompt').hidden = !d.resumeSearch;
   if (menu || chooser) { menu = null; chooser = null; pop.hidden = true; pop.replaceChildren(); }
   if (!sug.hidden) { sug.hidden = true; sug.replaceChildren(); sugRows = []; }
+  if(d.resumeSearch){contextFocusReturn=null;$('newtabQuery').focus({preventScroll:true});}
+  else if (d.refocus !== false) restoreOverlayFocus(); else contextFocusReturn=null;
 });
 browserApi.onOpenMenu(() => $('menu').click());
 browserApi.onFindStep((forward) => { if (findq.value) send('find', { text: findq.value, next: true, forward }); else { findq.focus(); } });
 window.addEventListener('keydown', (e) => {
-  if(menu?.kind==='context'&&e.key==='ArrowRight'){const row=document.activeElement;if(row?.classList.contains('mi')&&row.querySelector('.ar')){e.preventDefault();row.click();[...pop.querySelectorAll('.panel')].at(-1)?.querySelector('.mi:not(.dis)')?.focus();}return;}
-  if(menu?.kind==='context'&&e.key==='ArrowLeft'){const panel=document.activeElement?.closest('.panel.sub');if(panel){e.preventDefault();const parent=panel.previousElementSibling;panel.remove();parent?.querySelector('.mi.open')?.focus();}return;}
-  if(menu?.kind==='context'&&['ArrowDown','ArrowUp','Home','End'].includes(e.key)){
+  if(e.defaultPrevented)return;
+  if(trapOverlayTab(e))return;
+  if(e.key==='Escape'&&!$('newtabPrompt').hidden&&pop.hidden){e.preventDefault();send('newtab-cancel');return;}
+  if(menu&&menu.kind!=='site'&&e.key==='ArrowRight'){const row=document.activeElement;if(row?.classList.contains('mi')&&row.querySelector('.ar')){e.preventDefault();row.click();[...pop.querySelectorAll('.panel')].at(-1)?.querySelector('.mi:not(.dis)')?.focus();}return;}
+  if(menu&&menu.kind!=='site'&&e.key==='ArrowLeft'){const panel=document.activeElement?.closest('.panel.sub');if(panel){e.preventDefault();const parent=panel.previousElementSibling;panel.remove();parent?.querySelector('.mi.open')?.focus();}return;}
+  if(menu&&menu.kind!=='site'&&['ArrowDown','ArrowUp','Home','End'].includes(e.key)&&document.activeElement?.type!=='range'){
    e.preventDefault();const panel=document.activeElement?.closest('.panel')||pop.querySelector('.panel');const rows=[...panel.querySelectorAll('.mi:not(.dis)')];let i=rows.indexOf(document.activeElement);i=e.key==='Home'?0:e.key==='End'?rows.length-1:(i+(e.key==='ArrowDown'?1:-1)+rows.length)%rows.length;rows[i]?.focus();return;
+  }
+  if(e.key==='Escape'&&menu){
+   const sub=document.activeElement?.closest('.panel.sub')||[...pop.querySelectorAll('.panel.sub')].at(-1);
+   if(sub){e.preventDefault();const parent=sub.previousElementSibling;sub.remove();parent?.querySelector('.mi.open')?.focus();return;}
   }
   if (e.key === 'Escape' && prompt) { e.preventDefault(); answerPrompt('dismiss'); return; }
   if (e.key === 'Escape' && (menu || chooser)) { e.preventDefault(); closeMenu(); }
-  if (e.key === 'Enter' && chooser && chooser.selected) { e.preventDefault(); send('chooser-select', chooser.selected); }
+  if (e.key === 'Enter' && chooser && chooser.selected && document.activeElement?.classList.contains('dr')) { e.preventDefault(); send('chooser-select', chooser.selected); }
 });
 
 // ================================================================ Device chooser bubble (opens below the address bar)
@@ -1322,7 +1400,7 @@ function bubbleShell(title, icon, onClose) {
   backdrop.oncontextmenu = (e) => { e.preventDefault(); onClose(); };
   pop.appendChild(backdrop);
   const box = document.createElement('div'); box.className = 'bubble';
-  box.setAttribute('role', 'dialog');
+  box.setAttribute('role', 'dialog');box.setAttribute('aria-modal','true');
   const h = document.createElement('div'); h.className = 'bh';
   if (icon) { const im = document.createElement('img'); im.src = icon; im.alt = ''; h.append(im); }
   const t = document.createElement('div'); t.className = 'bti'; t.textContent = title;
@@ -1358,6 +1436,8 @@ function drawChooser() {
   }
   for (const dev of d.devices) {
     const r = document.createElement('div');
+    r.tabIndex=0;r.setAttribute('role','option');r.setAttribute('aria-selected',String(dev.id===chooser.selected));
+    r.onkeydown=e=>{if(e.key===' '){e.preventDefault();r.click();}};
     r.className = 'dr' + (dev.id === chooser.selected ? ' sel' : '');
     r.innerHTML = PI.serial;
     const tx = document.createElement('div');
@@ -1375,6 +1455,7 @@ function drawChooser() {
   ok.disabled = !chooser.selected;
   list.scrollTop = listScroll || 0;
   placeBubble(box);
+  focusOverlay(box, foot.querySelector('button'));
 }
 
 // ---------- Permission / confirm bubble (location, camera, notifications, extension install...)
@@ -1401,14 +1482,15 @@ function drawPrompt() {
   footButton(foot, d.cancel || 'Engelle', () => answerPrompt('cancel'));
   const ok = footButton(foot, d.ok || 'İzin ver', () => answerPrompt('ok'));
   placeBubble(box);
-  setTimeout(() => ok.focus(), 0);
+  // Start on the safe decision; Enter must not grant permission by accident.
+  focusOverlay(box, foot.querySelector('button'));
 }
-browserApi.onPromptOpen((d) => { menu = null; chooser = null; prompt = d; pop.hidden = false; drawPrompt(); });
+browserApi.onPromptOpen((d) => { contextFocusReturn=null; menu = null; chooser = null; prompt = d; pop.hidden = false; drawPrompt(); });
 browserApi.onPromptClose(() => { if (prompt) { prompt = null; pop.hidden = true; pop.replaceChildren(); } });
 
-browserApi.onChooserOpen((d) => { menu = null; chooser = { data: d, selected: null }; pop.hidden = false; drawChooser(); });
+browserApi.onChooserOpen((d) => { contextFocusReturn=null; menu = null; chooser = { data: d, selected: null }; pop.hidden = false; drawChooser(); });
 browserApi.onChooserData((d) => { if (chooser) { chooser.data = d; drawChooser(); } });
-window.addEventListener('blur', () => { /* main process closes the menu when the window loses focus */ });
+window.addEventListener('blur', () => send('side-focus',false));
 
 const anchorOf = (el) => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.bottom, right: r.right }; };
 $('menu').onclick = (e) => send('menu', { ...anchorOf(e.currentTarget), kind: 'main' });

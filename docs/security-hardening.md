@@ -15,7 +15,7 @@ This review fixes specific identified paths; it is not a claim that the browser 
 
 ## Updates and signing
 
-Calcium has no application updater. New versions are installed manually using the setup. Engine security fixes require a new release and installer. uBO filter lists and the local malicious-domain feed may still refresh; these are data updates, not application binaries.
+Installed Windows x64 builds can check for a stable release at startup and from Settings. Executable content downloads only after an explicit Update action; Later suppresses automatic checks/offers across restarts and releases. The installer is SHA-256 verified against GitHub release metadata before handoff. See [application updates](application-updates.md) for bounds, trust and validation details. Engine security fixes still require a new release and installer. uBO filter lists and the local malicious-domain feed may still refresh; these are data updates, not application binaries.
 
 No Windows signing certificate or release credentials were fabricated, purchased or published. A maintainer must configure a real code-signing certificate for release builds (the usual electron-builder `CSC_LINK` / `CSC_KEY_PASSWORD` inputs); the generated `publisherName` must identify the intended publisher. Widevine VMP signatures do not substitute for Windows Authenticode. A signed installer/update cycle cannot be fully validated without the real signing identity and release artifacts.
 
@@ -32,7 +32,7 @@ The engine and dependency checks must be repeated before every release; a clean 
 
 ## Content blocking
 
-uBlock Origin remains the full filtering engine; Ghostery has been removed. Network decisions in both normal and private sessions use bounded batches routed through the already loaded uBO engine, because Electron extension webRequest enforcement is incomplete. The adapter covers static network rules and dynamic URL/firewall rules. Normal windows retain extension cosmetics and scriptlets; private windows do not have the full cosmetic/scriptlet pipeline. Request batches are transient and do not register private tabs or request logs in the persistent extension session.
+uBlock Origin remains the full filtering engine; Ghostery has been removed. Network decisions in both normal and private sessions use bounded batches routed through the already loaded uBO engine, because Electron extension webRequest enforcement is incomplete. The adapter covers static network rules and dynamic URL/firewall rules. Normal windows retain the full extension cosmetics and scriptlet pipeline. Private windows also use declarative cosmetic CSS, bounded generic selector lookup and main-document scriptlets through a stateless adapter. This is not full parity: procedural DOM filters, extension-resource-dependent scriptlets, about/blob documents and subframe content injection remain limited. Subframe network requests are still filtered. Request batches are transient and do not register private tabs or request logs in the persistent extension session.
 
 Calcium additionally applies a lightweight third-party domain denylist derived from standalone AdGuard tracking-server rules. Conditional rules are not approximated. Public/private suffix-aware site boundaries prevent treating unrelated co.uk or github.io tenants as one site. This layer runs after uBO allows a request, supports a separate per-site exception in the page context menu, and removes common tracking query parameters from browser-initiated navigations while preserving signed links. It does not inspect downloaded file contents or guarantee that every advertisement is blocked.
 
@@ -49,3 +49,13 @@ Calcium uses a dedicated Windows app ID, NSIS installation GUID and profile fold
 Device permissions now use independent policies per Electron Session, match origin/type/device ID for temporary grants, and never read/write normal grants in incognito. Only serial-identified devices can retain a persistent origin-bound grant. Unknown permission checks deny by default. Regression tests exercise both the policy and the actual Session handler wiring; physical device testing remains outstanding.
 
 Automatic memory-pressure sleeping retains site isolation and sandboxing. Edited forms, media permissions, captured contents, active downloads and per-site sleep exclusions prevent automatic disposal. See `docs/ram-results-1.3.4.md` for measured scope and limitations.
+
+## Private content filtering and focus follow-up — 7 November 2026
+
+Private main-document rules are prepared before the network callback releases its request. The private preload consumes a one-use, frame/URL/WebContents-bound pack at document start. Synchronous preload IPC reads that already prepared pack; it never waits for the background engine. Additional ID/class hashes are queried asynchronously and are bounded by batch size, outstanding jobs and per-document limits. No bridge is exposed to remote page scripts.
+
+The adapter reads the loaded uBO databases and uses short-lived selector caches. It bypasses the extension wrapper’s scriptlet cache, logger and content-script registration. Private hosts do not enter normal page stores or cosmetic/scriptlet caches. Prepared packs expire and are cleared when the last private window closes; in-flight results from an earlier private lifetime are discarded. Network filtering remains installed even if the cosmetic adapter fails. Node integration and subframe Node integration stay disabled; sandbox and site isolation remain enabled. Main-document cosmetic/scriptlet behavior is tested under restrictive CSP, with filter exceptions and cross-site navigation.
+
+Tests cover malformed and cross-session requests, stale navigation replies and cleanup during an in-flight read. A real closed-output-pipe regression also verifies that development/test logging does not produce an EPIPE main-process crash.
+
+See [keyboard and focus rules](keyboard-focus.md) and the [bounded soak benchmark](soak-benchmark.md). The benchmark is a local maintainer command, not telemetry or a service running in the shipped browser.

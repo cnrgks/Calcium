@@ -3,7 +3,7 @@ const {app,BrowserWindow,session}=require('electron');
 const path=require('path'),http=require('http'),assert=require('assert');
 app.disableHardwareAcceleration();
 app.whenReady().then(async()=>{
- const server=http.createServer((_q,r)=>{r.setHeader('Content-Type','text/html');r.end('<!doctype html><style>body{margin:0;height:3600px;background:white}</style><p>Scrollbar fixture</p>');});
+ const server=http.createServer((_q,r)=>{r.setHeader('Content-Type','text/html');r.end('<!doctype html><style>body{margin:0;height:3600px;background:white}</style><p>Scrollbar fixture</p><div id="nested" style="position:absolute;top:100px;left:100px;width:150px;height:100px;overflow:auto"><div style="width:1000px;height:1000px">Panel</div></div><iframe style="position:absolute;top:250px;left:100px;width:200px;height:100px" srcdoc="<style>body{height:1000px}</style>Frame"></iframe>');});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const ses=session.fromPartition('calcium-scroll-test');ses.registerPreloadScript({id:'scroll',type:'frame',filePath:path.join(__dirname,'..','overlay-scrollbar.js')});
  const win=new BrowserWindow({show:false,width:800,height:600,useContentSize:true,webPreferences:{session:ses,sandbox:true,offscreen:true}});
@@ -15,5 +15,8 @@ app.whenReady().then(async()=>{
  win.webContents.sendInputEvent({type:'mouseMove',x:798,y:30});await new Promise(r=>setTimeout(r,200));assert.equal(await sample(),4,'hover expands the thumb');
  win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,x:798,y:30});win.webContents.sendInputEvent({type:'mouseMove',x:798,y:300});win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,x:798,y:300});await new Promise(r=>setTimeout(r,100));
  assert(await win.webContents.executeJavaScript('document.scrollingElement.scrollTop>500'),'thumb dragging scrolls the page');
+ await win.webContents.executeJavaScript('scrollTo(0,0)');win.webContents.sendInputEvent({type:'mouseMove',x:120,y:120});await new Promise(r=>setTimeout(r,100));
+ assert.equal(await win.webContents.executeJavaScript('document.querySelectorAll("[data-calcium-scrollbar=panel]").length'),1,'nested panel discovers its overlay');
+ assert(await win.webContents.executeJavaScript('[...document.querySelectorAll("[data-calcium-scrollbar-horizontal]")].some(e=>getComputedStyle(e).display!=="none")'),'nested horizontal scroll has an overlay');
  win.destroy();server.close();console.log('PASS: overlay scrollbar uses no layout width, grows from 1 to 4 pixels on hover, and supports dragging.');app.quit();
 }).catch(e=>{console.error(e);app.exit(1)});

@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' file:; style-src 'unsafe-inline'">
+<script src="i18n.js"></script><script src="browser-font.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;padding:6px;display:flex;justify-content:flex-end;align-items:flex-start;background:transparent;color:#202124;font:13px "Segoe UI",system-ui,sans-serif}article{position:relative;width:348px;max-width:100%;flex:0 1 348px;padding:16px;border:1px solid #dadce0;border-radius:12px;background:#fff;box-shadow:0 2px 6px #0002}h2{margin:0 22px 8px 0;font-size:14px;font-weight:600}p{margin:0;color:#60646b;line-height:1.5}footer{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}button{font:inherit;cursor:pointer;border:1px solid #dadce0;border-radius:16px;background:transparent;color:inherit;padding:7px 14px}button:focus-visible{outline:2px solid #0b57d0;outline-offset:2px}#install{background:var(--accent,#0b57d0);border-color:transparent;color:var(--accent-fg,#fff)}#close{position:absolute;top:9px;right:9px;border:0;padding:3px 7px;font-size:18px;line-height:20px}@media(prefers-color-scheme:dark){body{color:#e8eaed}article{background:#202124;border-color:#454545}p{color:#b1b5bb}button{border-color:#454545}#install{--accent:#a8c7fa;--accent-fg:#062e6f}}
+</style>
+</head>
+<body>
+<article role="status" aria-live="polite"><button id="close" aria-label="Sonra">×</button><h2 id="title">Calcium güncellemesi</h2><p>Yeni bir sürüm hazır. Güncellemek ister misin?</p><p>Kurulum başlarken Calcium kapanır.</p><footer><button id="later">Sonra</button><button id="install">Güncelle</button></footer></article>
+<script>
+'use strict';
+const api=window.pageApi;
+function show(data){if(!data)return;document.querySelector('#title').textContent=data.message;document.querySelector('#install').textContent=data.canInstall?'Güncelle':'Ayarları aç';}
+document.querySelector('#later').onclick=document.querySelector('#close').onclick=()=>api.call('app-update-later');
+document.querySelector('#install').onclick=()=>{document.querySelector('#install').disabled=true;api.call('app-update-install').catch(()=>{});};
+document.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();api.call('app-update-later');}});
+if(api){api.call('app-update-state').then(show);api.onUpdate(data=>show(data.updateState));}
+</script>
+</body>
+</html>
