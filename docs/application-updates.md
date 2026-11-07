@@ -8,6 +8,8 @@ If a newer release is available, a small view appears at the top right of one no
 
 Settings → About Calcium has **Check for updates** and, when a compatible release is available, **Update**. Only Update downloads executable content. The browser closes when installation starts; the NSIS installer reopens the installed application. Unsupported/development installations offer the fixed GitHub release page instead.
 
+After Update is selected, the same fixed-size card stays visible with streamed download progress. Settings-initiated installations show the card too. It continues through installer preparation; Calcium stays open until the installer confirms readiness. Errors remain in the card with Try again. While an installation job is active, Later/Escape do not dismiss its progress and repeated commands reuse the same job.
+
 ## Source and verification
 
 The source is fixed to [cnrgks/Calcium's latest release](https://api.github.com/repos/cnrgks/Calcium/releases/latest). Drafts and prereleases are rejected. Only a strictly newer numeric version and its exact `Calcium-Setup-<version>.exe` asset are accepted. The asset must have an uploaded state, a bounded size and a SHA-256 digest from GitHub's [release asset metadata](https://docs.github.com/en/rest/releases/assets).

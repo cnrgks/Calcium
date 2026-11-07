@@ -1,0 +1,27 @@
+'use strict';
+const {app}=require('electron'),fs=require('fs'),path=require('path'),os=require('os'),crypto=require('crypto'),Module=require('module'),assert=require('assert');
+const root=path.resolve(__dirname,'..'),profile=process.env.CALCIUM_PROFILE;
+if(!profile||path.dirname(path.resolve(profile))!==path.resolve(os.tmpdir())||!path.basename(profile).startsWith('calcium-startup-test-'))throw Error('Use test:electron');
+process.env.CALCIUM_TEST_MODE='1';process.env.CALCIUM_TEST_DISPLAY='0';app.disableHardwareAcceleration();fs.writeFileSync(path.join(profile,'ayarlar.json'),JSON.stringify({firstRunDone:true,language:'en'}));
+const bytes=Buffer.alloc(8192,42);bytes.write('MZ');const digest=crypto.createHash('sha256').update(bytes).digest('hex'),version='99.9.0',url='https://github.com/cnrgks/Calcium/releases/download/v'+version+'/Calcium-Setup-'+version+'.exe';
+let stream,downloads=0,handoffs=0,finishHandoff,quitRequests=0;const originalFetch=fetch;
+global.fetch=async(input,options)=>{if(input==='https://api.github.com/repos/cnrgks/Calcium/releases/latest')return new Response(JSON.stringify({tag_name:'v'+version,draft:false,prerelease:false,assets:[{name:'Calcium-Setup-'+version+'.exe',state:'uploaded',size:bytes.length,digest:'sha256:'+digest,browser_download_url:url}]}));if(input===url){downloads++;return new Response(new ReadableStream({start(controller){stream=controller;controller.enqueue(bytes.subarray(0,1024));}}),{headers:{'content-length':String(bytes.length)}});}return originalFetch(input,options);};
+const updates=require('../app-updates'),factory=updates.createAppUpdates;updates.createAppUpdates=options=>factory({...options,canInstall:true});
+updates.launchWindowsInstaller=async(file,hash)=>{assert.equal(hash,digest);assert.deepEqual(fs.readFileSync(file),bytes);handoffs++;await new Promise(resolve=>finishHandoff=resolve);};
+app.quit=()=>{quitRequests++;};
+const entry=path.join(root,'main.js'),m=new Module(entry,module);m.filename=entry;m.paths=Module._nodeModulePaths(root);m._compile(fs.readFileSync(entry,'utf8')+'\nmodule.exports.test={ready:mainBlockReady,windows:()=>windows,appUpdates};',entry);
+const pause=()=>new Promise(r=>setTimeout(r,50)),until=async fn=>{for(let i=0;i<200;i++){if(await fn())return;await pause();}throw Error('Progress test timed out');};
+(async()=>{
+ await app.whenReady();const api=m.exports.test;await api.ready;await until(()=>api.windows()[0]?.tabs.length);const owner=api.windows()[0];owner.win.hide();await api.appUpdates.check({manual:false});const notice=owner.updateNotice,wc=notice.webContents;
+ await until(()=>wc.executeJavaScript(`!!document.querySelector('#install')&&typeof show==='function'`).catch(()=>false));await pause();
+ const geometry=()=>wc.executeJavaScript(`(()=>{const r=document.querySelector('article').getBoundingClientRect();return {width:r.width,height:r.height}})()`),originalSize=await geometry(),bounds=notice.getBounds();
+ await wc.executeJavaScript(`document.querySelector('#install').click()`);await until(()=>api.appUpdates.snapshot().progress>0);
+ assert.strictEqual(owner.updateNotice,notice);assert(notice.getVisible());assert.equal(downloads,1);assert.equal(quitRequests,0);assert.deepEqual(await geometry(),originalSize);assert.deepEqual(notice.getBounds(),bounds);
+ await until(()=>wc.executeJavaScript(`document.querySelector('#progress').value===12&&document.querySelector('#percent').textContent==='12%'`));assert(await wc.executeJavaScript(`!document.querySelector('#progressRow').hidden&&document.querySelector('#install').disabled`));
+ await wc.executeJavaScript(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));document.querySelector('#close').click();document.querySelector('#install').click()`);await api.appUpdates.later();assert(api.appUpdates.snapshot().notice);assert.equal(downloads,1);
+ stream.error(Error('Simulated connection loss'));await until(()=>api.appUpdates.snapshot().status==='error');assert.strictEqual(owner.updateNotice,notice);await until(()=>wc.executeJavaScript(`!document.querySelector('#install').disabled&&document.querySelector('#install').textContent==='Try again'`));assert.equal(quitRequests,0);
+ await wc.executeJavaScript(`document.querySelector('#install').click()`);await until(()=>downloads===2);stream.enqueue(bytes.subarray(1024,4096));await until(()=>api.appUpdates.snapshot().progress===50);await until(()=>wc.executeJavaScript(`document.querySelector('#progress').value===50`));assert.deepEqual(await geometry(),originalSize);
+ stream.enqueue(bytes.subarray(4096));stream.close();await until(()=>handoffs===1);assert.equal(api.appUpdates.snapshot().status,'installing');assert.strictEqual(owner.updateNotice,notice);assert.equal(quitRequests,0,'browser stays open until installer readiness');await until(()=>wc.executeJavaScript(`document.querySelector('#progress').value===100&&document.querySelector('#install').disabled`));
+ finishHandoff();await until(()=>api.appUpdates.snapshot().status==='launched'&&quitRequests===1);assert.strictEqual(owner.updateNotice,notice);assert.deepEqual(await geometry(),originalSize);
+ console.log('PASS: same-size progress card remains through download, real streamed percentages, error/retry and installer readiness; no premature close or duplicate download. Installer launch mocked.');app.exit(0);
+})().catch(error=>{console.error(error);app.exit(1)});

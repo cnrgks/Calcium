@@ -6,17 +6,32 @@
 <script src="i18n.js"></script><script src="browser-font.js"></script>
 <style>
 *{box-sizing:border-box}body{margin:0;padding:6px;display:flex;justify-content:flex-end;align-items:flex-start;background:transparent;color:#202124;font:13px "Segoe UI",system-ui,sans-serif}article{position:relative;width:348px;max-width:100%;flex:0 1 348px;padding:16px;border:1px solid #dadce0;border-radius:12px;background:#fff;box-shadow:0 2px 6px #0002}h2{margin:0 22px 8px 0;font-size:14px;font-weight:600}p{margin:0;color:#60646b;line-height:1.5}footer{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}button{font:inherit;cursor:pointer;border:1px solid #dadce0;border-radius:16px;background:transparent;color:inherit;padding:7px 14px}button:focus-visible{outline:2px solid #0b57d0;outline-offset:2px}#install{background:var(--accent,#0b57d0);border-color:transparent;color:var(--accent-fg,#fff)}#close{position:absolute;top:9px;right:9px;border:0;padding:3px 7px;font-size:18px;line-height:20px}@media(prefers-color-scheme:dark){body{color:#e8eaed}article{background:#202124;border-color:#454545}p{color:#b1b5bb}button{border-color:#454545}#install{--accent:#a8c7fa;--accent-fg:#062e6f}}
+article{height:178px;display:flex;flex-direction:column}h2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none}#detail{min-height:38px}#progressRow{display:flex;align-items:center;gap:10px;height:26px;margin-top:5px}#progressRow[hidden]{visibility:hidden;display:flex}progress{flex:1;min-width:0;height:5px;border:0;border-radius:4px;overflow:hidden;background:#dadce0;accent-color:#0b57d0}progress::-webkit-progress-bar{background:#dadce0}progress::-webkit-progress-value{background:#0b57d0}#percent{font-variant-numeric:tabular-nums;min-width:36px;text-align:right;font-size:12px}footer{margin-top:auto}button:disabled{opacity:.55;cursor:default}@media(prefers-color-scheme:dark){progress,progress::-webkit-progress-bar{background:#454545}progress::-webkit-progress-value{background:#a8c7fa}}
 </style>
 </head>
 <body>
-<article role="status" aria-live="polite"><button id="close" aria-label="Sonra">×</button><h2 id="title">Calcium güncellemesi</h2><p>Yeni bir sürüm hazır. Güncellemek ister misin?</p><p>Kurulum başlarken Calcium kapanır.</p><footer><button id="later">Sonra</button><button id="install">Güncelle</button></footer></article>
+<article role="status" aria-live="polite"><button id="close" aria-label="Sonra">×</button><h2 id="title">Calcium güncellemesi</h2><p id="detail">Yeni bir sürüm hazır. Güncellemek ister misin?</p><div id="progressRow" hidden><progress id="progress" max="100" value="0" aria-label="Güncelleme indiriliyor…"></progress><span id="percent">%0</span></div><footer><button id="later">Sonra</button><button id="install">Güncelle</button></footer></article>
 <script>
 'use strict';
 const api=window.pageApi;
-function show(data){if(!data)return;document.querySelector('#title').textContent=data.message;document.querySelector('#install').textContent=data.canInstall?'Güncelle':'Ayarları aç';}
-document.querySelector('#later').onclick=document.querySelector('#close').onclick=()=>api.call('app-update-later');
-document.querySelector('#install').onclick=()=>{document.querySelector('#install').disabled=true;api.call('app-update-install').catch(()=>{});};
-document.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();api.call('app-update-later');}});
+let latest=null;
+function show(data){
+ if(!data)return;latest=data;
+ const busy=['checking','downloading','installing','launched'].includes(data.status),downloading=data.status==='downloading',progress=Math.max(0,Math.min(100,Number(data.progress)||0));
+ document.querySelector('#title').textContent=downloading?L('Güncelleme indiriliyor…','Downloading update…'):busy?L('Kurulum hazırlanıyor…','Preparing installation…'):L('Calcium güncellemesi','Calcium update')+(data.version?' '+data.version:'');
+ document.querySelector('#detail').textContent=busy?(downloading?L('İndirme bitince kurulum otomatik başlayacak.','Installation will start automatically after the download.'):L('Kurulum hazır olduğunda Calcium kapanıp yeniden açılacak.','Calcium will close and reopen when the installer is ready.')):data.status==='error'?data.message:L('Yeni bir sürüm hazır. Güncellemek ister misin?','A new version is ready. Would you like to update?');
+ document.querySelector('#progressRow').hidden=!busy;document.querySelector('#progress').value=progress;
+ document.querySelector('#percent').textContent=window.LANG==='en'?progress+'%':'%'+progress;
+ const install=document.querySelector('#install');install.disabled=busy;install.textContent=busy?L('Güncelleniyor…','Updating…'):data.status==='error'?L('Tekrar dene','Try again'):data.canInstall?L('Güncelle','Update'):L('Ayarları aç','Open settings');
+ document.querySelector('#later').disabled=busy;document.querySelector('#close').disabled=busy;
+}
+function dismiss(){if(!document.querySelector('#close').disabled)api.call('app-update-later');}
+document.querySelector('#later').onclick=document.querySelector('#close').onclick=dismiss;
+document.querySelector('#install').onclick=()=>{
+ if(latest?.canInstall)show({...latest,status:'downloading',progress:0});
+ api.call('app-update-install').catch(()=>show({...latest,status:'error',message:L('Güncelleme başlatılamadı. Tekrar deneyebilirsin.','The update could not start. You can try again.')}));
+};
+document.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();dismiss();}});
 if(api){api.call('app-update-state').then(show);api.onUpdate(data=>show(data.updateState));}
 </script>
 </body>

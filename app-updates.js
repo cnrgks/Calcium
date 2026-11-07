@@ -59,13 +59,13 @@ function createAppUpdates({currentVersion,cacheDir,fetchImpl=fetch,readPreferenc
  let state={status:'idle',version:null,progress:0,error:null,notice:false},release=null,checkJob=null,checkContext=null,installJob=null,controller=null,disposed=false,manualUsedThisSession=false;
  const snapshot=()=>({...state,currentVersion,canInstall:canInstall&&!!release,notificationsPaused:!!readPreferences().updatePromptDismissed,releasePage:RELEASE_PAGE});
  const emit=patch=>{state={...state,...patch};if(!disposed)onChange(snapshot());};
- function later(){savePreferences({updatePromptDismissed:true});emit({notice:false});return snapshot();}
+ function later(){if(installJob)return snapshot();savePreferences({updatePromptDismissed:true});emit({notice:false});return snapshot();}
  function clearNotice(){emit({notice:false});}
  function check({manual=true,internal=false}={}){
   if(disposed)return Promise.resolve(snapshot());
+  if(installJob&&!internal)return installJob;
   if(manual)manualUsedThisSession=true;
   if(manual&&state.notice)emit({notice:false});
-  if(installJob&&!internal)return installJob;
   if(checkJob){if(manual)checkContext.manual=true;return checkJob;}
   if(!manual&&(readPreferences().updatePromptDismissed||manualUsedThisSession))return Promise.resolve(snapshot());
   const context=checkContext={manual};controller=new AbortController();const signal=controller.signal;
@@ -94,7 +94,7 @@ function createAppUpdates({currentVersion,cacheDir,fetchImpl=fetch,readPreferenc
     if(checkJob)await checkJob;
     if(!release){await check({internal:true});if(!release)return snapshot();}
     if(!canInstall)throw Error('unsupported');
-    emit({status:'downloading',notice:false,error:null,progress:0});
+    emit({status:'downloading',notice:true,error:null,progress:0});
     controller=new AbortController();const timer=setTimeout(()=>controller?.abort(),10*60*1000);
     try{file=await downloadInstaller({release,cacheDir,fetchImpl,signal:controller.signal,onProgress:progress=>emit({progress})});}finally{clearTimeout(timer);controller=null;}
     if(disposed)return snapshot();
@@ -102,7 +102,7 @@ function createAppUpdates({currentVersion,cacheDir,fetchImpl=fetch,readPreferenc
     try{await launchInstaller(file,release.sha256,release.version);}catch{throw Error('launch');}
     savePreferences({updatePromptDismissed:false,updatePromptOfferedVersion:release.version});
     emit({status:'launched'});
-   }catch(error){if(file&&error.message!=='launch')await removePending(cacheDir,path.dirname(file));emit({status:'error',notice:false,error:['integrity','unsupported','manifest','launch'].includes(error.message)?error.message:'download'});}
+   }catch(error){if(file&&error.message!=='launch')await removePending(cacheDir,path.dirname(file));emit({status:'error',notice:true,error:['integrity','unsupported','manifest','launch'].includes(error.message)?error.message:'download'});}
    finally{installJob=null;}
    return snapshot();
   });return installJob;
