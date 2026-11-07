@@ -131,7 +131,8 @@
       "target": [
         "dmg"
       ],
-      "artifactName": "Calcium-${version}-${arch}.dmg"
+      "artifactName": "Calcium-${version}-${arch}.dmg",
+      "icon": "build/icon-mac.png"
     },
     "directories": {
       "buildResources": "build",
