@@ -2,6 +2,8 @@
 
 This review fixes specific identified paths; it is not a claim that the browser is vulnerability-free.
 
+The 8 November pentest follow-up changes and compatibility limits are recorded in [pentest remediation](pentest-remediation.md).
+
 ## Changes
 
 - Electron upgraded from castLabs 44.10.1 to 45.2.1. Runtime and build dependencies are pinned; vulnerable adm-zip/minimatch versions are overridden with reviewed versions.

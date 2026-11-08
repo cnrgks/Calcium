@@ -23,6 +23,7 @@ const { components } = require('electron');
 const I18N = require('./i18n');
 const path = require('path');
 const fs = require('fs');
+const {webOpenable,extensionOpenable,externalScheme,riskyDownload,markDownloadedFile}=require('./browser-security');
 const fsp = require('fs/promises');
 const { pathToFileURL } = require('url');
 const { createThreatProtection } = require('./threat-protection');
@@ -46,7 +47,7 @@ else app.setPath('userData',path.join(app.getPath('appData'),'Calcium'));
 
 // Extension support (Chrome Web Store + chrome.* APIs). If it fails to load, the browser keeps working without extensions.
 let ECE = null, CWS = null, extensions = null;
-try { ({ ElectronChromeExtensions: ECE } = require('electron-chrome-extensions')); } catch (e) { console.warn('Extension library missing:', e.message); }
+try { ({ ElectronChromeExtensions: ECE } = require('./vendor/secure-chrome-extensions')); } catch (e) { console.warn('Extension library missing:', e.message); }
 try { CWS = require('./vendor/secure-web-store'); } catch (e) { console.warn('Web Store library missing:', e.message); }
 
 const isMac = process.platform === 'darwin';
@@ -66,7 +67,6 @@ const DEFAULTS = {
   forceDarkPages: false,
   strictIsolation: true,    // true = every site in its own process like Chrome (much more RAM); false = only login/payment/protected sites isolated
   clearGoogleOnExit: false,  // when on, Google cookies/site data are cleared on exit (signs out of Google)
-  keepLogins: true,          // keep site logins across restarts (session cookies are made persistent)
   theme: 'sistem',
   uiFont:'default',
   firstRunDone: false,
@@ -168,8 +168,8 @@ function publishAppUpdates(){
  }
 }
 
-// Once on old installs: the user wanted site logins to persist; Google clearing is turned off
-if (!settings.keepLoginsSet) { settings.clearGoogleOnExit = false; settings.keepLogins = true; settings.keepLoginsSet = true; saveSettings(true); }
+// Retire the legacy setting without rewriting or deleting existing cookies.
+if ('keepLogins' in settings || 'keepLoginsSet' in settings) { delete settings.keepLogins; delete settings.keepLoginsSet; saveSettings(true); }
 // Nov 2026: image zoom is now on by default (turned on once, since old installs have "off" saved in the file)
 if (!settings.hoverZoomOnSet) { settings.hoverZoom = true; settings.hoverZoomOnSet = true; saveSettings(true); }
 // The old "Never" (0 min) choice is now a separate key
@@ -226,6 +226,7 @@ function pageKind(u) {
   return isNewtab(u) ? 'newtab' : null;
 }
 const isInternal = (u) => !!pageKind(u);
+ipcMain.on('calcium-internal-page',e=>{e.returnValue=e.senderFrame===e.sender.mainFrame&&!!pageKind(e.senderFrame?.url||'');});
 function displayUrl(u) {
   const k = pageKind(u);
   if (k === 'security') return 'calcium://security';
@@ -262,13 +263,18 @@ function recordSearch(query){
 }
 ipcMain.handle('calcium-text-shortcuts',e=>{
  const tab=byWcId.get(e.sender.id);if(!tab||e.sender.session!==tab.w.ses||!/^https?:/i.test(e.senderFrame?.url||''))return null;
- return {rules:settings.textReplacements,script:require('./text-expansion').installTextExpansion.toString()};
+ if(e.senderFrame!==e.sender.mainFrame)return null;
+ return {rules:settings.textReplacements.map(r=>r.trigger)};
+});
+ipcMain.handle('calcium-text-value',(e,trigger)=>{
+ const tab=byWcId.get(e.sender.id);if(!tab||e.sender.session!==tab.w.ses||e.senderFrame!==e.sender.mainFrame||!/^https?:/i.test(e.senderFrame?.url||'')||typeof trigger!=='string'||trigger.length>32)return null;
+ return settings.textReplacements.find(r=>r.trigger===trigger)?.value??null;
 });
 ipcMain.on('calcium-zoom-wheel',(event,direction)=>{
  const tab=byWcId.get(event.sender.id);if(!tab||event.senderFrame!==event.sender.mainFrame||![1,-1].includes(direction))return;
  setPageZoom(event.sender,direction);
 });
-function broadcastTextShortcuts(){for(const t of allTabs())if(t.view&&!t.view.webContents.isDestroyed())t.view.webContents.send('calcium-text-shortcuts-changed',settings.textReplacements);}
+function broadcastTextShortcuts(){for(const t of allTabs())if(t.view&&!t.view.webContents.isDestroyed())t.view.webContents.send('calcium-text-shortcuts-changed',settings.textReplacements.map(r=>r.trigger));}
 
 // Session: URLs of open tabs. Local pages are stored by short name (calcium://...) so they open even if the folder moves.
 const SESSION_FILE = path.join(app.getPath('userData'), 'oturum.json');
@@ -599,31 +605,6 @@ async function clearGoogleData() {
   } catch (e) { console.warn('Could not clear Google data:', e.message); }
 }
 
-// ---------------------------------------------------------------- Keep logins
-// Many sites keep logins in "session cookies" (no expiry date). They are deleted when the browser closes
-// and you must sign in again on every start. Chrome keeps them when "continue where you left off" is on; here
-// they are turned into 30-day persistent cookies on exit (and every 15 minutes, against crashes). All stays on this computer.
-const KEEP_DAYS = 30;
-async function keepSessionCookies() {
-  const ses = mainSes;
-  if (!ses || !settings.keepLogins) return 0;
-  const exp = Math.floor(Date.now() / 1000) + KEEP_DAYS * 86400;
-  let n = 0;
-  try {
-    const list = await ses.cookies.get({});
-    await Promise.all(list.filter((c) => c.session && c.domain).map((c) => {
-      const host = c.domain.replace(/^\./, '');
-      const d = { url: `${c.secure ? 'https' : 'http'}://${host}${c.path || '/'}`, name: c.name, value: c.value,
-        path: c.path || '/', secure: !!c.secure, httpOnly: !!c.httpOnly, expirationDate: exp };
-      if (!c.hostOnly) d.domain = c.domain;
-      if (c.sameSite && c.sameSite !== 'unspecified') d.sameSite = c.sameSite;
-      return ses.cookies.set(d).then(() => { n++; }, () => {});
-    }));
-    await ses.cookies.flushStore().catch(() => {});
-  } catch (e) { console.warn('Could not keep sessions:', e.message); }
-  return n;
-}
-
 // ---------------------------------------------------------------- Session
 const originOf = (u) => { try { return new URL(u).origin; } catch { return ''; } };
 const hostOf = (u) => { try { return new URL(u).host; } catch { return u || ''; } };
@@ -636,6 +617,8 @@ const PERM_TEXT = {
   notifications: { icon: 'bell', text: 'Bildirim göstermek' },
   'display-capture': { icon: 'screen', text: 'Ekranınızı görmek' },
   openExternal: { icon: 'open', text: 'Bilgisayarınızdaki bir uygulamayı açmak' },
+  'storage-access': { icon: 'globe', text: 'Bu sitede üçüncü taraf çerezlerini kullanmak' },
+  'top-level-storage-access': { icon: 'globe', text: 'Bu sitede üçüncü taraf çerezlerini kullanmak' },
   media: { icon: 'camera', text: 'Kameranızı kullanmak' }
 };
 function mediaText(details) {
@@ -649,7 +632,7 @@ function mediaText(details) {
 function extPermissionRows(m) {
   m = m || {};
   const perms = new Set([...(m.permissions || []), ...(m.optional_permissions || [])].filter((p) => typeof p === 'string'));
-  const hosts = new Set([...(m.host_permissions || []), ...(m.permissions || []).filter((p) => /[:/*]/.test(p))]);
+  const hosts = new Set([...(m.host_permissions || []), ...(m.optional_host_permissions || []), ...[...perms].filter((p) => /[:/*]/.test(p)||p==='<all_urls>')]);
   for (const cs of m.content_scripts || []) for (const x of cs.matches || []) hosts.add(x);
   const rows = [];
   const all = [...hosts].some((h) => h === '<all_urls>' || /^(\*|https?):\/\/\*\/\*$/.test(h));
@@ -667,10 +650,13 @@ function extPermissionRows(m) {
     ['management', 'Uygulamalarınızı, uzantılarınızı ve temalarınızı yönetebilir'], ['tabCapture', 'Ekranınızın içeriğini yakalayabilir'],
     ['desktopCapture', 'Ekranınızın içeriğini yakalayabilir'], ['privacy', 'Gizlilik ayarlarınızı değiştirebilir'],
     ['proxy', 'Ağ trafiğinizi başka sunucuya yönlendirebilir'], ['nativeMessaging', 'Bilgisayarınızdaki uygulamalarla iletişim kurabilir'],
-    ['userScripts', 'Sayfalarda kendi betiklerini çalıştırabilir']
+    ['userScripts', 'Sayfalarda kendi betiklerini çalıştırabilir'],['cookies','Çerezlerinizi okuyup değiştirebilir']
   ];
   const seen = new Set();
   for (const [p, text] of map) if (perms.has(p) && !seen.has(text) && !(p === 'tabs' && perms.has('history'))) { seen.add(text); rows.push({ icon: 'check', text }); }
+  const unknown=[...perms].filter(p=>!hosts.has(p)&&p!=='debugger'&&!map.some(([name])=>name===p));
+  if(unknown.length)rows.push({icon:'check',text:T('Ek yetkiler:')+' '+unknown.join(', ')});
+  if(m.externally_connectable)rows.push({icon:'globe',text:T('Web siteleri veya diğer uzantılar bu uzantıyla iletişim kurabilir')});
   if (!rows.length) rows.push({ icon: 'check', text: 'Özel izin gerektirmiyor' });
   return rows;
 }
@@ -753,7 +739,7 @@ function setupSession(ses = mainSes, incognito = false) {
   const alwaysAllow = new Set([
     'fullscreen', 'clipboard-sanitized-write', 'pointerLock', 'keyboardLock',
     // Needed by video players: DRM (EME), cookie access for embedded players, audio output selection
-    'mediaKeySystem', 'storage-access', 'top-level-storage-access', 'speaker-selection', 'persistent-storage'
+    'mediaKeySystem', 'speaker-selection', 'persistent-storage'
   ]);
   const deviceKinds = new Set(['hid', 'usb', 'serial', 'bluetooth']);
   // Like Chrome, the decision is asked in a bubble below the address bar (askPermission). Allow / Block are
@@ -763,6 +749,17 @@ function setupSession(ses = mainSes, incognito = false) {
   ses.setPermissionRequestHandler((wc, permission, cb, details) => {
     if (alwaysAllow.has(permission) || deviceKinds.has(permission)) return cb(true);
     if (!Object.hasOwn(PERM_TEXT,permission)) return cb(false);
+    if (permission==='openExternal'||permission==='storage-access'||permission==='top-level-storage-access') {
+      const origin=normalizedOrigin(details?.requestingUrl||wc?.getURL()),top=normalizedOrigin(wc?.getURL());
+      const scheme=permission==='openExternal'?externalScheme(details?.externalURL):null;
+      // Electron does not identify the delegated target in top-level storage requests.
+      if(!origin||!top||(permission==='openExternal'&&!scheme)||permission==='top-level-storage-access')return cb(false);
+      const owner=winOfWc(wc);if(!owner)return cb(false);useWin(owner);
+      const documentURL=wc.getURL();
+      const text=permission==='openExternal'?T('Harici uygulama açılacak:')+' '+scheme+':':T('Üçüncü taraf çerez erişimi:')+' '+origin+' → '+top;
+      askPrompt({host:hostOf(origin),title:T('Bu isteğe yalnızca bu kez izin verilsin mi?'),rows:[{icon:'globe',text}],ok:'İzin ver',cancel:'Engelle',kind:'perm'}).then(r=>cb(r==='ok'&&!wc.isDestroyed()&&wc.getURL()===documentURL),()=>cb(false));
+      return;
+    }
     const origin = normalizedOrigin(details?.requestingUrl || wc?.getURL());
     if(!origin)return cb(false);
     const key = origin + '|' + permission;
@@ -780,6 +777,7 @@ function setupSession(ses = mainSes, incognito = false) {
   });
   ses.setPermissionCheckHandler((_wc, permission, origin) => {
     if (alwaysAllow.has(permission) || deviceKinds.has(permission)) return true;
+    if(['openExternal','storage-access','top-level-storage-access'].includes(permission))return false;
     origin=normalizedOrigin(origin);if(!origin)return false;
     if(!Object.hasOwn(PERM_TEXT,permission))return false;
     const k = known(origin + '|' + permission);
@@ -822,7 +820,7 @@ function setupSession(ses = mainSes, incognito = false) {
       if(state==='cancelled'&&!selected){const index=downloads.indexOf(d);if(index>=0)downloads.splice(index,1);}
       d.state = state; d.paused = false; d.received = item.getReceivedBytes(); d.item = null;
       saveDownloads(); forEachWin(() => pushState()); notifyPages('downloads');
-      if (state === 'completed') notifyDownload(d);
+      if (state === 'completed') {markDownloadedFile(d.file).catch(error=>console.warn('Download security zone could not be written:',error.message));notifyDownload(d);}
     });
     saveDownloads(); forEachWin(() => pushState()); notifyPages('downloads');
   });
@@ -998,6 +996,22 @@ function toUrl(input) {
   return searchUrl() + encodeURIComponent(s);
 }
 
+function protectPopup(child,owner){
+ const wc=child.webContents;
+ attachLoginFix(wc);
+ const blocked=url=>threatProtection.isBlocked(url)&&!trustedThreatHosts.get(owner)?.has(hostOf(url));
+ wc.setWindowOpenHandler(({url})=>{
+  if(!webOpenable(url,wc.getURL())||blocked(url))return {action:'deny'};
+  return {action:'allow',overrideBrowserWindowOptions:{width:520,height:680,autoHideMenuBar:true,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}}};
+ });
+ for(const name of ['will-navigate','will-redirect'])wc.on(name,(event,url)=>{
+  const target=event.url||url;if(!webOpenable(target,wc.getURL())||blocked(target))event.preventDefault();
+ });
+ wc.on('did-create-window',(nested,details)=>{nested.setMenu?.(null);protectPopup(nested,owner);if(blocked(details.url))nested.close();});
+ wc.on('context-menu',(_e,p)=>inWin(owner,()=>showContextMenu(wc,p)));
+ wc.on('before-input-event',(event,input)=>{if(input.type==='keyDown'&&input.key==='Escape')child.close();});
+}
+
 function createView(tab) {
   const view = new WebContentsView({
     webPreferences: {
@@ -1023,6 +1037,7 @@ function createView(tab) {
 
   wc.setWindowOpenHandler(({ url, disposition }) => {
     useWin(tab.w);
+    if(!webOpenable(url,wc.getURL()))return {action:'deny'};
     if(showThreatWarning(wc,url))return {action:'deny'};
     const background = disposition === 'background-tab';
     if (disposition === 'new-window' && !background) {
@@ -1039,7 +1054,7 @@ function createView(tab) {
   on('did-create-window', (child, details) => {
     if (child.setMenu) child.setMenu(null);
     const cwc = child.webContents;
-    attachLoginFix(cwc);                         // "Sign in with Google" popups
+    protectPopup(child,tab.w);                   // includes nested login popups
     const u = (details && details.url) || cwc.getURL();
     if (isGoogleLogin(u)) { cwc.setUserAgent(LOGIN_UA); cwc.loadURL(u, { userAgent: LOGIN_UA }).catch(() => {}); }
   });
@@ -2185,6 +2200,7 @@ async function setupExtensions() {
         license: 'GPL-3.0',
         session: ses,
         createTab: async (details) => {
+          if(!extensionOpenable(details.url||'about:blank'))throw Error('Extension navigation blocked');
           // If an extension wants to reopen its own page (e.g. its options) that is already open in a tab, don't open
           // a new tab, switch to the existing one. Otherwise the same page piles up on every start (session restore + extension).
           const u = details.url || '';
@@ -2204,7 +2220,7 @@ async function setupExtensions() {
         selectTab: (wc) => { if (extensionTabRegistrationDepth || !wc || wc.isDestroyed()) return; const t = byWcId.get(wc.id); if (t) { useWin(t.w); activateTab(t.id); } },
         // The library also calls this for closed/slept tabs; only close live tabs the extension asked for
         removeTab: (wc) => { if (!wc || wc.isDestroyed()) return; const t = byWcId.get(wc.id); if (t && t.w && t.w.win) { useWin(t.w); closeTab(t.id); } },
-        createWindow: async (details) => { useWin(lastWin(true)); [].concat(details.url || '').forEach((u) => newTab(u)); return win; },
+        createWindow: async (details) => { const urls=[].concat(details.url || 'about:blank');if(urls.some(u=>!extensionOpenable(u)))throw Error('Extension navigation blocked');useWin(lastWin(true));urls.forEach((u) => newTab(u)); return win; },
         removeWindow: () => {}
       });
       ECE.handleCRXProtocol(ses);
@@ -2587,14 +2603,14 @@ function showTabMenu(arg) {
 function showContextMenu(wc, p) {
   const items = [];
   if (p.linkURL) {
-    items.push({ label: 'Bağlantıyı yeni sekmede aç', click: () => newTab(p.linkURL, true, activeId) });
-    items.push({ label: 'Bağlantıyı farklı kaydet...', click: () => wc.downloadURL(p.linkURL) });
+    items.push({ label: 'Bağlantıyı yeni sekmede aç', enabled:webOpenable(p.linkURL,wc.getURL()), click: () => {if(webOpenable(p.linkURL,wc.getURL()))newTab(p.linkURL, true, activeId);} });
+    items.push({ label: 'Bağlantıyı farklı kaydet...', enabled:/^https?:/i.test(p.linkURL), click: () => {if(/^https?:/i.test(p.linkURL))wc.downloadURL(p.linkURL);} });
     items.push({ label: 'Bağlantı adresini kopyala', click: () => clipboard.writeText(p.linkURL) });
     items.push({ type: 'separator' });
   }
   if (p.mediaType === 'image' && p.srcURL) {
-    items.push({ label: 'Resmi yeni sekmede aç', click: () => newTab(p.srcURL, true, activeId) });
-    items.push({ label: 'Resmi kaydet', click: () => wc.downloadURL(p.srcURL) });
+    items.push({ label: 'Resmi yeni sekmede aç', enabled:webOpenable(p.srcURL,wc.getURL(),true), click: () => {if(webOpenable(p.srcURL,wc.getURL(),true))newTab(p.srcURL, true, activeId);} });
+    items.push({ label: 'Resmi kaydet', enabled:webOpenable(p.srcURL,wc.getURL(),true), click: () => {if(webOpenable(p.srcURL,wc.getURL(),true))wc.downloadURL(p.srcURL);} });
     items.push({ label: 'Resmi kopyala', click: () => wc.copyImageAt(p.x, p.y) });
     items.push({ label: 'Resim adresini kopyala', click: () => clipboard.writeText(p.srcURL) });
     items.push({ type: 'separator' });
@@ -2800,10 +2816,17 @@ async function downloadsList() {
   }));
 }
 
-function downloadAction(cmd, id) {
+async function downloadAction(cmd, id) {
   const d = downloads.find((x) => x.id === id);
   switch (cmd) {
-    case 'dl-open': if (d) shell.openPath(d.file); break;
+    case 'dl-open': if (d&&d.state==='completed'&&(!d.incognito||W?.incognito)) {
+      if(riskyDownload(d.file)){
+        const r=await askPrompt({title:T('Bu dosya bilgisayarınızda kod çalıştırabilir'),rows:[{icon:'open',text:d.name}],note:T('Yalnızca kaynağına güveniyorsanız açın.'),ok:'Aç',cancel:'İptal',kind:'perm'});
+        if(r!=='ok')break;
+      }
+      await markDownloadedFile(d.file);
+      await shell.openPath(d.file);
+    } break;
     case 'dl-show': if (d) shell.showItemInFolder(d.file); break;
     case 'dl-cancel': if (d && d.item) d.item.cancel(); break;
     case 'dl-pause': if (d && d.item) d.item.pause(); break;
@@ -2837,7 +2860,6 @@ function settingsData() {
     engine: settings.searchEngine, engines: Object.entries(SEARCH_ENGINES).map(([key, x]) => ({ key, name: x.name })),
     bookmarksBar: hasBookmarks(), fullUrl: true, forceDarkPages: settings.forceDarkPages, strictIsolation: settings.strictIsolation, language: uiLang(),
     clearGoogleOnExit: settings.clearGoogleOnExit,
-    keepLogins: settings.keepLogins,
     memorySaver:settings.memorySaver!==false,
     sleepMinutes: settings.sleepMinutes, sleepChoices: SLEEP_CHOICES, downloadNotify: settings.downloadNotify,
     downloadsDir: app.getPath('downloads'),
@@ -2879,7 +2901,7 @@ function settingsSet(key, value) {
     case 'pitchBlack': if (typeof value !== 'boolean') return false; settings.pitchBlack = value; saveSettings(); applyTheme(); return true;
 
     case 'verticalAutoHide': if (typeof value !== 'boolean') return false; if (value !== !!settings.verticalAutoHide) { if (settings.verticalTabs) toggleAutoHide(); else { settings.verticalAutoHide = value; saveSettings(); } } return true;
-    case 'calciumProtection': case 'askDownloadLocation': case 'forceDarkPages': case 'strictIsolation': case 'clearGoogleOnExit': case 'keepLogins': return bool(key);
+    case 'calciumProtection': case 'askDownloadLocation': case 'forceDarkPages': case 'strictIsolation': case 'clearGoogleOnExit': return bool(key);
   }
   return false;
 }
@@ -3268,7 +3290,6 @@ app.whenReady().then(async () => {
   scheduleUpdateCheck();
   if(app.isPackaged&&!process.env.CALCIUM_TEST_MODE)appUpdates.cleanup();
   setInterval(sleepIdleTabs, 30e3);
-  setInterval(keepSessionCookies, 15 * 60e3);
 });
 
 // On quit: write settings, clear Google data
@@ -3285,7 +3306,6 @@ app.on('before-quit', (e) => {
   saveDownloads(true);
   saveSession(true);
   const job = (async () => {
-    await keepSessionCookies();
     if (settings.clearGoogleOnExit) await clearGoogleData();
   })();
   Promise.race([job, new Promise((r) => setTimeout(r, 4000))]).finally(() => app.quit());

@@ -1,11 +1,11 @@
 'use strict';
 // Runs in an isolated world. No page bridge, clipboard access or field content
 // is sent to the main process. Only a genuinely typed #token can expand.
-function installTextExpansion(rules){
+function installTextExpansion(rules,resolveValue){
  const key=Symbol.for('calcium.text-expansion');if(window[key]){window[key].update(rules);return;}
  let entries=new Map(),target=null,typed='',composing=false,expanding=false;
  const reset=()=>{target=null;typed='';};
- function update(next){entries=new Map((Array.isArray(next)?next:[]).slice(0,100).filter(r=>typeof r.trigger==='string'&&typeof r.value==='string'&&r.value.length<=4096).map(r=>[r.trigger,r.value]));reset();}
+ function update(next){entries=new Set((Array.isArray(next)?next:[]).slice(0,100).filter(r=>typeof r==='string'));reset();}
  function editable(node){
   if(!node||node.disabled||node.readOnly)return false;
   const autocomplete=(node.getAttribute?.('autocomplete')||'').toLowerCase();
@@ -23,10 +23,17 @@ function installTextExpansion(rules){
   if(event.inputType!=='insertText'||typeof event.data!=='string'){reset();return;}
   for(const char of event.data){if(char==='#')typed='#';else if(typed&&/^[\p{L}\p{N}_-]$/u.test(char)&&typed.length<33)typed+=char;else typed='';}
  },true);
- document.addEventListener('keydown',event=>{
+ document.addEventListener('keydown',async event=>{
   if(!event.isTrusted||composing||event.isComposing||event.ctrlKey||event.metaKey||event.altKey||![' ','Enter','Tab'].includes(event.key))return;
   const node=element(event);if(node!==target||!typed.startsWith('#'))return;
-  const replacement=entries.get(typed.slice(1).normalize('NFC').toLowerCase());if(replacement===undefined)return;
+  const trigger=typed.slice(1).normalize('NFC').toLowerCase();if(!entries.has(trigger))return;
+  event.preventDefault();
+  const token=typed,oldValue=node.value,startOffset=node.selectionStart,endOffset=node.selectionEnd;
+  const oldSelection=node.isContentEditable?getSelection():null,anchor=oldSelection?.anchorNode,offset=oldSelection?.anchorOffset;
+  let replacement;try{replacement=await resolveValue(trigger);}catch{return;}
+  if(typeof replacement!=='string'||replacement.length>4096||target!==node||typed!==token||!editable(node)||!node.isConnected)return;
+  if(node.isContentEditable){const current=getSelection();if(!current?.isCollapsed||current.anchorNode!==anchor||current.anchorOffset!==offset)return;}
+  else if(node.value!==oldValue||node.selectionStart!==startOffset||node.selectionEnd!==endOffset)return;
   const suffix=event.key===' '?' ':event.key==='Enter'&&(node.tagName==='TEXTAREA'||node.isContentEditable)?'\n':'';
   let restore;
   if(node.tagName==='INPUT'||node.tagName==='TEXTAREA'){
@@ -38,7 +45,7 @@ function installTextExpansion(rules){
    const range=document.createRange();range.setStart(anchor,end-typed.length);range.setEnd(anchor,end);selection.removeAllRanges();selection.addRange(range);
    restore=()=>{range.deleteContents();const text=document.createTextNode(replacement+suffix);range.insertNode(text);range.setStartAfter(text);range.collapse(true);selection.removeAllRanges();selection.addRange(range);node.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertReplacementText',data:replacement+suffix}));};
   }
-  event.preventDefault();expanding=true;try{if(!document.execCommand('insertText',false,replacement+suffix))restore();}finally{expanding=false;reset();}
+  expanding=true;try{if(!document.execCommand('insertText',false,replacement+suffix))restore();}finally{expanding=false;reset();}
  },true);
  update(rules);window[key]={update};
 }

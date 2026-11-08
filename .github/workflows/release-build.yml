@@ -1,12 +1,6 @@
 name: Release builds
 on:
   workflow_dispatch:
-    inputs:
-      replace_release:
-        description: Replace this version's existing release after all package tests pass
-        type: boolean
-        required: false
-        default: false
   push:
     tags: ['v*']
 permissions:
@@ -28,13 +22,13 @@ jobs:
             arch: arm64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: node tools/test-custom-shortcuts.cjs
+      - run: npm run test:security
       - name: Prepare Windows test runtime
         if: matrix.platform == 'win'
         run: node node_modules/electron/install.js
@@ -42,6 +36,10 @@ jobs:
         if: matrix.platform == 'win'
         timeout-minutes: 5
         run: node tools/run-electron-tests.cjs test-extension-menu.cjs
+      - name: Pentest browser regressions
+        if: matrix.platform == 'win'
+        timeout-minutes: 5
+        run: node tools/run-electron-tests.cjs test-pentest-electron.cjs
       - name: Update download progress card
         if: matrix.platform == 'win'
         timeout-minutes: 5
@@ -62,7 +60,7 @@ jobs:
         if: matrix.platform == 'mac'
         timeout-minutes: 5
         run: node tools/test-packaged.cjs dist/mac${{ matrix.arch == 'arm64' && '-arm64' || '' }}/Calcium.app/Contents/MacOS/Calcium
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Calcium-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
@@ -73,35 +71,36 @@ jobs:
   release:
     needs: package
     runs-on: ubuntu-latest
+    concurrency:
+      group: calcium-release
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: release-assets
           merge-multiple: true
       - name: Hash and publish tested packages
         env:
           GH_TOKEN: ${{ github.token }}
-          REPLACE_RELEASE: ${{ inputs.replace_release && 'true' || 'false' }}
         shell: bash
         run: |
           set -euo pipefail
           version=$(node -p "require('./package.json').version")
           tag="v$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            git fetch --no-tags origin "refs/tags/$tag"
+            test "$(git rev-parse 'FETCH_HEAD^{commit}')" = "$GITHUB_SHA"
+          fi
           test -f "release-assets/Calcium-Setup-$version.exe"
           test -f "release-assets/Calcium-$version-x64.dmg"
           test -f "release-assets/Calcium-$version-arm64.dmg"
           (cd release-assets && sha256sum *.exe *.dmg *.blockmap > SHA256SUMS.txt)
-          if gh release view "$tag" --json isDraft >/dev/null 2>&1; then
-            if test "$(gh release view "$tag" --json isDraft --jq .isDraft)" != true; then
-              test "$REPLACE_RELEASE" = true
-              gh release delete "$tag" --yes
-              gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" -f sha="$GITHUB_SHA" -F force=true
-            fi
-          fi
-          if ! gh release view "$tag" >/dev/null 2>&1; then
+          if release_state=$(gh release view "$tag" --json isDraft --jq .isDraft); then
+            test "$release_state" = true || { echo 'Published releases are immutable; increment the version.' >&2; exit 1; }
+          else
             gh release create "$tag" --target "$GITHUB_SHA" --title "Calcium $version" --notes-file "docs/release-$version.md" --draft
           fi
           gh release upload "$tag" release-assets/* --clobber

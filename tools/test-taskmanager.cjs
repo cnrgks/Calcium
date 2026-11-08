@@ -2,6 +2,7 @@
 const {app,BrowserWindow,ipcMain}=require('electron');
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');const root=path.join(__dirname,'..');
 ipcMain.handle('calcium-ui-font',()=>null);
+ipcMain.on('calcium-internal-page',e=>{e.returnValue=e.senderFrame===e.sender.mainFrame&&e.senderFrame.url===require('url').pathToFileURL(path.join(root,'taskmanager.html')).href;});
 ipcMain.on('calcium-lang',e=>e.returnValue='tr');ipcMain.on('calcium-edge-px',e=>e.returnValue=60);
 app.whenReady().then(async()=>{
  const source=fs.readFileSync(path.join(root,'main.js'),'utf8');

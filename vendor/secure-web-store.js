@@ -1069,12 +1069,17 @@ async function installExtension(extensionId, opts = {}) {
   const existingExtensionInfo = await findExtensionInstall(extensionId, extensionsPath);
   if (existingExtensionInfo && existingExtensionInfo.type === "store") {
     d2("%s already installed", extensionId);
+    if (opts.approvedManifest) require('../extension-permissions').assertPermissions(opts.approvedManifest, JSON.parse(await fs3.promises.readFile(path4.join(existingExtensionInfo.path, 'manifest.json'), 'utf8')));
     return await sessionExtensions.loadExtension(
       existingExtensionInfo.path,
       opts.loadExtensionOptions
     );
   }
   const extensionPath = await downloadExtension(extensionId, extensionsPath);
+  if (opts.approvedManifest) {
+    try { require('../extension-permissions').assertPermissions(opts.approvedManifest, JSON.parse(await fs3.promises.readFile(path4.join(extensionPath, 'manifest.json'), 'utf8'))); }
+    catch (error) { await fs3.promises.rm(extensionPath, {recursive:true,force:true}); throw error; }
+  }
   const extension = await sessionExtensions.loadExtension(extensionPath, opts.loadExtensionOptions);
   d2("installed %s", extensionId);
   return extension;
@@ -1183,8 +1188,11 @@ async function beginInstall({ sender, senderFrame }, state, details) {
     }
     let icon;
     try {
-      const response = await fetch(iconUrl.href);
-      const imageBuffer = Buffer.from(await response.arrayBuffer());
+      if (iconUrl.protocol !== 'https:' || iconUrl.username || iconUrl.password || !['googleusercontent.com','gstatic.com','google.com'].some(h=>iconUrl.hostname===h||iconUrl.hostname.endsWith('.'+h))) throw Error('Untrusted store icon');
+      const response = await fetch(iconUrl.href, {redirect:'error',signal:AbortSignal.timeout(10000)});
+      if (!response.ok) throw Error('Icon download failed');
+      const imageBuffer = await require('../bounded-fetch').readResponseBytes(response,256*1024);
+      require('../bounded-fetch').assertImageLimits(imageBuffer);
       icon = import_electron3.nativeImage.createFromBuffer(imageBuffer);
     } catch {
       return { result: Result.ICON_ERROR };
@@ -1209,7 +1217,7 @@ async function beginInstall({ sender, senderFrame }, state, details) {
       }
     }
     state.installing.add(extensionId);
-    await installExtension(extensionId, state);
+    await installExtension(extensionId, {...state, approvedManifest: manifest});
     return { result: Result.SUCCESS };
   } catch (error) {
     console.error("Extension installation failed:", error);
@@ -1231,7 +1239,7 @@ function registerWebStoreApi(webStoreState) {
       import_electron3.ipcMain.handle(channel, async function handleWebStoreIpc(event, ...args) {
         d3("received %s", channel);
         const senderOrigin = event.senderFrame?.origin;
-        if (!senderOrigin || !senderOrigin.startsWith(WEBSTORE_URL)) {
+        if (senderOrigin !== WEBSTORE_URL) {
           d3("ignoring webstore request from %s", senderOrigin);
           return;
         }
@@ -1486,6 +1494,13 @@ async function updateExtension(session, update) {
   }
   const extensionsPath = path4.join(oldExtension.path, "..", "..");
   const updatePath = await downloadExtensionFromURL(update.url, extensionsPath, extensionId);
+  try { require('../extension-permissions').assertPermissions(oldExtension.manifest, JSON.parse(await fs3.promises.readFile(path4.join(updatePath, 'manifest.json'), 'utf8'))); }
+  catch (error) {
+    // Keep the working version. Never activate newly requested privileges silently.
+    if (path4.resolve(updatePath) !== path4.resolve(oldExtension.path)) await fs3.promises.rm(updatePath, {recursive:true,force:true});
+    console.warn('Extension update requires manual reinstallation and approval:', extensionId, error.message);
+    return;
+  }
   d4("downloaded update %s@%s", extensionId, update.version);
   if (sessionExtensions.getExtension(extensionId)) {
     sessionExtensions.removeExtension(extensionId);
@@ -1560,7 +1575,7 @@ async function initUpdater(state) {
 // src/browser/index.ts
 function resolvePreloadPath(modulePath) {
   try {
-    return require.resolve("electron-chrome-web-store/preload");
+    return require.resolve("./secure-web-store-preload.js");
   } catch (error) {
     if (process.env.NODE_ENV !== "production") {
       console.error(error);

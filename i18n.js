@@ -7,6 +7,15 @@
 // Strings built from several parts are translated where they are built (see L() in the pages).
 (function (root) {
   const EN = {
+    'Bu sitede üçüncü taraf çerezlerini kullanmak': 'Use third-party cookies on this site',
+    'Harici uygulama açılacak:': 'External application type:',
+    'Üçüncü taraf çerez erişimi:': 'Third-party cookie access:',
+    'Bu isteğe yalnızca bu kez izin verilsin mi?': 'Allow this request once?',
+    'Bu dosya bilgisayarınızda kod çalıştırabilir': 'This file can run code on your computer',
+    'Yalnızca kaynağına güveniyorsanız açın.': 'Open it only if you trust its source.',
+    'Çerezlerinizi okuyup değiştirebilir': 'Read and change your cookies',
+    'Ek yetkiler:': 'Additional permissions:',
+    'Web siteleri veya diğer uzantılar bu uzantıyla iletişim kurabilir': 'Websites or other extensions can communicate with this extension',
     'Varsayılan': 'Default',
     'Tarayıcı yazı tipi': 'Browser font',
     'Yalnızca tarayıcı arayüzünü değiştirir; web sayfalarını etkilemez.': 'Changes only the browser interface; does not affect websites.',
