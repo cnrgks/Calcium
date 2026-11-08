@@ -59,6 +59,8 @@
   .tab.narrow:not(.on) .x { display:none; }
   .tab.narrow.on .ico { display:none; }
   .tab.drag { opacity:.85; z-index:5; }
+  #tabs .tab.placeholder { opacity:.35; }
+  .tab-drag-ghost { background:var(--active-tab,var(--toolbar)); box-shadow:0 8px 22px rgba(0,0,0,.25); }
   /* Pinned tab: icon only */
   .tab.pin { width:44px; flex:none; padding:0; justify-content:center; gap:2px; }
   .tab.pin .title, .tab.pin .x { display:none; }
@@ -693,6 +695,11 @@ window.addEventListener('mousemove', (e) => {
     return;
   }
   if(!drag.moved){
+    const scroll = vert ? $('vtabs').scrollTop : tabsEl.scrollLeft;
+    drag.slots = [...tabsEl.children].map(el => {
+      const r = el.getBoundingClientRect();
+      return { center:(vert ? r.top+r.height/2 : r.left+r.width/2)+scroll, pinned:el.classList.contains('pin') };
+    });
     const r=drag.el.getBoundingClientRect();drag.ghost=drag.el.cloneNode(true);drag.ghost.removeAttribute('data-id');
     drag.ghost.classList.add('tab-drag-ghost');drag.ghost.tabIndex=-1;drag.ghost.setAttribute('aria-hidden','true');
     Object.assign(drag.ghost.style,{position:'fixed',zIndex:'140',pointerEvents:'none',width:r.width+'px',height:r.height+'px',left:r.left+'px',top:r.top+'px',margin:'0'});
@@ -700,6 +707,30 @@ window.addEventListener('mousemove', (e) => {
   }
   drag.moved = true;
   drag.ghost.style.transform = vert ? `translateY(${dx}px)` : `translateX(${dx}px)`;
+  // Use stable layout slots so animated neighbours cannot move the hit targets.
+  const scroll = vert ? $('vtabs').scrollTop : tabsEl.scrollLeft;
+  const pointer = (vert ? e.clientY : e.clientX)+scroll;
+  let target = -1, distance = Infinity;
+  drag.slots.forEach((slot,index) => {
+    if (slot.pinned !== drag.el.classList.contains('pin')) return;
+    const delta = Math.abs(pointer-slot.center);
+    if (delta < distance) { distance=delta; target=index; }
+  });
+  const children = [...tabsEl.children];
+  if (target >= 0 && children.indexOf(drag.el) !== target) {
+    const positions = new Map(children.map(el => [el,el.getBoundingClientRect()]));
+    for (const el of children) for (const animation of el.getAnimations()) animation.cancel();
+    const ordered = children.filter(el => el !== drag.el);
+    ordered.splice(target,0,drag.el); tabsEl.replaceChildren(...ordered);
+    for (const el of ordered) {
+      if (el === drag.el) continue;
+      const old=positions.get(el), next=el.getBoundingClientRect();
+      if (old.left!==next.left || old.top!==next.top) el.animate([
+        {transform:`translate(${old.left-next.left}px,${old.top-next.top}px)`},
+        {transform:'none'}
+      ],{duration:130,easing:'ease-out'});
+    }
+  }
 });
 window.addEventListener('mouseup', (e) => {
   if (!drag) return;
@@ -707,20 +738,16 @@ window.addEventListener('mouseup', (e) => {
   if (!d.moved) { send('activate', d.id); return; }
   const pinnedDrag = document.body.classList.contains('vert') && d.el.parentNode === $('pinnedtabs');
   const els = pinnedDrag ? [...$('pinnedtabs').children] : document.body.classList.contains('vert') ? [...$('pinnedtabs').children, ...tabsEl.children] : [...tabsEl.children];
-  let to = 0;
-  for (const el of els) {
-    if (el === d.el) continue;
-    const r = el.getBoundingClientRect();
-    if (pinnedDrag ? e.clientY > r.bottom || (e.clientY >= r.top && e.clientX > r.left + r.width / 2) : document.body.classList.contains('vert') ? e.clientY > r.top + r.height / 2 : e.clientX > r.left + r.width / 2) to++;
-  }
-  if (pinnedDrag) to = [...$('pinnedtabs').children].indexOf(d.el);
+  const to = els.indexOf(d.el);
   if (d.ghost) { d.ghost.remove(); d.el.classList.remove('placeholder'); send('tab-drag-end'); }
   d.el.style.transform = '';
   d.el.classList.remove('drag');
   send('move-tab', { id: d.id, to });
   if (pending) {
     const s = pending; pending = null;
-    if (pinnedDrag) { const ids = [...$('pinnedtabs').children].map((el) => Number(el.dataset.id)); s.tabs = ids.map((id) => s.tabs.find((t) => t.id === id)).filter(Boolean).concat(s.tabs.filter((t) => !t.pinned)); }
+    const ids = [...$('pinnedtabs').children, ...tabsEl.children].map(el => Number(el.dataset.id));
+    const byId = new Map(s.tabs.map(tab => [tab.id,tab]));
+    s.tabs = ids.map(id => byId.get(id)).filter(Boolean).concat(s.tabs.filter(tab => !ids.includes(tab.id)));
     render(s);
   }
 });

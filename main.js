@@ -1672,18 +1672,26 @@ function closeFind() {
 
 // Only previously submitted search terms are suggested. No URL/bookmark/network completion.
 function omniSuggest(text){return customShortcuts.suggestions(W.incognito?(W.searchHistory||[]):searchHistory,text);}
-function navigateInput(input,{newTab:makeTab=false,background=false,closePrompt=false}={}){
+function reusableNewTab(){
+ return [activeTab(),...tabs].find(tab=>tab&&isNewtab(tab.url));
+}
+function navigateInput(input,{newTab:makeTab=false,background=false,closePrompt=false,reuseNewtab=false}={}){
  const resolved=customShortcuts.resolveInput(input,{siteCommands:settings.siteCommands,textReplacements:settings.textReplacements,searchUrl:searchUrl()});
  if(resolved.kind==='text'){send('input-expanded',{value:resolved.value});return;}
+ if(reuseNewtab){const tab=reusableNewTab();if(tab){if(tab.id!==activeId)activateTab(tab.id);makeTab=false;}}
  if(closePrompt)closeOverlay(false);
  if(resolved.query)recordSearch(resolved.query);
  if(makeTab)newTab(resolved.url,background,activeId);else openUrl(resolved.url);
 }
 function openSearchPrompt(kind = 'newtab', value = '') {
-  if (settings.newTabPrompt === false) { if (kind === 'newtab') { newTab(''); focusUrl(); } return; }
   if (!win || !ui || overlayKind === 'prompt') return;
   // Refocusing an already open prompt must not clear an in-progress query.
   if (overlayOpen && overlayKind === kind) return;
+  if (kind === 'newtab') {
+    const tab = reusableNewTab();
+    if (tab && tab.id !== activeId) activateTab(tab.id);
+  }
+  if (settings.newTabPrompt === false) { if (kind === 'newtab') { if (!isNewtab(activeTab()?.url)) newTab(''); focusUrl(); } return; }
   if (overlayOpen) closeOverlay(false);
   overlayOpen = true; overlayKind = kind;
   raiseUi(); layout(); ui.webContents.focus();
@@ -1783,7 +1791,7 @@ ipcMain.on('ui', (e, cmd, arg) => {
     case 'newtab-query': if ((overlayKind === 'newtab' || overlayKind === 'address') && typeof arg === 'string') send('newtab-results', { q:arg, ...omniSuggest(arg) }); break;
     case 'newtab-submit': if ((overlayKind === 'newtab' || overlayKind === 'address') && typeof arg === 'string' && arg.trim()) {
       const sameTab = overlayKind === 'address';
-      navigateInput(arg.trim(),{newTab:!sameTab,closePrompt:true});
+      navigateInput(arg.trim(),{newTab:!sameTab,closePrompt:true,reuseNewtab:!sameTab});
     } break;
     case 'newtab-cancel': if (overlayKind === 'newtab' || overlayKind === 'address') closeOverlay(); break;
     case 'navigate-tab': if(typeof arg==='string'&&arg.trim())navigateInput(arg,{newTab:true}); break;
