@@ -1,0 +1,34 @@
+'use strict';
+const {app}=require('electron'),fs=require('fs'),path=require('path'),Module=require('module'),assert=require('assert');
+const profile=process.env.CALCIUM_PROFILE;if(!profile)throw Error('Use run-electron-tests');
+process.env.CALCIUM_TEST_MODE='1';process.env.CALCIUM_TEST_DISPLAY='0';app.disableHardwareAcceleration();
+fs.writeFileSync(path.join(profile,'ayarlar.json'),JSON.stringify({firstRunDone:true,language:'tr',verticalTabs:true,verticalAutoHide:false}));
+const entry=path.resolve(__dirname,'..','main.js'),m=new Module(entry,module);m.filename=entry;m.paths=Module._nodeModulePaths(path.dirname(entry));
+m._compile(fs.readFileSync(entry,'utf8')+'\nmodule.exports.test={ready:mainBlockReady,windows:()=>windows,newTab,SETTINGS_URL,settingsSet,openFind,closeFind,layout,showDownloadsPanel,showTaskManager,history,omniSuggest,openSearchPrompt,closeOverlay};',entry);
+const capture=async(wc,name)=>{try{fs.writeFileSync(path.resolve('dist/ui-review/'+name),(await wc.capturePage()).toPNG());}catch{}};
+const pause=ms=>new Promise(r=>setTimeout(r,ms));const until=async fn=>{for(let i=0;i<100;i++){const x=await fn();if(x)return x;await pause(50);}throw Error('UI regression timeout');};
+(async()=>{
+ await app.whenReady();const api=m.exports.test;await api.ready;const w=await until(()=>api.windows()[0]?.tabs.length&&api.windows()[0]);
+ const tab=api.newTab(api.SETTINGS_URL),wc=tab.view.webContents;await until(()=>!wc.isLoading()&&wc.executeJavaScript('!!document.querySelector("#gorunum")').catch(()=>false));
+ w.win.show();w.win.focus();wc.focus();wc.debugger.attach('1.3');await wc.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});await pause(300);
+ await wc.executeJavaScript("scrollTo({top:0,behavior:'instant'})");
+ wc.sendInputEvent({type:'mouseMove',x:550,y:200});await pause(120);await wc.debugger.sendCommand('Input.dispatchMouseEvent',{type:'mouseWheel',x:550,y:200,deltaX:0,deltaY:500});
+ const positions=[];for(let i=0;i<8;i++){await pause(35);positions.push(await wc.executeJavaScript('scrollY'));}
+ assert(positions[0]>0&&positions[0]<450,'wheel begins with an intermediate animated position: '+positions);assert(positions.at(-1)>450,'wheel reaches destination: '+positions);assert(new Set(positions.map(Math.round)).size>2,'wheel animates across frames');
+ api.settingsSet('smoothScrolling',false);await pause(80);await wc.executeJavaScript("scrollTo({top:0,behavior:'instant'})");await wc.debugger.sendCommand('Input.dispatchMouseEvent',{type:'mouseWheel',x:550,y:200,deltaX:0,deltaY:500});await pause(70);assert(await wc.executeJavaScript('scrollY')>450,'disabled scrolling is immediate');api.settingsSet('smoothScrolling',true);
+ api.history.unshift({url:'https://www.youtube.com/',title:'YouTube',t:Date.now()});const suggestions=api.omniSuggest('you');assert(suggestions.items.some(x=>x.url==='https://www.youtube.com/'));assert.equal(suggestions.inline,'youtube.com/');
+ api.openSearchPrompt('address','');await pause(100);await w.ui.webContents.executeJavaScript("document.querySelector('#newtabQuery').value='you';document.querySelector('#newtabQuery').dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:'u'}))");await until(()=>w.ui.webContents.executeJavaScript("document.querySelector('#newtabQuery').value==='youtube.com/'"));assert.equal(await w.ui.webContents.executeJavaScript("document.querySelector('#newtabQuery').selectionStart"),3);api.closeOverlay(false);
+ const before=tab.view.getBounds(),sideBefore=await w.ui.webContents.executeJavaScript('document.querySelector("#side").getBoundingClientRect().top');api.openFind();await until(()=>w.findView&&!w.findView.webContents.isLoading());await pause(150);
+ assert.deepEqual(tab.view.getBounds(),before,'find popup does not move page');assert.equal(await w.ui.webContents.executeJavaScript('document.querySelector("#side").getBoundingClientRect().top'),sideBefore,'find popup does not move vertical tabs');
+ assert.equal(await w.findView.webContents.executeJavaScript('!!window.pageApi'),true);assert.equal(await w.ui.webContents.executeJavaScript('getComputedStyle(document.querySelector("#find")).display'),'none');
+ await w.findView.webContents.executeJavaScript("document.querySelector('#query').value='Görünüm';document.querySelector('#query').dispatchEvent(new Event('input'))");await until(()=>w.findView.webContents.executeJavaScript("document.querySelector('#count').textContent.includes('/')"));fs.mkdirSync(path.resolve('dist/ui-review'),{recursive:true});await capture(w.findView.webContents,'find-popup.png');api.closeFind();assert(!w.findView);
+ api.settingsSet('verticalAutoHide',true);await pause(300);assert.equal(tab.view.getBounds().x,8,'auto-hide reserves an eight-pixel browser rail');assert.equal(await w.ui.webContents.executeJavaScript("document.querySelector('#sideRail').getBoundingClientRect().width"),8);
+ wc.sendInputEvent({type:'mouseMove',x:4,y:100});await pause(100);assert(!await w.ui.webContents.executeJavaScript("document.body.classList.contains('reveal')"),'page left controls do not reveal sidebar');
+ assert.equal(await w.ui.webContents.executeJavaScript("document.elementFromPoint(4,180)?.id"),'sideRail');w.ui.webContents.debugger.attach('1.3');await w.ui.webContents.debugger.sendCommand('Input.dispatchMouseEvent',{type:'mouseMoved',x:40,y:180});await w.ui.webContents.debugger.sendCommand('Input.dispatchMouseEvent',{type:'mouseMoved',x:4,y:180});await until(()=>w.ui.webContents.executeJavaScript("document.body.classList.contains('reveal')"));assert.equal(tab.view.getBounds().x,8,'revealing sidebar overlays page without shifting it');api.closeOverlay(false);await pause(250);
+ api.settingsSet('verticalTabs',false);await pause(100);assert.equal(tab.view.getBounds().x,0,'horizontal tabs reserve no side rail');api.settingsSet('verticalTabs',true);api.settingsSet('verticalAutoHide',false);await pause(250);
+ const downloads=api.showDownloadsPanel(),tasks=api.showTaskManager();await until(()=>!downloads.webContents.isLoading()&&!tasks.webContents.isLoading());await pause(200);
+ const colors=async panel=>panel.webContents.executeJavaScript("({bg:getComputedStyle(document.body).backgroundColor,text:getComputedStyle(document.body).color,close:getComputedStyle(document.querySelector('#closePanel')).display,svg:!!document.querySelector('#closePanel svg')})");
+ const a=await colors(downloads),b=await colors(tasks);assert.equal(a.bg,b.bg);assert.equal(a.text,b.text);assert.equal(a.close,'grid');assert.equal(b.close,'grid');assert(a.svg&&b.svg);
+ await capture(tasks.webContents,'taskmanager-popup.png');await capture(downloads.webContents,'downloads-popup.png');
+ console.log('PASS: Settings wheel animates across frames, live opt-out, visited URL completion, floating find without layout shifts, popup colors and centered close icons.');app.exit(0);
+})().catch(e=>{console.error(e);app.exit(1)});

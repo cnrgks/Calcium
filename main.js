@@ -148,7 +148,7 @@ function closeUpdateNotice(w){
 }
 function layoutUpdateNotice(w){
  if(!w?.win||!w.updateNotice)return;
- const {width,height}=w.win.getContentBounds(),top=inWin(w,()=>vertical()?TOOLBAR+(hasBookmarks()?BOOKMARKS:0)+(findOpen?FINDBAR:0):uiHeight())+8;
+ const {width,height}=w.win.getContentBounds(),top=inWin(w,()=>vertical()?TOOLBAR+(hasBookmarks()?BOOKMARKS:0):uiHeight())+8;
  const current=w===W,open=current?overlayOpen:w.overlayOpen,kind=current?overlayKind:w.overlayKind;
  const blockingOverlay=open&&!['side','sidedrag','tabdrag'].includes(kind);
  const visible=!blockingOverlay&&!w.win.isFullScreen()&&!(current?htmlFullscreen:w.htmlFullscreen)&&height-top>120;
@@ -175,6 +175,7 @@ if ('keepLogins' in settings || 'keepLoginsSet' in settings) { delete settings.k
 if (!settings.hoverZoomOnSet) { settings.hoverZoom = true; settings.hoverZoomOnSet = true; saveSettings(true); }
 // The old "Never" (0 min) choice is now a separate key
 if (!SLEEP_CHOICES.includes(settings.sleepMinutes)) { if (settings.sleepMinutes === 0) settings.sleepTabs = false; settings.sleepMinutes = 10; }
+const SIDE_RAIL = 8;
 const SIDE_MIN = 56;    // narrowest: tab icons only
 const sideWidth = (winWidth) => Math.round(Math.max(SIDE_MIN, Math.min(settings.verticalWidth || 240, Math.max(SIDE_MIN, Math.min(560, (winWidth || 1280) * 0.6)))));
 
@@ -197,6 +198,7 @@ const DOWNLOADS_URL = pathToFileURL(path.join(__dirname, 'downloads.html')).href
 const SETTINGS_URL = pathToFileURL(path.join(__dirname, 'settings.html')).href;
 const UPDATE_NOTICE_URL=pathToFileURL(path.join(__dirname,'update-notice.html')).href;
 const SECURITY_URL = pathToFileURL(path.join(__dirname, 'securitywarning.html')).href;
+const FIND_URL = pathToFileURL(path.join(__dirname, 'find.html')).href;
 const TASKS_URL = pathToFileURL(path.join(__dirname, 'taskmanager.html')).href;
 const EXTENSIONS_URL = pathToFileURL(path.join(__dirname, 'extensions.html')).href;
 const baseOf = (u) => (typeof u === 'string' ? u.split('#')[0].split('?')[0] : '');
@@ -218,6 +220,7 @@ function pageKind(u) {
   const b = baseOf(u);
   if (b === SECURITY_URL) return 'security';
   if (b === UPDATE_NOTICE_URL) return 'update-notice';
+  if (b === FIND_URL) return 'find';
   if (b === TASKS_URL) return 'tasks';
   if (b === HISTORY_URL) return 'history';
   if (b === DOWNLOADS_URL) return 'downloads';
@@ -451,7 +454,7 @@ function attachLoginFix(wc) {
 // ---------------------------------------------------------------- State
 let win = null, ui = null, ses = null, mainSes = null;
 let findOpen = false, htmlFullscreen = false, overlayOpen = false, overlayKind = null;
-const TAB_STRIP = 42, TOOLBAR = 46, BOOKMARKS = 32, FINDBAR = 40;
+const TAB_STRIP = 42, TOOLBAR = 46, BOOKMARKS = 32;
 let tabs = [];
 const byWcId = new Map();
 const downloads = readJsonArray(DOWNLOADS_FILE)
@@ -474,7 +477,7 @@ function useWin(w) {
   return w;
 }
 const downloadPanels=new Map(),taskPanels=new Map();
-const winOfWc = (wc) => { const t = wc && !wc.isDestroyed() ? byWcId.get(wc.id) : null; return t ? t.w : windows.find(w=>w.updateNotice?.webContents===wc) || [...downloadPanels,...taskPanels].find(([,p])=>p.webContents===wc)?.[0] || null; };
+const winOfWc = (wc) => { const t = wc && !wc.isDestroyed() ? byWcId.get(wc.id) : null; return t ? t.w : windows.find(w=>w.updateNotice?.webContents===wc||w.findView?.webContents===wc) || [...downloadPanels,...taskPanels].find(([,p])=>p.webContents===wc)?.[0] || null; };
 const allTabs = () => windows.flatMap((w) => w.tabs);
 // Run a job in another window, then switch back to the previous one
 function inWin(w, fn) {
@@ -486,7 +489,7 @@ const forEachWin = (fn) => { for (const w of [...windows]) inWin(w, () => fn(w))
 const lastWin = (normalOnly) => windows.filter((w) => !normalOnly || !w.incognito).sort((a, b) => b.focusedAt - a.focusedAt)[0] || null;
 
 const uiHeight = () => (htmlFullscreen ? 0
-  : (settings.firstRunDone?TAB_STRIP:0) + TOOLBAR + (hasBookmarks() ? BOOKMARKS : 0) + (findOpen ? FINDBAR : 0));
+  : (settings.firstRunDone?TAB_STRIP:0) + TOOLBAR + (hasBookmarks() ? BOOKMARKS : 0));
 
 // ---------------------------------------------------------------- uBlock Origin: the only blocking engine
 const UBO_DIR=path.join(__dirname,'vendor','ublock').replace(/app\.asar(?=[\\/])/,'app.asar.unpacked');
@@ -548,14 +551,6 @@ ipcMain.on('calcium-zoom-download', (e, url) => {
   if (!settings.hoverZoom || !tab || !tab.view || typeof url !== 'string' || !/^https?:\/\//i.test(url)) return;
   if (!/^https?:/i.test(e.sender.getURL())) return;
   e.sender.downloadURL(url);
-});
-ipcMain.on('calcium-edge-px', (e) => { e.returnValue = 60; });
-// Auto-hide mode: the sidebar opens when the mouse reaches the page's left edge (reported by page-preload)
-ipcMain.on('calcium-edge', (e) => {
-  const w = winOfWc(e.sender);
-  if (!w || !settings.verticalTabs || !settings.verticalAutoHide) return;
-  useWin(w);
-  if (activeTab() && activeTab().view && activeTab().view.webContents === e.sender) openSide();
 });
 // At startup we briefly wait for the blocker so first requests don't slip through. The wait must NEVER lock the user:
 // at most 3 s, and once it has elapsed (or the blocker is ready) we never wait again. (It used to wait up to 15 s per
@@ -1110,7 +1105,7 @@ function createView(tab) {
   on('zoom-changed',(event,direction)=>{event.preventDefault();setPageZoom(wc,direction==='in'?1:-1);});
   on('before-input-event', (e, input) => { if (handleShortcut(input)) e.preventDefault(); });
   on('context-menu', (_e, p) => showContextMenu(wc, p));
-  on('found-in-page', (_e, r) => send('found', { active: r.activeMatchOrdinal, total: r.matches }));
+  on('found-in-page', (_e, r) => {send('found', { active: r.activeMatchOrdinal, total: r.matches });if(tab.w.findView)tab.w.findView.webContents.send('page-update',{found:{active:r.activeMatchOrdinal,total:r.matches}});});
   on('enter-html-full-screen', () => { htmlFullscreen = true; win.setFullScreen(true); layout(); });
   on('leave-html-full-screen', () => { htmlFullscreen = false; win.setFullScreen(false); layout(); });
   const wcId = wc.id;
@@ -1518,25 +1513,25 @@ function layout() {
   if (!win || !ui) return;
   const fullscreen=htmlFullscreen||win.isFullScreen();ui.setVisible(!fullscreen);
   if(fullscreen&&W?.updateNotice)W.updateNotice.setVisible(false);
-  if(fullscreen){const {width,height}=win.getContentBounds();ui.setBounds({x:0,y:0,width,height:0});const t=activeTab();if(t?.view){t.view.setBounds({x:0,y:0,width,height});win.contentView.addChildView(t.view);if(W)W.uiAbove=false;}return;}
+  if(fullscreen){W.findView?.setVisible(false);const {width,height}=win.getContentBounds();ui.setBounds({x:0,y:0,width,height:0});const t=activeTab();if(t?.view){t.view.setBounds({x:0,y:0,width,height});win.contentView.addChildView(t.view);if(W)W.uiAbove=false;}return;}
   const { width, height } = win.getContentBounds();
   const t = activeTab();
   if (vertical()) {
     // Vertical: the UI covers the whole window and sits BEHIND the page (top bars + left sidebar stay visible).
     // In auto-hide mode the page is full width; when the sidebar opens the UI is raised and slides over the page.
-    const top = TOOLBAR + (hasBookmarks() ? BOOKMARKS : 0) + (findOpen ? FINDBAR : 0);
-    const sw = !settings.firstRunDone||settings.verticalAutoHide ? 0 : sideWidth(width);
+    const top = TOOLBAR + (hasBookmarks() ? BOOKMARKS : 0);
+    const sw = !settings.firstRunDone ? 0 : settings.verticalAutoHide ? SIDE_RAIL : sideWidth(width);
     ui.setBounds({ x: 0, y: 0, width, height });
     if (t && t.view) {
       t.view.setBounds({ x: sw, y: top, width: Math.max(0, width - sw), height: Math.max(0, height - top) });
       if (!overlayOpen && W && !W.sideClosing && W.uiAbove) { win.contentView.addChildView(t.view); W.uiAbove = false; }   // page back on top
     }
-    layoutUpdateNotice(W);return;
+    layoutUpdateNotice(W);layoutFind(W);return;
   }
   const h = uiHeight();
   ui.setBounds({ x: 0, y: 0, width, height: overlayOpen ? height : h });
   if (t && t.view) t.view.setBounds({ x: 0, y: h, width, height: Math.max(0, height - h) });
-  layoutUpdateNotice(W);
+  layoutUpdateNotice(W);layoutFind(W);
 }
 // Bring the UI to the top (menus, bubbles, revealed sidebar)
 function raiseUi() { win.contentView.addChildView(ui); if (W) W.uiAbove = true; }
@@ -1589,7 +1584,7 @@ function openSide() {
       if (w.tabDragging || w.sideKeyboardFocus) return;
       const p = screen.getCursorScreenPoint(), b = win.getContentBounds();
       const x = p.x - b.x, y = p.y - b.y;
-      const top = TOOLBAR + (hasBookmarks() ? BOOKMARKS : 0) + (findOpen ? FINDBAR : 0);
+      const top = TOOLBAR + (hasBookmarks() ? BOOKMARKS : 0);
       const inside = x >= 0 && x <= sideWidth(b.width) + 8 && y >= top && y < b.height;
       if (inside) w.sideHoldUntil = Date.now() + 250;
       else if (Date.now() >= w.sideHoldUntil) closeOverlay(false);
@@ -1630,7 +1625,7 @@ function pushState() {
     newTabPrompt: settings.newTabPrompt !== false,
     textReplacements:settings.textReplacements,
     vertical: vertical(), autoHide: !!settings.verticalAutoHide, sideWidth: sideWidth(win.getContentBounds().width), sideMin: SIDE_MIN,
-    sideOpen: overlayOpen && (overlayKind === 'side' || overlayKind === 'sidedrag'), sideEdge: 60,
+    sideOpen: overlayOpen && (overlayKind === 'side' || overlayKind === 'sidedrag'), sideEdge: SIDE_RAIL,
     ubo: !!uboId && !W.incognito,
     windows: windows.length,
     extSupport: !!extensions && !W.incognito,
@@ -1672,23 +1667,43 @@ function focusUrl(search = false) {
   if (settings.newTabPrompt !== false) { openSearchPrompt('address', search ? '' : displayUrl(activeTab()?.url || '')); return; }
   if (ui) { ui.webContents.focus(); send('focus-url', { search }); }
 }
-function findStep(forward) { if (!findOpen) openFind(); else send('find-step', forward); }
+function findStep(forward) { if (!findOpen) openFind(); else W.findView?.webContents.send('page-update',{step:forward}); }
 async function openFileDialog() {
   const r = await dialog.showOpenDialog(win, { title: 'Dosya aç', properties: ['openFile'], filters: [
     { name: 'Web sayfaları ve belgeler', extensions: ['html', 'htm', 'pdf', 'svg', 'txt', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'webm', 'mp3'] },
     { name: 'Tüm dosyalar', extensions: ['*'] }] });
   if (!r.canceled && r.filePaths[0]) newTab(pathToFileURL(r.filePaths[0]).href, false, activeId);
 }
-function openFind() { findOpen = true; layout(); pushState(); ui.webContents.focus(); send('focus-find'); }
+function layoutFind(w){
+ if(!w?.findView)return;
+ const {width,height}=w.win.getContentBounds(),top=inWin(w,()=>vertical()?TOOLBAR+(hasBookmarks()?BOOKMARKS:0):uiHeight());
+ w.findView.setBounds({x:Math.max(0,width-466),y:top+6,width:Math.min(460,width),height:Math.min(44,Math.max(0,height-top-6))});
+ w.findView.setVisible(!(w===W?htmlFullscreen:w.htmlFullscreen)&&!w.win.isFullScreen());
+ w.win.contentView.addChildView(w.findView);
+}
+function openFind() {
+ findOpen=true;const w=W;
+ if(!w.findView){
+  const view=w.findView=new WebContentsView({webPreferences:{session:w.ses,preload:path.join(__dirname,'page-preload.js'),sandbox:true,contextIsolation:true,nodeIntegration:false,spellcheck:false}});
+  view.setBackgroundColor('#00000000');
+  view.webContents.setWindowOpenHandler(()=>({action:'deny'}));view.webContents.on('will-navigate',e=>e.preventDefault());
+  view.webContents.on('before-input-event',(e,input)=>inWin(w,()=>{if(handleShortcut(input,true))e.preventDefault();}));
+  view.webContents.once('did-finish-load',()=>{if(w.findView===view){view.webContents.focus();view.webContents.send('page-update',{focus:true});}});
+  view.webContents.loadURL(FIND_URL);
+ }else{w.findView.webContents.focus();w.findView.webContents.send('page-update',{focus:true});}
+ layout();pushState();
+}
+function destroyFind(w){const view=w.findView;if(!view)return;w.findView=null;try{w.win.contentView.removeChildView(view);view.webContents.close();}catch{}}
+
 function closeFind() {
-  findOpen = false;
+  findOpen = false;destroyFind(W);
   withActive((wc) => wc.stopFindInPage('clearSelection'));
   layout(); pushState();
   withActive((wc) => wc.focus());
 }
 
-// Only previously submitted search terms are suggested. No URL/bookmark/network completion.
-function omniSuggest(text){return customShortcuts.suggestions(W.incognito?(W.searchHistory||[]):searchHistory,text);}
+// Suggestions come only from local browsing/search history; private windows never use normal history.
+function omniSuggest(text){return customShortcuts.browsingSuggestions(W.incognito?[]:history,W.incognito?(W.searchHistory||[]):searchHistory,text);}
 function reusableNewTab(){
  return [activeTab(),...tabs].find(tab=>tab&&isNewtab(tab.url));
 }
@@ -2725,7 +2740,7 @@ function themeColors() {
 function applyTheme() {
   const t = currentTheme();
   nativeTheme.themeSource = t.mode;              // pages' light/dark preference follows this too
-  forEachWin(() => { paintFrame(); pushState(); });
+  forEachWin(() => { paintFrame(); pushState();if(W.findView)W.findView.webContents.send('page-update',pageData()); });
   broadcastPages();
 }
 // Color of the window frame and Windows caption buttons
@@ -2919,6 +2934,13 @@ ipcMain.handle('page', async (e, cmd, arg) => {
   const from = (e.senderFrame && e.senderFrame.url) || '';
   const kind = pageKind(from);
   if (!kind) throw new Error('izin yok');
+  if(kind==='find'){
+   if(!ow||ow.findView?.webContents!==e.sender||e.senderFrame!==e.sender.mainFrame)throw Error('izin yok');
+   if(cmd==='get')return pageData();
+   if(cmd==='find-close'){closeFind();return {ok:true};}
+   if(cmd==='find'&&arg&&typeof arg.text==='string'&&arg.text.length<=2048){withActive(wc=>arg.text?wc.findInPage(arg.text,{forward:arg.forward!==false,findNext:!!arg.next}):wc.stopFindInPage('clearSelection'));return {ok:true};}
+   return null;
+  }
   if(kind==='update-notice'){
    if(!ow||ow.updateNotice?.webContents!==e.sender||e.senderFrame!==e.sender.mainFrame)throw Error('izin yok');
    if(cmd==='get')return pageData();
@@ -3205,7 +3227,7 @@ function createWindow(opts = {}) {
 // Window closed: close the web contents of its tabs and UI (memory), remove it from the list
 function closedWindow(w) {
   if(w.incognito){w.closedTabs.length=0;w.searchHistory=[];}
-  closeUpdateNotice(w);
+  closeUpdateNotice(w);destroyFind(w);
   if (W === w) saveCtx();
   for (const t of w.tabs) {
     iconQueue.cancel(t);

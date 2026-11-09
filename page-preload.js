@@ -119,19 +119,6 @@ inMainWorld(() => {
   } catch {}
 });
 
-// Vertical tabs auto-hide: when the mouse touches the page's left edge the main process is notified once (sidebar
-// opens). Ignored if the setting is off. Re-arms after leaving the edge; no continuous messages.
-{
-  let atEdge = false, edge = 60;
-  try { edge = ipcRenderer.sendSync('calcium-edge-px') || 60; } catch {}
-  window.addEventListener('mouseleave', () => { atEdge = false; });
-  ipcRenderer.on('calcium-edge-px', (_e, v) => { edge = v; });
-  window.addEventListener('mousemove', (e) => {
-    if (e.clientX < edge) { if (!atEdge) { atEdge = true; ipcRenderer.send('calcium-edge'); } }
-    else if (e.clientX > edge + 12) atEdge = false;
-  }, { capture: true, passive: true });
-}
-
 // Built-in image zoom world (1014, see hoverzoom.js): separate img/media rule so the site's CSP doesn't block
 // the large image from another server (extension content scripts work this way in Chrome too).
 if (/^https?:$/.test(location.protocol)) {

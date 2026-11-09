@@ -28,5 +28,18 @@ function resolveInput(input,{siteCommands=[],textReplacements=[],searchUrl}={}){
  const url=/^(?:https?|file|about|data|view-source|chrome-extension|calcium|mondium|blob):/i.test(text)||/^localhost(?::\d+)?(?:\/|$)/i.test(text)||!/[\s]/.test(text)&&/^[^\s/]+\.[a-z]{2,}(?::\d+)?(?:\/.*)?$/i.test(text)||/^\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?(?:\/|$)/.test(text);
  return url?{kind:'url',url:text}:{kind:'search',url:searchUrl+encodeURIComponent(text),query:text};
 }
+function browsingSuggestions(visits,searches,text){
+ const q=String(text||'').trim().toLocaleLowerCase('tr');if(!q)return {items:[],inline:''};
+ const words=q.split(/\s+/),seen=new Set(),items=[];
+ for(const h of visits){
+  if(typeof h.url!=='string'||!/^https?:\/\//i.test(h.url)||seen.has(h.url))continue;
+  const label=h.url.replace(/^https?:\/\/(?:www\.)?/i,''),haystack=(h.url+' '+label+' '+(h.title||'')).toLocaleLowerCase('tr');
+  if(!words.every(w=>haystack.includes(w)))continue;
+  seen.add(h.url);items.push({url:h.url,title:h.title||label,kind:'history'});
+ }
+ items.push(...suggestions(searches,text).items);items.splice(8);
+ const prefix=items.find(h=>h.url&&h.url.replace(/^https?:\/\/(?:www\.)?/i,'').toLowerCase().startsWith(q));
+ return {items,inline:prefix?prefix.url.replace(/^https?:\/\/(?:www\.)?/i,''):''};
+}
 function suggestions(history,text){const q=String(text||'').trim().toLocaleLowerCase('tr');if(!q)return {items:[],inline:''};const words=q.split(/\s+/);return {items:history.filter(h=>typeof h.query==='string'&&words.every(w=>h.query.toLocaleLowerCase('tr').includes(w))).slice(0,6).map(h=>({value:h.query,title:h.query,kind:'search'})),inline:''};}
-module.exports={trigger,normalizeRules,saveRule,resolveInput,suggestions};
+module.exports={trigger,normalizeRules,saveRule,resolveInput,suggestions,browsingSuggestions};

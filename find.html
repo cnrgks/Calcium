@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-u8YowSUYT6qC2u4NMJQylURoIV0QU439i9xSUJ0ku3Q=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-2mAU/6f5fOjyL57lf/4KtNBs0nBqGDFe6kLA3OgebbI='">
+<script src="i18n.js" integrity="sha256-u8YowSUYT6qC2u4NMJQylURoIV0QU439i9xSUJ0ku3Q="></script><script src="browser-font.js" integrity="sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c="></script><title>Sayfada bul</title>
+<style>
+:root{color-scheme:light dark;--bg:#fff;--field:#edf2fa;--text:#1f1f1f;--dim:#5f6368;--hover:rgba(128,128,128,.14)}
+@media(prefers-color-scheme:dark){:root{--bg:#282828;--field:#1f1f1f;--text:#e3e3e3;--dim:#a8abaf}}
+*{box-sizing:border-box}html,body{margin:0;background:transparent;font:13px "Segoe UI",system-ui,sans-serif;color:var(--text);overflow:hidden}
+#find{height:44px;display:flex;align-items:center;gap:4px;padding:6px;border-radius:8px;background:var(--bg)}
+label{display:flex;align-items:center;gap:8px;flex:1;min-width:0;height:32px;padding:0 10px;border-radius:6px;background:var(--field)}
+input{width:100%;min-width:0;border:0;outline:0;color:inherit;background:transparent;font:inherit}#count{color:var(--dim);white-space:nowrap;font-size:12px}
+button{display:grid;place-items:center;width:28px;height:28px;flex:none;padding:0;border:0;border-radius:5px;color:var(--dim);background:transparent;cursor:pointer}button:hover{background:var(--hover)}button:focus-visible{outline:1px solid currentColor}svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8}
+</style></head><body><div id="find" role="search"><label><input id="query" placeholder="Sayfada bul" aria-label="Sayfada bul" spellcheck="false"><span id="count" aria-live="polite"></span></label><button id="previous" title="Önceki (Shift+Enter)" aria-label="Önceki"><svg viewBox="0 0 24 24"><path d="m7 14 5-5 5 5"/></svg></button><button id="next" title="Sonraki (Enter)" aria-label="Sonraki"><svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg></button><button id="close" title="Kapat (Esc)" aria-label="Kapat"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+<script>
+'use strict';
+const api=window.pageApi,input=document.getElementById('query'),count=document.getElementById('count');
+function find(next=false,forward=true){if(!input.value)count.textContent='';return api.call('find',{text:input.value,next,forward});}
+function theme(data){const t=data.theme,s=document.documentElement.style;for(const n of ['--bg','--field'])s.removeProperty(n);if(t){s.setProperty('--bg',t.toolbar||t.page);s.setProperty('--field',t.omni||t.page);}}
+input.oninput=()=>find();document.getElementById('previous').onclick=()=>find(true,false);document.getElementById('next').onclick=()=>find(true,true);document.getElementById('close').onclick=()=>api.call('find-close');
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();api.call('find-close');}else if(e.key==='Enter'){e.preventDefault();find(true,!e.shiftKey);}});
+if(api){api.get().then(theme);api.onUpdate(data=>{if('theme'in data)theme(data);if(data.focus){input.focus();input.select();}if('step'in data)find(true,data.step);if(data.found)count.textContent=input.value?data.found.active+'/'+data.found.total:'';});input.focus();}
+</script></body></html>

@@ -2,7 +2,7 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const root=path.join(__dirname,'..');
 const hash=bytes=>'sha256-'+crypto.createHash('sha256').update(bytes).digest('base64');
-for(const name of ['ui','newtab','welcome','history','downloads','settings','extensions','taskmanager','securitywarning','update-notice']){
+for(const name of ['find','ui','newtab','welcome','history','downloads','settings','extensions','taskmanager','securitywarning','update-notice']){
  const file=path.join(root,name+'.html');let html=fs.readFileSync(file,'utf8').replace(/\r\n/g,'\n');const hashes=new Set();
  html=html.replace(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi,(tag,attrs,code)=>{
   const src=/\bsrc="([^"]+)"/.exec(attrs);

@@ -7,8 +7,27 @@ if(window[installed])return window[installed];
 if (/^(https?:|file:|about:)$/.test(location.protocol)) {
   insertCSS('*::-webkit-scrollbar{width:0!important;height:0!important}*{scrollbar-width:none!important}');
   let motionCSS;
+  const animations=new Map();
+  function move(target,left,top,instant=false){
+    const previous=animations.get(target);if(previous)cancelAnimationFrame(previous.frame);
+    animations.delete(target);
+    left=Math.max(0,Math.min(target.scrollWidth-target.clientWidth,left));
+    top=Math.max(0,Math.min(target.scrollHeight-target.clientHeight,top));
+    if(!smooth||instant){target.scrollTo({left,top,behavior:'instant'});return;}
+    const x=target.scrollLeft,y=target.scrollTop,start=performance.now();
+    const animation={left,top,frame:0};animations.set(target,animation);
+    const step=now=>{
+      if(!target.isConnected){animations.delete(target);return;}
+      const t=Math.min(1,(now-start)/240),ease=1-Math.pow(1-t,3);
+      target.scrollTo({left:x+(left-x)*ease,top:y+(top-y)*ease,behavior:'instant'});
+      if(t<1)animation.frame=requestAnimationFrame(step);else animations.delete(target);
+    };
+    animation.frame=requestAnimationFrame(step);
+  }
+  document.addEventListener('pointerdown',()=>{for(const a of animations.values())cancelAnimationFrame(a.frame);animations.clear();},true);
   const applyMotion=enabled=>{
     smooth=enabled!==false;
+    if(!smooth){for(const a of animations.values())cancelAnimationFrame(a.frame);animations.clear();}
     const sheet=new CSSStyleSheet();
     sheet.replaceSync('*{scroll-behavior:'+(smooth?'smooth':'auto')+'!important}');
     document.adoptedStyleSheets=document.adoptedStyleSheets.filter(s=>s!==motionCSS).concat(sheet);
@@ -39,7 +58,7 @@ if (/^(https?:|file:|about:)$/.test(location.protocol)) {
       const horizontal=document.createElement('div');horizontal.setAttribute('data-calcium-scrollbar-horizontal','');horizontal.style.cssText='all:initial!important;position:fixed!important;z-index:2147483647!important;height:10px!important;pointer-events:none!important;';
       const hs=horizontal.attachShadow({mode:'closed'}),ht=document.createElement('div'),hb=document.createElement('div'),hc=new CSSStyleSheet();hc.replaceSync('.track{position:absolute;inset:0;pointer-events:auto;touch-action:none}.thumb{position:absolute;bottom:1px;height:1px;border-radius:4px;background:#808080;opacity:.7;transition:height .12s}.track:hover .thumb,.track.drag .thumb{height:4px;opacity:1}');hs.adoptedStyleSheets=[hc];ht.className='track';hb.className='thumb';ht.append(hb);hs.append(ht);document.documentElement.append(horizontal);Object.assign(entry,{horizontal,ht,hb});ht.tabIndex=0;ht.setAttribute('role','scrollbar');ht.setAttribute('aria-label','Scroll');ht.setAttribute('aria-orientation','horizontal');ht.setAttribute('aria-valuemin','0');
       let hdrag=null;const hscroll=x=>{target.scrollTo({left:Math.max(0,Math.min(entry.hmax,x)),behavior:'instant'});schedule();};ht.addEventListener('pointerdown',event=>{if(event.button!==0)return;event.preventDefault();ht.setPointerCapture(event.pointerId);const offset=event.clientX-entry.left,current=target.scrollLeft/entry.hmax*(entry.width-entry.thumbWidth);if(offset<current||offset>current+entry.thumbWidth)hscroll((offset-entry.thumbWidth/2)/Math.max(1,entry.width-entry.thumbWidth)*entry.hmax);hdrag={x:event.clientX,scroll:target.scrollLeft};ht.classList.add('drag');});ht.addEventListener('pointermove',event=>{if(hdrag)hscroll(hdrag.scroll+(event.clientX-hdrag.x)/Math.max(1,entry.width-entry.thumbWidth)*entry.hmax);});const hstop=()=>{hdrag=null;ht.classList.remove('drag');};ht.addEventListener('pointerup',hstop);ht.addEventListener('lostpointercapture',hstop);ht.addEventListener('keydown',event=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();hscroll(event.key==='Home'?0:event.key==='End'?entry.hmax:target.scrollLeft+(event.key==='ArrowLeft'?-40:40));}});
-      const scrollTo = y => { target.scrollTo({top:Math.max(0,Math.min(entry.max,y)),behavior:entry.dragging?'instant':(smooth?'smooth':'instant')}); schedule(); };
+      const scrollTo = y => { move(target,target.scrollLeft,y,!!entry.dragging); schedule(); };
       track.addEventListener('pointerdown', e => {
         if(e.button!==0)return;
         e.preventDefault();track.setPointerCapture(e.pointerId);track.classList.add('drag');
@@ -89,20 +108,35 @@ if (/^(https?:|file:|about:)$/.test(location.protocol)) {
     window.addEventListener('scroll',schedule,{passive:true});window.addEventListener('resize',schedule);document.addEventListener('transitionend',schedule,true);
     update();
   };
-  const goals=new WeakMap();
   document.addEventListener('wheel',event=>{
-    if(!smooth||event.defaultPrevented||event.ctrlKey||event.metaKey||event.deltaX||event.shiftKey||!event.deltaY)return;
-    const direction=Math.sign(event.deltaY);
-    let target=event.composedPath().find(node=>node?.nodeType===1&&/auto|scroll/.test(getComputedStyle(node).overflowY)&&node.scrollHeight>node.clientHeight+1&&(direction>0?node.scrollTop<node.scrollHeight-node.clientHeight-1:node.scrollTop>0));
-    target=target||document.scrollingElement;if(!target)return;
-    const max=target.scrollHeight-target.clientHeight;
-    if(max<=0||(direction>0?target.scrollTop>=max-1:target.scrollTop<=0))return;
+    if(!smooth||event.defaultPrevented||event.ctrlKey||event.metaKey||(!event.deltaX&&!event.deltaY))return;
+    let dx=event.deltaX,dy=event.deltaY;if(event.shiftKey&&!dx){dx=dy;dy=0;}
+    const horizontal=Math.abs(dx)>Math.abs(dy),delta=horizontal?dx:dy;
+    const target=event.composedPath().find(node=>{
+      if(node?.nodeType!==1)return false;
+      const root=node===document.scrollingElement,style=getComputedStyle(node);
+      if(!root&&!/auto|scroll/.test(horizontal?style.overflowX:style.overflowY))return false;
+      const position=horizontal?node.scrollLeft:node.scrollTop,max=horizontal?node.scrollWidth-node.clientWidth:node.scrollHeight-node.clientHeight;
+      return max>1&&(delta>0?position<max-1:position>0);
+    });
+    if(!target)return;
     event.preventDefault();
-    const now=performance.now(),last=goals.get(target);
-    const base=last&&now-last.time<180&&last.direction===direction?last.y:target.scrollTop;
-    const y=Math.max(0,Math.min(max,base+event.deltaY*(event.deltaMode===1?20:event.deltaMode===2?target.clientHeight:1)));
-    goals.set(target,{y,time:now,direction});target.scrollTo({top:y,behavior:'smooth'});
+    const goal=animations.get(target),scale=event.deltaMode===1?20:event.deltaMode===2?(horizontal?target.clientWidth:target.clientHeight):1;
+    move(target,(goal?.left??target.scrollLeft)+dx*scale,(goal?.top??target.scrollTop)+dy*scale);
   },{passive:false});
+  window.addEventListener('keydown',event=>{
+    if(!smooth||event.defaultPrevented||event.ctrlKey||event.metaKey||event.altKey||event.isComposing)return;
+    if(!['ArrowDown','ArrowUp','PageDown','PageUp','Home','End',' '].includes(event.key))return;
+    const path=event.composedPath();
+    if(path.some(n=>n?.nodeType===1&&(n.isContentEditable||/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(n.tagName)||n.getAttribute('role')==='scrollbar')))return;
+    if(event.key===' '&&path.some(n=>n?.tagName==='A'))return;
+    const direction=['ArrowUp','PageUp','Home'].includes(event.key)||event.key===' '&&event.shiftKey?-1:1;
+    const target=path.find(n=>n?.nodeType===1&&/auto|scroll/.test(getComputedStyle(n).overflowY)&&n.scrollHeight>n.clientHeight+1&&(direction>0?n.scrollTop<n.scrollHeight-n.clientHeight-1:n.scrollTop>0))||document.scrollingElement;
+    if(!target)return;const max=target.scrollHeight-target.clientHeight;if(max<=0)return;
+    const base=animations.get(target)?.top??target.scrollTop,step=event.key.startsWith('Arrow')?40:target.clientHeight*.9;
+    const top=event.key==='Home'?0:event.key==='End'?max:Math.max(0,Math.min(max,base+direction*step));
+    if(top===target.scrollTop)return;event.preventDefault();move(target,target.scrollLeft,top);
+  });
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
   return applyMotion;
 }

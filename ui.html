@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-u8YowSUYT6qC2u4NMJQylURoIV0QU439i9xSUJ0ku3Q=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-z7Pb4q1rju5SbeaaiKs1j26FiWKvXUOi3juoKt+UNvg='; style-src 'unsafe-inline'; img-src https: http: data: crx: chrome-extension:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-u8YowSUYT6qC2u4NMJQylURoIV0QU439i9xSUJ0ku3Q=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-QwDVBiWZKMMioeGAb2Js69/aYKn1PrCoky8x6fH+CbA='; style-src 'unsafe-inline'; img-src https: http: data: crx: chrome-extension:">
 <script src="i18n.js" integrity="sha256-u8YowSUYT6qC2u4NMJQylURoIV0QU439i9xSUJ0ku3Q="></script><script src="browser-font.js" integrity="sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c="></script>
 <title>Calcium</title>
 <style>
@@ -81,6 +81,8 @@
   body.vert.overlay #toolbar { padding-right:146px; }
   body.vert #bbar, body.vert #find { flex:none; }
   body.vert #side { display:flex; flex-direction:column; flex:1; min-height:0; width:var(--sw, 240px); background:var(--frame); position:absolute; left:0; top:var(--top, 46px); bottom:0; transition:transform .18s ease; transform:translateX(0); }
+  #sideRail{display:none}
+  body.vert.autohide:not(.onboarding) #sideRail{display:block;position:fixed;left:0;top:var(--top,46px);bottom:0;width:8px;background:var(--frame);-webkit-app-region:no-drag;z-index:61}
   /* Auto-hide mode: sidebar hidden on the left, slides over the page at the same width when opened */
   body.vert.autohide #side { transform:translateX(-102%);
     box-shadow:6px 0 18px rgba(0,0,0,.28); z-index:60; border-radius:0 10px 10px 0; }
@@ -324,7 +326,7 @@
 
   /* ---------- Find bar ---------- */
   #find { height:40px; background:var(--toolbar); display:none; align-items:center; justify-content:flex-end; padding:0 12px; border-top:1px solid var(--border); gap:4px; }
-  body.find #find { display:flex; }
+  body.find #find { display:none; }
   body:not(.bbar):not(.find) #toolbar { border-bottom-color:transparent; }
   #findbox { display:flex; align-items:center; height:30px; width:360px; max-width:70%; border-radius:6px; background:var(--omni); padding:0 4px 0 10px; }
   #findq { flex:1; border:0; outline:none; background:none; color:var(--text); font:13px "Segoe UI", system-ui, sans-serif; min-width:0; user-select:text; -webkit-user-select:text; }
@@ -371,6 +373,7 @@
     <button class="btn" id="fclose" title="Kapat (Esc)"><svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
   </div>
 
+  <div id="sideRail" aria-hidden="true"></div>
   <div id="side">
     <div id="sidehead">
       <span id="sidetitle"></span>
@@ -455,7 +458,7 @@ url.addEventListener('copy', (e) => {
 });
 url.addEventListener('blur', () => { editing = false; omni.classList.remove('focus'); hideSug(); renderOmni(); });
 
-// ---------- Address bar suggestions (previous search terms only; no network or URL completion)
+// ---------- Address bar suggestions from local browsing and search history
 const sug = $('sug');
 let sugRows = [], sugSel = 0, typed = '', lastWasDelete = false;
 const looksUrl = (v) => /^(https?:\/\/|(?:calcium|mondium):\/\/|file:|localhost)/i.test(v) || (!/\s/.test(v) && /^[^\s/]+\.[a-z]{2,}(:\d+)?(\/.*)?$/i.test(v));
@@ -521,6 +524,7 @@ browserApi.onOmni((r) => {
   if (!editing || r.q !== typed) return;          // stale reply
   if (!r.items.length) { hideSug(); return; }
   drawSug(r);
+  if(r.inline&&!lastWasDelete&&url.selectionStart===typed.length&&url.selectionEnd===typed.length){url.value=r.inline;url.setSelectionRange(typed.length,r.inline.length);}
 });
 function expandTextInput(input,event){
  if(event.isComposing||event.ctrlKey||event.metaKey||event.altKey||![' ','Enter','Tab'].includes(event.key)||input.selectionStart!==input.selectionEnd)return false;
@@ -887,8 +891,8 @@ function renderSide(s) {
     tabsEl.style.cssText = 'display:flex;flex-direction:column;gap:2px;height:auto;align-items:stretch';
     if (!sizing) setSideWidth(s.sideWidth);
     // In auto-hide mode the opened sidebar starts right below the top bars
-    const key = s.bookmarksBar + '|' + s.findOpen;
-    if (key !== sideKey) { sideKey = key; requestAnimationFrame(() => { const b = ($('find').offsetHeight ? $('find') : $('bbar').offsetHeight ? $('bbar') : $('toolbar')).getBoundingClientRect().bottom; document.documentElement.style.setProperty('--top', b + 'px'); }); }
+    const key = s.bookmarksBar;
+    if (key !== sideKey) { sideKey = key; requestAnimationFrame(() => { const b = ($('bbar').offsetHeight ? $('bbar') : $('toolbar')).getBoundingClientRect().bottom; document.documentElement.style.setProperty('--top', b + 'px'); }); }
   } else tabsEl.style.cssText = '';
 }
 function setSideWidth(w) {
@@ -914,9 +918,9 @@ window.addEventListener('mousemove', (e) => {
     if (!sizeRaf) sizeRaf = requestAnimationFrame(() => { sizeRaf = 0; send('side-width', sizeW); });
     return;
   }
-  // Auto-hide mode: also opens when the mouse reaches the UI's (top bars') left edge
-  if (state && state.vertical && state.autoHide && !document.body.classList.contains('reveal') && e.clientX < (state.sideEdge || 60)) send('side-reveal');
+
 });
+$('sideRail').addEventListener('pointerenter',()=>{if(state?.vertical&&state.autoHide&&!document.body.classList.contains('reveal'))send('side-reveal');});
 window.addEventListener('mouseup', () => {
   if (!sizing) return;
   sizing = false;
@@ -1358,7 +1362,9 @@ function selectPromptResult(index, fill = false) {
   if (fill) $('newtabQuery').value = promptSelected === 0 ? promptTyped : promptRows[promptSelected].value || prettyUrl(promptRows[promptSelected].url);
 }
 function submitPrompt() { const r=promptRows[promptSelected]; const value=r && (r.value||r.url) ? (r.value||r.url) : $('newtabQuery').value.trim(); if(value) send('newtab-submit',value); }
-$('newtabQuery').oninput = () => {
+let promptWasDelete=false;
+$('newtabQuery').oninput = event => {
+  promptWasDelete=/^delete/.test(event.inputType||'');
   promptTyped = $('newtabQuery').value; promptSelected=0;
   if(!promptTyped.trim()) { promptRows=[];$('newtabResults').replaceChildren();$('newtabQuery').setAttribute('aria-expanded','false');$('newtabQuery').removeAttribute('aria-activedescendant');return; }
   // Keep the current suggestions visible until their replacement arrives.
@@ -1381,6 +1387,7 @@ browserApi.onNewTabResults((r) => {
     if(item.url){const small=document.createElement('small');small.textContent=prettyUrl(item.url);label.append(small);}
     row.append(icon,label);row.onmousedown=e=>e.preventDefault();row.onclick=()=>{promptSelected=i;submitPrompt()};row.onmouseenter=()=>selectPromptResult(i);return row;
   }));selectPromptResult(0);
+  const input=$('newtabQuery');if(r.inline&&!promptWasDelete&&input.selectionStart===promptTyped.length&&input.selectionEnd===promptTyped.length){input.value=r.inline;input.setSelectionRange(promptTyped.length,r.inline.length);}
 });
 browserApi.onNewTabPrompt((d) => {
   promptRows=[];promptSelected=0;promptTyped='';$('newtabResults').replaceChildren();$('newtabQuery').setAttribute('aria-expanded','false');$('newtabQuery').removeAttribute('aria-activedescendant');

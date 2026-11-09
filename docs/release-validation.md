@@ -23,7 +23,7 @@ The official Bitwarden Chrome extension 2026.10.2 was loaded into an isolated te
 
 Text replacements work in the address input and ordinary web text/search/URL/telephone fields, textareas and contenteditable text. Password, payment, OTP and sign-in forms are excluded. They require trusted typing followed by Space, Tab or Enter; pasted or page-generated text is not expanded. Email inputs are excluded because Chromium does not expose their caret selection API.
 
-Only submitted address-bar searches enter suggestions. Visited URLs, bookmarks and remote suggestions are excluded. Search entries are bounded to 500 and removed when browsing history is cleared. Private search entries and closed-tab lists stay in their own window's memory and are discarded on close.
+Address-bar suggestions use local browsing history and submitted search terms. Visited URLs can complete inline; bookmarks and remote suggestions are excluded. Search entries are bounded to 500 and removed when browsing history is cleared. Normal browsing history is excluded in private windows. Private search entries and closed-tab lists stay in their own window's memory and are discarded on close.
 
 Windows installer launches were checked with a mocked process boundary; a real in-place installer upgrade was not exercised. Packaged application startup, Settings, the custom-rule editor, the updater controls, Node isolation and clean shutdown passed on Windows x64, Intel macOS and Apple Silicon macOS runners. A full interactive macOS session was not tested. Packages are unsigned and macOS builds are not notarized. DRM service playback is not guaranteed without castLabs VMP signing.
 
