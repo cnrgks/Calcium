@@ -1021,7 +1021,7 @@ function createView(tab) {
   const wc = view.webContents;
   if (!tab.w) tab.w = W;
   // This tab's events always run in the context of its own window
-  const on = (ev, fn) => wc.on(ev, (...args) => { useWin(tab.w); return fn(...args); });
+  const on = (ev, fn) => wc.on(ev, (...args) => { if(ev==='destroyed')return fn(...args);if(tab.view!==view||!tab.w?.win||tab.w.win.isDestroyed())return;useWin(tab.w);return fn(...args); });
   wc.setWebRTCIPHandlingPolicy('default_public_interface_only');
   tab.view = view;
   tab.wcId = wc.id;
@@ -1109,7 +1109,15 @@ function createView(tab) {
   on('enter-html-full-screen', () => { htmlFullscreen = true; win.setFullScreen(true); layout(); });
   on('leave-html-full-screen', () => { htmlFullscreen = false; win.setFullScreen(false); layout(); });
   const wcId = wc.id;
-  on('destroyed', () => { if (byWcId.get(wcId) === tab) byWcId.delete(wcId);blockedNavigations.delete(wcId); });
+  on('destroyed', () => {
+    if(byWcId.get(wcId)===tab)byWcId.delete(wcId);blockedNavigations.delete(wcId);
+    // Explicit sleep/close detaches first. A native/extension close must also
+    // remove its logical tab, before delayed sidebar layout can reuse the view.
+    if(tab.view!==view)return;
+    tab.view=null;tab.wcId=null;
+    const owner=tab.w;
+    if(!quitting&&owner?.win&&!owner.win.isDestroyed()&&windows.includes(owner)&&owner.tabs.includes(tab))inWin(owner,()=>closeTab(tab.id));
+  });
   return view;
 }
 
@@ -1259,6 +1267,7 @@ function newTab(url, background = false, openerId = null, at = -1, requireView =
 
 const getTab = (id) => tabs.find((t) => t.id === id);
 const activeTab = () => getTab(activeId);
+const liveTabView = tab => !!tab?.view && !tab.view.webContents.isDestroyed();
 
 function activateTab(id) {
   if (!win) return;
@@ -1291,12 +1300,13 @@ function destroyView(tab) {
   iconQueue.cancel(tab);
   for(let i=titleQueue.length-1;i>=0;i--)if(titleQueue[i]===tab)titleQueue.splice(i,1);
   if(tab.titleRequest)tab.titleRequest.abort();
-  if (!tab.view) return;
-  if (win) { try { win.contentView.removeChildView(tab.view); } catch {} }
-  const wc = tab.view.webContents;
-  byWcId.delete(tab.wcId);
-  try { if (typeof wc.close === 'function') wc.close(); else wc.destroy(); } catch {}
-  tab.view = null;
+  const view=tab.view;if(!view)return;
+  // Detach ownership before close() emits synchronous extension callbacks.
+  tab.view=null;byWcId.delete(tab.wcId);tab.wcId=null;
+  const owner=tab.w?.win;
+  if(owner&&!owner.isDestroyed())try{owner.contentView.removeChildView(view);}catch{}
+  const wc=view.webContents;
+  try{if(!wc.isDestroyed()){if(typeof wc.close==='function')wc.close();else wc.destroy();}}catch{}
 }
 
 // Closed tabs (reopened with Ctrl+Shift+T). Only the URL is kept, so memory cost is negligible.
@@ -1510,10 +1520,10 @@ function bookmarksChanged(now = false) {
 // ---------------------------------------------------------------- Layout and UI state
 const vertical = () => !!settings.verticalTabs && !htmlFullscreen;
 function layout() {
-  if (!win || !ui) return;
+  if (!win || win.isDestroyed() || !ui || ui.webContents.isDestroyed()) return;
   const fullscreen=htmlFullscreen||win.isFullScreen();ui.setVisible(!fullscreen);
   if(fullscreen&&W?.updateNotice)W.updateNotice.setVisible(false);
-  if(fullscreen){W.findView?.setVisible(false);const {width,height}=win.getContentBounds();ui.setBounds({x:0,y:0,width,height:0});const t=activeTab();if(t?.view){t.view.setBounds({x:0,y:0,width,height});win.contentView.addChildView(t.view);if(W)W.uiAbove=false;}return;}
+  if(fullscreen){W.findView?.setVisible(false);const {width,height}=win.getContentBounds();ui.setBounds({x:0,y:0,width,height:0});const t=activeTab();if(liveTabView(t)){t.view.setBounds({x:0,y:0,width,height});win.contentView.addChildView(t.view);if(W)W.uiAbove=false;}return;}
   const { width, height } = win.getContentBounds();
   const t = activeTab();
   if (vertical()) {
@@ -1522,7 +1532,7 @@ function layout() {
     const top = TOOLBAR + (hasBookmarks() ? BOOKMARKS : 0);
     const sw = !settings.firstRunDone ? 0 : settings.verticalAutoHide ? SIDE_RAIL : sideWidth(width);
     ui.setBounds({ x: 0, y: 0, width, height });
-    if (t && t.view) {
+    if (liveTabView(t)) {
       t.view.setBounds({ x: sw, y: top, width: Math.max(0, width - sw), height: Math.max(0, height - top) });
       if (!overlayOpen && W && !W.sideClosing && W.uiAbove) { win.contentView.addChildView(t.view); W.uiAbove = false; }   // page back on top
     }
@@ -1530,7 +1540,7 @@ function layout() {
   }
   const h = uiHeight();
   ui.setBounds({ x: 0, y: 0, width, height: overlayOpen ? height : h });
-  if (t && t.view) t.view.setBounds({ x: 0, y: h, width, height: Math.max(0, height - h) });
+  if (liveTabView(t)) t.view.setBounds({ x: 0, y: h, width, height: Math.max(0, height - h) });
   layoutUpdateNotice(W);layoutFind(W);
 }
 // Bring the UI to the top (menus, bubbles, revealed sidebar)
@@ -3226,6 +3236,7 @@ function createWindow(opts = {}) {
 
 // Window closed: close the web contents of its tabs and UI (memory), remove it from the list
 function closedWindow(w) {
+  clearTimeout(w.sideCloseTimer);clearInterval(w.sideWatch);
   if(w.incognito){w.closedTabs.length=0;w.searchHistory=[];}
   closeUpdateNotice(w);destroyFind(w);
   if (W === w) saveCtx();
@@ -3235,8 +3246,8 @@ function closedWindow(w) {
     if (t.titleRequest) t.titleRequest.abort();
     if (!t.view) continue;
     byWcId.delete(t.wcId);blockedNavigations.delete(t.wcId);
-    try { t.view.webContents.close(); } catch {}
-    t.view = null;
+    const view=t.view;t.view=null;t.wcId=null;
+    try { if(!view.webContents.isDestroyed())view.webContents.close(); } catch {}
   }
   try { if (w.ui && !w.ui.webContents.isDestroyed()) w.ui.webContents.close(); } catch {}
   if (chooser && chooser.w === w) { const c = chooser; chooser = null; c.resolve(null); }

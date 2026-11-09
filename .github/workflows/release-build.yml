@@ -2,6 +2,8 @@ name: Release builds
 on:
   workflow_dispatch:
   push:
+    branches: ['main']
+    paths: ['package.json']
     tags: ['v*']
 permissions:
   contents: read
@@ -44,7 +46,7 @@ jobs:
         run: node tools/test-windows-update.cjs
       - name: Scrollbar and extension compatibility regressions
         timeout-minutes: 5
-        run: node tools/run-electron-tests.cjs test-scrollbar.cjs test-ui-regressions.cjs test-extension-compat.cjs
+        run: node tools/run-electron-tests.cjs test-tab-lifecycle.cjs test-scrollbar.cjs test-ui-regressions.cjs test-extension-compat.cjs
       - name: Package
         run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
         env:
