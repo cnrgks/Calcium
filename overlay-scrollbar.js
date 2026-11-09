@@ -6,9 +6,11 @@ const installed=Symbol.for('calcium.overlay-scrollbars');
 if(window[installed])return window[installed];
 if (/^(https?:|file:|about:)$/.test(location.protocol)) {
   insertCSS('*::-webkit-scrollbar{width:0!important;height:0!important}*{scrollbar-width:none!important}');
+  const internal=location.protocol==='file:';
   let motionCSS;
   const animations=new Map();
   function move(target,left,top,instant=false){
+    if(!internal){target.scrollTo({left,top,behavior:smooth&&!instant?'smooth':'instant'});return;}
     const previous=animations.get(target);if(previous)cancelAnimationFrame(previous.frame);
     animations.delete(target);
     left=Math.max(0,Math.min(target.scrollWidth-target.clientWidth,left));
@@ -29,7 +31,10 @@ if (/^(https?:|file:|about:)$/.test(location.protocol)) {
     smooth=enabled!==false;
     if(!smooth){for(const a of animations.values())cancelAnimationFrame(a.frame);animations.clear();}
     const sheet=new CSSStyleSheet();
-    sheet.replaceSync('*{scroll-behavior:'+(smooth?'smooth':'auto')+'!important}');
+    // Never animate a website's own positioning/scroll anchoring corrections.
+    sheet.replaceSync(internal?'html,[data-calcium-scrollable]{scroll-behavior:'+(smooth?'smooth':'auto')+'!important}':'');
+    document.removeEventListener('wheel',wheel);
+    if(internal||!smooth)document.addEventListener('wheel',wheel,{passive:false});
     document.adoptedStyleSheets=document.adoptedStyleSheets.filter(s=>s!==motionCSS).concat(sheet);
     motionCSS=sheet;
   };
@@ -108,8 +113,9 @@ if (/^(https?:|file:|about:)$/.test(location.protocol)) {
     window.addEventListener('scroll',schedule,{passive:true});window.addEventListener('resize',schedule);document.addEventListener('transitionend',schedule,true);
     update();
   };
-  document.addEventListener('wheel',event=>{
-    if(!smooth||event.defaultPrevented||event.ctrlKey||event.metaKey||(!event.deltaX&&!event.deltaY))return;
+  function wheel(event){
+    if(internal&&!smooth)return;
+    if(event.defaultPrevented||event.ctrlKey||event.metaKey||(!event.deltaX&&!event.deltaY))return;
     let dx=event.deltaX,dy=event.deltaY;if(event.shiftKey&&!dx){dx=dy;dy=0;}
     const horizontal=Math.abs(dx)>Math.abs(dy),delta=horizontal?dx:dy;
     const target=event.composedPath().find(node=>{
@@ -122,10 +128,12 @@ if (/^(https?:|file:|about:)$/.test(location.protocol)) {
     if(!target)return;
     event.preventDefault();
     const goal=animations.get(target),scale=event.deltaMode===1?20:event.deltaMode===2?(horizontal?target.clientWidth:target.clientHeight):1;
-    move(target,(goal?.left??target.scrollLeft)+dx*scale,(goal?.top??target.scrollTop)+dy*scale);
-  },{passive:false});
+    const x=target.scrollLeft,y=target.scrollTop;
+    const sameX=goal&&Math.sign(goal.left-x)===Math.sign(dx),sameY=goal&&Math.sign(goal.top-y)===Math.sign(dy);
+    move(target,(sameX?goal.left:x)+dx*scale,(sameY?goal.top:y)+dy*scale);
+  }
   window.addEventListener('keydown',event=>{
-    if(!smooth||event.defaultPrevented||event.ctrlKey||event.metaKey||event.altKey||event.isComposing)return;
+    if(!internal||!smooth||event.defaultPrevented||event.ctrlKey||event.metaKey||event.altKey||event.isComposing)return;
     if(!['ArrowDown','ArrowUp','PageDown','PageUp','Home','End',' '].includes(event.key))return;
     const path=event.composedPath();
     if(path.some(n=>n?.nodeType===1&&(n.isContentEditable||/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(n.tagName)||n.getAttribute('role')==='scrollbar')))return;
