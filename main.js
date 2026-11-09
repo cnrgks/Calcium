@@ -3252,7 +3252,8 @@ function createWindow(opts = {}) {
   on('close',()=>{rememberWindowPlacement(w);if(!incognito)saveSettings(true);});
   on('close', () => { if (!incognito && !quitting && windows.filter((x) => !x.incognito).length === 1) saveSession(true); });
   win.on('closed', () => closedWindow(w));
-  if(!incognito&&!from&&testDisplay==null)applyWindowPlacement(w,settings.windowPlacement);
+  if(incognito&&from?.win&&!from.win.isDestroyed())applyWindowPlacement(w,windowPlacement(from));
+  else if(!incognito&&!from&&testDisplay==null)applyWindowPlacement(w,settings.windowPlacement);
   if (testDisplay != null) win.showInactive(); else win.show();
   layout();
   return w;
