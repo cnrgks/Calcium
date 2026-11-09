@@ -1,6 +1,5 @@
 'use strict';
-const {app,BrowserWindow,session,ipcMain}=require('electron');
-ipcMain.on('calcium-smooth-scrolling',e=>{e.returnValue=true;});
+const {app,BrowserWindow,session}=require('electron');
 const path=require('path'),http=require('http'),assert=require('assert');
 app.disableHardwareAcceleration();
 app.whenReady().then(async()=>{
@@ -13,7 +12,6 @@ app.whenReady().then(async()=>{
  assert.equal(geometry.width,geometry.viewport,'overlay takes no layout width');assert.equal(geometry.bars,1);
  assert.equal(await win.webContents.executeJavaScript('getComputedStyle(document.documentElement).scrollbarWidth'),'none','browser rule overrides site scrollbar styles');
  assert.equal(await win.webContents.executeJavaScript('getComputedStyle(document.documentElement).scrollBehavior'),'auto','site positioning is not forced to animate');
- win.webContents.send('calcium-smooth-scrolling',false);await new Promise(r=>setTimeout(r,50));
  assert.equal(await win.webContents.executeJavaScript('getComputedStyle(document.documentElement).scrollBehavior'),'auto','site positioning remains instant');
  const sample=async()=>{const image=await win.webContents.capturePage(),{width}=image.getSize(),pixels=image.toBitmap();let dark=0;for(let x=width-10;x<width;x++){const i=(30*width+x)*4;if(pixels[i]<230)dark++;}return dark;};
  assert.equal(await sample(),1,'idle thumb is one pixel');
@@ -24,17 +22,12 @@ app.whenReady().then(async()=>{
  assert.equal(await win.webContents.executeJavaScript('document.querySelectorAll("[data-calcium-scrollbar=panel]").length'),1,'nested panel discovers its overlay');
  assert(await win.webContents.executeJavaScript('[...document.querySelectorAll("[data-calcium-scrollbar-horizontal]")].some(e=>getComputedStyle(e).display!=="none")'),'nested horizontal scroll has an overlay');
  // A dynamic site's scroll anchoring and positioning must stay synchronous.
- win.webContents.send('calcium-smooth-scrolling',true);await new Promise(r=>setTimeout(r,50));
  assert.equal(await win.webContents.executeJavaScript('scrollTo(0,600);scrollY'),600,'site scroll corrections are not animated');
  await win.webContents.executeJavaScript("window.scrollSamples=[];window.addEventListener('scroll',()=>scrollSamples.push(scrollY));window.wheelChecks=[];window.addEventListener('wheel',e=>wheelChecks.push({prevented:e.defaultPrevented,trusted:e.isTrusted}));scrollTo(0,0)");
  win.webContents.debugger.attach('1.3');await win.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});
  const wheel=async delta=>{await win.webContents.debugger.sendCommand('Input.dispatchMouseEvent',{type:'mouseWheel',x:500,y:300,deltaX:0,deltaY:delta});await new Promise(r=>setTimeout(r,300));};
- await wheel(400);if(!await win.webContents.executeJavaScript('matchMedia("(prefers-reduced-motion: reduce)").matches'))assert(await win.webContents.executeJavaScript('new Set(scrollSamples.map(Math.round)).size>2'),'native smooth wheel animates when system motion is enabled');assert(await win.webContents.executeJavaScript('scrollY>0'),'native wheel scrolls page');
- assert(await win.webContents.executeJavaScript('wheelChecks.at(-1).trusted&&!wheelChecks.at(-1).prevented'),'smooth mode leaves real website wheel input to Chromium');
+ await wheel(400);assert(await win.webContents.executeJavaScript('scrollY>0'),'native wheel scrolls page');
+ assert(await win.webContents.executeJavaScript('wheelChecks.at(-1).trusted&&!wheelChecks.at(-1).prevented'),'website wheel input is left to Chromium');
  await wheel(-150);const y=await win.webContents.executeJavaScript('scrollY');await new Promise(r=>setTimeout(r,300));assert.equal(await win.webContents.executeJavaScript('scrollY'),y,'reversed input leaves no stale JavaScript animation');
- win.webContents.send('calcium-smooth-scrolling',false);await new Promise(r=>setTimeout(r,50));await wheel(200);
- assert(await win.webContents.executeJavaScript('wheelChecks.at(-1).prevented'),'live opt-out handles wheel immediately');
- win.webContents.send('calcium-smooth-scrolling',true);await new Promise(r=>setTimeout(r,50));await wheel(100);
- assert(await win.webContents.executeJavaScript('!wheelChecks.at(-1).prevented'),'re-enabling removes blocking wheel handler');
  win.destroy();server.close();console.log('PASS: overlay scrollbar uses no layout width, grows from 1 to 4 pixels on hover, and supports dragging.');app.quit();
 }).catch(e=>{console.error(e);app.exit(1)});

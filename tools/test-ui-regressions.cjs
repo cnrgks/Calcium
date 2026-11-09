@@ -13,9 +13,8 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));const until=async fn=>{for(let 
  w.win.show();w.win.focus();wc.focus();wc.debugger.attach('1.3');await wc.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});await pause(300);
  await wc.executeJavaScript("scrollTo({top:0,behavior:'instant'})");
  wc.sendInputEvent({type:'mouseMove',x:550,y:200});await pause(120);await wc.debugger.sendCommand('Input.dispatchMouseEvent',{type:'mouseWheel',x:550,y:200,deltaX:0,deltaY:500});
- const positions=[];for(let i=0;i<8;i++){await pause(35);positions.push(await wc.executeJavaScript('scrollY'));}
- assert(positions[0]>0&&positions[0]<450,'wheel begins with an intermediate animated position: '+positions);assert(positions.at(-1)>450,'wheel reaches destination: '+positions);assert(new Set(positions.map(Math.round)).size>2,'wheel animates across frames');
- api.settingsSet('smoothScrolling',false);await pause(80);await wc.executeJavaScript("scrollTo({top:0,behavior:'instant'})");await wc.debugger.sendCommand('Input.dispatchMouseEvent',{type:'mouseWheel',x:550,y:200,deltaX:0,deltaY:500});await pause(70);assert(await wc.executeJavaScript('scrollY')>450,'disabled scrolling is immediate');api.settingsSet('smoothScrolling',true);
+ await pause(350);assert(await wc.executeJavaScript('scrollY')>0,'native wheel scrolls Settings');
+ assert(!await wc.executeJavaScript("document.body.innerText.includes('Yumuşak kaydırma')"),'animation option removed');
  api.history.unshift({url:'https://www.youtube.com/',title:'YouTube',t:Date.now()});const suggestions=api.omniSuggest('you');assert(suggestions.items.some(x=>x.url==='https://www.youtube.com/'));assert.equal(suggestions.inline,'youtube.com/');
  api.openSearchPrompt('address','');await pause(100);await w.ui.webContents.executeJavaScript("document.querySelector('#newtabQuery').value='you';document.querySelector('#newtabQuery').dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:'u'}))");await until(()=>w.ui.webContents.executeJavaScript("document.querySelector('#newtabQuery').value==='youtube.com/'"));assert.equal(await w.ui.webContents.executeJavaScript("document.querySelector('#newtabQuery').selectionStart"),3);api.closeOverlay(false);
  const before=tab.view.getBounds(),sideBefore=await w.ui.webContents.executeJavaScript('document.querySelector("#side").getBoundingClientRect().top');api.openFind();await until(()=>w.findView&&!w.findView.webContents.isLoading());await pause(150);
@@ -30,5 +29,5 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));const until=async fn=>{for(let 
  const colors=async panel=>panel.webContents.executeJavaScript("({bg:getComputedStyle(document.body).backgroundColor,text:getComputedStyle(document.body).color,close:getComputedStyle(document.querySelector('#closePanel')).display,svg:!!document.querySelector('#closePanel svg')})");
  const a=await colors(downloads),b=await colors(tasks);assert.equal(a.bg,b.bg);assert.equal(a.text,b.text);assert.equal(a.close,'grid');assert.equal(b.close,'grid');assert(a.svg&&b.svg);
  await capture(tasks.webContents,'taskmanager-popup.png');await capture(downloads.webContents,'downloads-popup.png');
- console.log('PASS: Settings wheel animates across frames, live opt-out, visited URL completion, floating find without layout shifts, popup colors and centered close icons.');app.exit(0);
+ console.log('PASS: native Settings scrolling, visited URL completion, floating find without layout shifts, popup colors and centered close icons.');app.exit(0);
 })().catch(e=>{console.error(e);app.exit(1)});
