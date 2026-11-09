@@ -297,7 +297,7 @@ function sessionData() {
       if (t.id === w.activeId) active = list.length;
       list.push({ url: k ? displayUrl(t.url) : t.url, title: t.title || '', favicon: t.favicon || null, iconColor: t.iconColor || null, pinned: !!t.pinned, muted: !!t.muted });
     }
-    return { active, tabs: list };
+    return { active, tabs: list, placement: windowPlacement(w) };
   }).filter((x) => x.tabs.length) };
   return lastSessionData;
 }
@@ -1155,6 +1155,7 @@ function restoreSession() {
   return any;
 }
 function restoreWindow(data) {
+  if(data?.placement)applyWindowPlacement(W,data.placement);
   const list = data && Array.isArray(data.tabs) ? data.tabs.filter((x) => x && typeof x.url === 'string' && x.url) : [];
   for (const x of list.slice(0, 100)) {
     tabs.push({
@@ -3159,6 +3160,26 @@ async function fetchSiteIcon(pageUrl) {
   return null;
 }
 
+function windowPlacement(w){
+ if(!w?.win||w.win.isDestroyed())return w?.placement||null;
+ const video=w===W?htmlFullscreen:w.htmlFullscreen;
+ if(video)return w.placement||null;
+ const display=screen.getDisplayMatching(w.win.getBounds());
+ return {displayId:display.id,maximized:w.win.isFullScreen()?!!w.placement?.maximized:w.win.isMaximized(),fullscreen:w.win.isFullScreen()};
+}
+function rememberWindowPlacement(w){
+ if(w.incognito||!w.win||w.win.isDestroyed())return;
+ const placement=windowPlacement(w);if(!placement)return;
+ w.placement=placement;settings.windowPlacement=placement;saveSettings();
+}
+function applyWindowPlacement(w,value){
+ if(!value||typeof value!=='object'||!w?.win)return;
+ const displays=screen.getAllDisplays(),display=displays.find(d=>d.id===value.displayId)||screen.getPrimaryDisplay(),a=display.workArea;
+ const width=Math.min(1280,a.width),height=Math.min(820,a.height);
+ w.win.setBounds({x:Math.round(a.x+(a.width-width)/2),y:Math.round(a.y+(a.height-height)/2),width,height});
+ if(value.maximized===true)w.win.maximize();else if(w.win.isMaximized())w.win.unmaximize();
+ w.win.setFullScreen(value.fullscreen===true);w.placement={displayId:display.id,maximized:value.maximized===true,fullscreen:value.fullscreen===true};
+}
 function createWindow(opts = {}) {
   const incognito = !!opts.incognito;
   const w = {
@@ -3227,8 +3248,11 @@ function createWindow(opts = {}) {
   on('blur', () => { if (overlayOpen && overlayKind !== 'chooser' && overlayKind !== 'prompt') closeOverlay(); });
   on('swipe', (_e, dir) => { if (dir === 'left') goBack(); if (dir === 'right') goForward(); });
   // Save the session while the last normal window closes (it is then removed from the list)
+  for(const event of ['move','resize','maximize','unmaximize','enter-full-screen','leave-full-screen'])on(event,()=>rememberWindowPlacement(w));
+  on('close',()=>{rememberWindowPlacement(w);if(!incognito)saveSettings(true);});
   on('close', () => { if (!incognito && !quitting && windows.filter((x) => !x.incognito).length === 1) saveSession(true); });
   win.on('closed', () => closedWindow(w));
+  if(!incognito&&!from&&testDisplay==null)applyWindowPlacement(w,settings.windowPlacement);
   if (testDisplay != null) win.showInactive(); else win.show();
   layout();
   return w;

@@ -25,6 +25,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:security
+      - run: node tools/test-window-placement.cjs
       - name: Prepare Windows test runtime
         if: matrix.platform == 'win'
         run: node node_modules/electron/install.js
