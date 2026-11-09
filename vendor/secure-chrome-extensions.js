@@ -2588,6 +2588,7 @@ var PermissionsAPI = class {
       return true;
     };
     this.request = async ({ extension }, request) => {
+      if (request.permissions?.includes("favicon")) return false;
       const declaredPermissions = /* @__PURE__ */ new Set([
         ...extension.manifest.permissions || [],
         ...extension.manifest.optional_permissions || []
@@ -2631,7 +2632,7 @@ var PermissionsAPI = class {
   processExtension(extension) {
     const manifest = extension.manifest;
     this.permissionMap.set(extension.id, {
-      permissions: manifest.permissions || [],
+      permissions: (manifest.permissions || []).filter(permission => permission !== "favicon"),
       origins: manifest.host_permissions || []
     });
   }
@@ -2646,7 +2647,7 @@ function checkVersion() {
 }
 function resolvePreloadPath(modulePath) {
   try {
-    return require.resolve("electron-chrome-extensions/preload");
+    return require.resolve("./extension-api-preload.js");
   } catch (error) {
     if (process.env.NODE_ENV !== "production") {
       console.error(error);

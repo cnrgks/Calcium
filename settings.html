@@ -2,8 +2,8 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-KcHvcNXuryeEwXls89boRn8PdtLMfti+cy5nN+HO0E8=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-8YOfYClKsMlxP+KOLIOllniYzXSbOg1HXbj1de9hxhc='; img-src data:">
-<script src="i18n.js" integrity="sha256-KcHvcNXuryeEwXls89boRn8PdtLMfti+cy5nN+HO0E8="></script><script src="browser-font.js" integrity="sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c="></script>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-u8YowSUYT6qC2u4NMJQylURoIV0QU439i9xSUJ0ku3Q=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-RTTpH3mRVwzKT8gc5QBhPzb+6NbU8x82nwto0ImOmW8='; img-src data:">
+<script src="i18n.js" integrity="sha256-u8YowSUYT6qC2u4NMJQylURoIV0QU439i9xSUJ0ku3Q="></script><script src="browser-font.js" integrity="sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c="></script>
 <title>Ayarlar</title>
 <style>
   :root { --bg:#f8fafd; --card:#ffffff; --text:#1f1f1f; --dim:#5f6368; --border:#e3e3e3; --hover:rgba(31,31,31,.06);
@@ -290,7 +290,7 @@ function render() {
     b.append(themePreview(t),el('div','nm',t.name),check);b.setAttribute('aria-pressed',String(d.theme===t.key));b.onclick=()=>set('theme',t.key);themes.append(b);
   }
   const advanced=(title,...rows)=>{const box=el('details','advanced');box.append(el('summary',null,title),...rows.filter(Boolean));return box;};
-  const themeCard=el('div','card');themeCard.append(row('Tema','',themes),select('language',[['tr','Türkçe'],['en','English']],'Dil',''),select('uiFont',d.uiFonts.map(f=>[f.key,f.name]),'Tarayıcı yazı tipi','Yalnızca tarayıcı arayüzünü değiştirir; web sayfalarını etkilemez.'),toggle('pitchBlack','Tam siyah','Koyu temada siyah zemin kullan.'),toggle('forceDarkPages','Web sitelerini koyu göster','Yeniden başlatma gerekir.'));
+  const themeCard=el('div','card');themeCard.append(row('Tema','',themes),select('language',[['tr','Türkçe'],['en','English']],'Dil',''),select('uiFont',d.uiFonts.map(f=>[f.key,f.name]),'Tarayıcı yazı tipi','Yalnızca tarayıcı arayüzünü değiştirir; web sayfalarını etkilemez.'),toggle('smoothScrolling','Yumuşak kaydırma','Sayfaları ve panelleri animasyonla kaydır.'),toggle('pitchBlack','Tam siyah','Koyu temada siyah zemin kullan.'),toggle('forceDarkPages','Web sitelerini koyu göster','Yeniden başlatma gerekir.'));
   const appearance=el('h2',null,'Görünüm');appearance.id='gorunum';
   const sleepNames={5:'5 dakika',10:'10 dakika',30:'30 dakika',60:'1 saat'};
   $('root').replaceChildren(

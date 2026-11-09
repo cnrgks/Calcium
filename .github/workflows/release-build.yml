@@ -14,12 +14,6 @@ jobs:
           - os: windows-latest
             platform: win
             arch: x64
-          - os: macos-15-intel
-            platform: mac
-            arch: x64
-          - os: macos-15
-            platform: mac
-            arch: arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -48,6 +42,9 @@ jobs:
         if: matrix.platform == 'win'
         timeout-minutes: 10
         run: node tools/test-windows-update.cjs
+      - name: Scrollbar and extension compatibility regressions
+        timeout-minutes: 5
+        run: node tools/run-electron-tests.cjs test-scrollbar.cjs test-extension-compat.cjs
       - name: Package
         run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
         env:
@@ -56,16 +53,11 @@ jobs:
         if: matrix.platform == 'win'
         timeout-minutes: 5
         run: node tools/test-packaged.cjs dist/win-unpacked/Calcium.exe
-      - name: macOS packaged smoke test
-        if: matrix.platform == 'mac'
-        timeout-minutes: 5
-        run: node tools/test-packaged.cjs dist/mac${{ matrix.arch == 'arm64' && '-arm64' || '' }}/Calcium.app/Contents/MacOS/Calcium
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Calcium-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
             dist/*.exe
-            dist/*.dmg
             dist/*.blockmap
           if-no-files-found: error
   release:
@@ -95,9 +87,7 @@ jobs:
             test "$(git rev-parse 'FETCH_HEAD^{commit}')" = "$GITHUB_SHA"
           fi
           test -f "release-assets/Calcium-Setup-$version.exe"
-          test -f "release-assets/Calcium-$version-x64.dmg"
-          test -f "release-assets/Calcium-$version-arm64.dmg"
-          (cd release-assets && sha256sum *.exe *.dmg *.blockmap > SHA256SUMS.txt)
+          (cd release-assets && sha256sum *.exe *.blockmap > SHA256SUMS.txt)
           if release_state=$(gh release view "$tag" --json isDraft --jq .isDraft); then
             test "$release_state" = true || { echo 'Published releases are immutable; increment the version.' >&2; exit 1; }
           else

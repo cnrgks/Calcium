@@ -1,5 +1,20 @@
 # 1.3.7 validation
 
+## OneTab compatibility follow-up
+
+OneTab 2.24 was tested from its original installed files in an isolated temporary
+profile. Its main page completed loading, the toolbar popup passed the initial
+permission screen and displayed tab selection/storage controls, and Options
+rendered. Calcium no longer advertises Chrome's unavailable `favicon` endpoint;
+OneTab uses its own favicon fallback. Extensions declaring `tabGroups` can query
+Calcium's empty group collection (`TAB_GROUP_ID_NONE: -1`), matching its flat tab
+model. Creating or restoring native Chrome tab groups remains unsupported.
+
+The regression fixture runs with `node tools/run-electron-tests.cjs test-extension-compat.cjs`.
+Set `CALCIUM_ONETAB_DIR` to an installed OneTab directory to include the real
+extension smoke test. It copies extension files into the disposable test profile
+and never reads or changes the user's saved OneTab data.
+
 Security unit tests cover CRX verification, bounded downloads, protection rules, permission/session isolation, private filtering, closed logging pipes, updater boundaries and custom shortcut validation.
 
 Electron integration tests cover startup, extension tab registration, centered address editing, tab layout and drag behavior, sleeping, task manager, overlay scrollbars, private document filtering, update offers and Settings controls. The custom-input test uses Chromium input events to verify text expansion, excluded login/password fields, rejected synthetic input, Ctrl+wheel zoom, reset, English site controls, the awake badge and private-window-only closed-tab restoration.

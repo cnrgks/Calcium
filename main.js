@@ -65,6 +65,7 @@ const DEFAULTS = {
   searchEngine: 'google',
   calciumProtection:true,calciumAllowedSites:[],
   forceDarkPages: false,
+  smoothScrolling: true,
   strictIsolation: true,    // true = every site in its own process like Chrome (much more RAM); false = only login/payment/protected sites isolated
   clearGoogleOnExit: false,  // when on, Google cookies/site data are cleared on exit (signs out of Google)
   theme: 'sistem',
@@ -325,6 +326,7 @@ function broadcastUiFont(){
   if(pageKind(wc.getURL())||windows.some(w=>w.ui?.webContents===wc))wc.send('calcium-ui-font',family);
  }
 }
+ipcMain.on('calcium-smooth-scrolling', e => { e.returnValue = settings.smoothScrolling !== false; });
 ipcMain.on('calcium-lang', (e) => { e.returnValue = uiLang(); });
 app.commandLine.appendSwitch('lang',uiLang()==='tr'?'tr':'en-US');
 // Native menus, dialogs and notifications in the chosen language
@@ -2858,7 +2860,7 @@ function settingsData() {
     uiFont:settings.uiFont,uiFonts:UI_FONTS.map(({key,name})=>({key,name})),
     theme: settings.theme, themes: Object.entries(THEMES).map(([key, t]) => ({ key, name: t.name, mode: t.mode, frame: t.frame || null, accent: t.accent || null })),
     engine: settings.searchEngine, engines: Object.entries(SEARCH_ENGINES).map(([key, x]) => ({ key, name: x.name })),
-    bookmarksBar: hasBookmarks(), fullUrl: true, forceDarkPages: settings.forceDarkPages, strictIsolation: settings.strictIsolation, language: uiLang(),
+    bookmarksBar: hasBookmarks(), fullUrl: true, smoothScrolling: settings.smoothScrolling !== false, forceDarkPages: settings.forceDarkPages, strictIsolation: settings.strictIsolation, language: uiLang(),
     clearGoogleOnExit: settings.clearGoogleOnExit,
     memorySaver:settings.memorySaver!==false,
     sleepMinutes: settings.sleepMinutes, sleepChoices: SLEEP_CHOICES, downloadNotify: settings.downloadNotify,
@@ -2898,6 +2900,11 @@ function settingsSet(key, value) {
     case 'verticalTabs': if (typeof value !== 'boolean') return false; setVerticalTabs(value); return true;
     case 'uiFont': if(!validUiFont(value))return false;settings.uiFont=value;saveSettings(true);broadcastUiFont();return true;
     case 'language': if (!['tr', 'en'].includes(value)) return false; setLanguage(value); return true;
+    case 'smoothScrolling':
+      if(typeof value !== 'boolean')return false;
+      settings.smoothScrolling=value;saveSettings();
+      for(const wc of webContents.getAllWebContents())for(const frame of wc.mainFrame.framesInSubtree)try{frame.send('calcium-smooth-scrolling',value);}catch{}
+      return true;
     case 'pitchBlack': if (typeof value !== 'boolean') return false; settings.pitchBlack = value; saveSettings(); applyTheme(); return true;
 
     case 'verticalAutoHide': if (typeof value !== 'boolean') return false; if (value !== !!settings.verticalAutoHide) { if (settings.verticalTabs) toggleAutoHide(); else { settings.verticalAutoHide = value; saveSettings(); } } return true;

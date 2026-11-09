@@ -1,9 +1,20 @@
 'use strict';
 // A thin overlay for the document and browser tab lists. Content keeps the full
 // viewport width; only the transparent edge hit target receives pointer events.
-function installOverlayScrollbars(insertCSS) {
+function installOverlayScrollbars(insertCSS, smooth = true) {
+const installed=Symbol.for('calcium.overlay-scrollbars');
+if(window[installed])return window[installed];
 if (/^(https?:|file:|about:)$/.test(location.protocol)) {
   insertCSS('*::-webkit-scrollbar{width:0!important;height:0!important}*{scrollbar-width:none!important}');
+  let motionCSS;
+  const applyMotion=enabled=>{
+    smooth=enabled!==false;
+    const sheet=new CSSStyleSheet();
+    sheet.replaceSync('*{scroll-behavior:'+(smooth?'smooth':'auto')+'!important}');
+    document.adoptedStyleSheets=document.adoptedStyleSheets.filter(s=>s!==motionCSS).concat(sheet);
+    motionCSS=sheet;
+  };
+  window[installed]=applyMotion;applyMotion(smooth);
   const start = () => {
     const entries = new Map();
     let pending = false;
@@ -27,8 +38,8 @@ if (/^(https?:|file:|about:)$/.test(location.protocol)) {
       entries.set(target, entry); document.documentElement.append(host);
       const horizontal=document.createElement('div');horizontal.setAttribute('data-calcium-scrollbar-horizontal','');horizontal.style.cssText='all:initial!important;position:fixed!important;z-index:2147483647!important;height:10px!important;pointer-events:none!important;';
       const hs=horizontal.attachShadow({mode:'closed'}),ht=document.createElement('div'),hb=document.createElement('div'),hc=new CSSStyleSheet();hc.replaceSync('.track{position:absolute;inset:0;pointer-events:auto;touch-action:none}.thumb{position:absolute;bottom:1px;height:1px;border-radius:4px;background:#808080;opacity:.7;transition:height .12s}.track:hover .thumb,.track.drag .thumb{height:4px;opacity:1}');hs.adoptedStyleSheets=[hc];ht.className='track';hb.className='thumb';ht.append(hb);hs.append(ht);document.documentElement.append(horizontal);Object.assign(entry,{horizontal,ht,hb});ht.tabIndex=0;ht.setAttribute('role','scrollbar');ht.setAttribute('aria-label','Scroll');ht.setAttribute('aria-orientation','horizontal');ht.setAttribute('aria-valuemin','0');
-      let hdrag=null;const hscroll=x=>{target.scrollLeft=Math.max(0,Math.min(entry.hmax,x));schedule();};ht.addEventListener('pointerdown',event=>{if(event.button!==0)return;event.preventDefault();ht.setPointerCapture(event.pointerId);const offset=event.clientX-entry.left,current=target.scrollLeft/entry.hmax*(entry.width-entry.thumbWidth);if(offset<current||offset>current+entry.thumbWidth)hscroll((offset-entry.thumbWidth/2)/Math.max(1,entry.width-entry.thumbWidth)*entry.hmax);hdrag={x:event.clientX,scroll:target.scrollLeft};ht.classList.add('drag');});ht.addEventListener('pointermove',event=>{if(hdrag)hscroll(hdrag.scroll+(event.clientX-hdrag.x)/Math.max(1,entry.width-entry.thumbWidth)*entry.hmax);});const hstop=()=>{hdrag=null;ht.classList.remove('drag');};ht.addEventListener('pointerup',hstop);ht.addEventListener('lostpointercapture',hstop);ht.addEventListener('keydown',event=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();hscroll(event.key==='Home'?0:event.key==='End'?entry.hmax:target.scrollLeft+(event.key==='ArrowLeft'?-40:40));}});
-      const scrollTo = y => { target.scrollTop = Math.max(0, Math.min(entry.max, y)); schedule(); };
+      let hdrag=null;const hscroll=x=>{target.scrollTo({left:Math.max(0,Math.min(entry.hmax,x)),behavior:'instant'});schedule();};ht.addEventListener('pointerdown',event=>{if(event.button!==0)return;event.preventDefault();ht.setPointerCapture(event.pointerId);const offset=event.clientX-entry.left,current=target.scrollLeft/entry.hmax*(entry.width-entry.thumbWidth);if(offset<current||offset>current+entry.thumbWidth)hscroll((offset-entry.thumbWidth/2)/Math.max(1,entry.width-entry.thumbWidth)*entry.hmax);hdrag={x:event.clientX,scroll:target.scrollLeft};ht.classList.add('drag');});ht.addEventListener('pointermove',event=>{if(hdrag)hscroll(hdrag.scroll+(event.clientX-hdrag.x)/Math.max(1,entry.width-entry.thumbWidth)*entry.hmax);});const hstop=()=>{hdrag=null;ht.classList.remove('drag');};ht.addEventListener('pointerup',hstop);ht.addEventListener('lostpointercapture',hstop);ht.addEventListener('keydown',event=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();hscroll(event.key==='Home'?0:event.key==='End'?entry.hmax:target.scrollLeft+(event.key==='ArrowLeft'?-40:40));}});
+      const scrollTo = y => { target.scrollTo({top:Math.max(0,Math.min(entry.max,y)),behavior:entry.dragging?'instant':(smooth?'smooth':'instant')}); schedule(); };
       track.addEventListener('pointerdown', e => {
         if(e.button!==0)return;
         e.preventDefault();track.setPointerCapture(e.pointerId);track.classList.add('drag');
@@ -78,9 +89,28 @@ if (/^(https?:|file:|about:)$/.test(location.protocol)) {
     window.addEventListener('scroll',schedule,{passive:true});window.addEventListener('resize',schedule);document.addEventListener('transitionend',schedule,true);
     update();
   };
+  const goals=new WeakMap();
+  document.addEventListener('wheel',event=>{
+    if(!smooth||event.defaultPrevented||event.ctrlKey||event.metaKey||event.deltaX||event.shiftKey||!event.deltaY)return;
+    const direction=Math.sign(event.deltaY);
+    let target=event.composedPath().find(node=>node?.nodeType===1&&/auto|scroll/.test(getComputedStyle(node).overflowY)&&node.scrollHeight>node.clientHeight+1&&(direction>0?node.scrollTop<node.scrollHeight-node.clientHeight-1:node.scrollTop>0));
+    target=target||document.scrollingElement;if(!target)return;
+    const max=target.scrollHeight-target.clientHeight;
+    if(max<=0||(direction>0?target.scrollTop>=max-1:target.scrollTop<=0))return;
+    event.preventDefault();
+    const now=performance.now(),last=goals.get(target);
+    const base=last&&now-last.time<180&&last.direction===direction?last.y:target.scrollTop;
+    const y=Math.max(0,Math.min(max,base+event.deltaY*(event.deltaMode===1?20:event.deltaMode===2?target.clientHeight:1)));
+    goals.set(target,{y,time:now,direction});target.scrollTo({top:y,behavior:'smooth'});
+  },{passive:false});
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
+  return applyMotion;
 }
 
 }
 if(typeof module!=='undefined')module.exports={installOverlayScrollbars};
-if(typeof window!=='undefined')installOverlayScrollbars(css=>require('electron').webFrame.insertCSS(css));
+if(typeof window!=='undefined'){
+  const {webFrame,ipcRenderer}=require('electron');
+  const apply=installOverlayScrollbars(css=>webFrame.insertCSS(css,{cssOrigin:'user'}),ipcRenderer.sendSync('calcium-smooth-scrolling')!==false);
+  if(apply)ipcRenderer.on('calcium-smooth-scrolling',(_event,value)=>apply(value));
+}

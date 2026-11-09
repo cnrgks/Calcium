@@ -7,6 +7,8 @@
 // Strings built from several parts are translated where they are built (see L() in the pages).
 (function (root) {
   const EN = {
+    'Yumuşak kaydırma': 'Smooth scrolling',
+    'Sayfaları ve panelleri animasyonla kaydır.': 'Animate scrolling in pages and panels.',
     'Bu sitede üçüncü taraf çerezlerini kullanmak': 'Use third-party cookies on this site',
     'Harici uygulama açılacak:': 'External application type:',
     'Üçüncü taraf çerez erişimi:': 'Third-party cookie access:',

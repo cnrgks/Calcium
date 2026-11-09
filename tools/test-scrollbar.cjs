@@ -1,15 +1,20 @@
 'use strict';
-const {app,BrowserWindow,session}=require('electron');
+const {app,BrowserWindow,session,ipcMain}=require('electron');
+ipcMain.on('calcium-smooth-scrolling',e=>{e.returnValue=true;});
 const path=require('path'),http=require('http'),assert=require('assert');
 app.disableHardwareAcceleration();
 app.whenReady().then(async()=>{
- const server=http.createServer((_q,r)=>{r.setHeader('Content-Type','text/html');r.end('<!doctype html><style>body{margin:0;height:3600px;background:white}</style><p>Scrollbar fixture</p><div id="nested" style="position:absolute;top:100px;left:100px;width:150px;height:100px;overflow:auto"><div style="width:1000px;height:1000px">Panel</div></div><iframe style="position:absolute;top:250px;left:100px;width:200px;height:100px" srcdoc="<style>body{height:1000px}</style>Frame"></iframe>');});
+ const server=http.createServer((_q,r)=>{r.setHeader('Content-Type','text/html');r.end('<!doctype html><style>body{margin:0;height:3600px;background:white}html{scrollbar-width:auto!important}*::-webkit-scrollbar{width:18px!important}</style><p>Scrollbar fixture</p><div id="nested" style="position:absolute;top:100px;left:100px;width:150px;height:100px;overflow:auto"><div style="width:1000px;height:1000px">Panel</div></div><iframe style="position:absolute;top:250px;left:100px;width:200px;height:100px" srcdoc="<style>body{height:1000px}</style>Frame"></iframe>');});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const ses=session.fromPartition('calcium-scroll-test');ses.registerPreloadScript({id:'scroll',type:'frame',filePath:path.join(__dirname,'..','overlay-scrollbar.js')});
  const win=new BrowserWindow({show:false,width:800,height:600,useContentSize:true,webPreferences:{session:ses,sandbox:true,offscreen:true}});
  await win.loadURL('http://127.0.0.1:'+server.address().port);await new Promise(r=>setTimeout(r,150));
  const geometry=await win.webContents.executeJavaScript(`({width:document.documentElement.clientWidth,viewport:innerWidth,bars:document.querySelectorAll('[data-calcium-scrollbar]').length})`);
  assert.equal(geometry.width,geometry.viewport,'overlay takes no layout width');assert.equal(geometry.bars,1);
+ assert.equal(await win.webContents.executeJavaScript('getComputedStyle(document.documentElement).scrollbarWidth'),'none','browser rule overrides site scrollbar styles');
+ assert.equal(await win.webContents.executeJavaScript('getComputedStyle(document.documentElement).scrollBehavior'),'smooth');
+ win.webContents.send('calcium-smooth-scrolling',false);await new Promise(r=>setTimeout(r,50));
+ assert.equal(await win.webContents.executeJavaScript('getComputedStyle(document.documentElement).scrollBehavior'),'auto','setting updates live');
  const sample=async()=>{const image=await win.webContents.capturePage(),{width}=image.getSize(),pixels=image.toBitmap();let dark=0;for(let x=width-10;x<width;x++){const i=(30*width+x)*4;if(pixels[i]<230)dark++;}return dark;};
  assert.equal(await sample(),1,'idle thumb is one pixel');
  win.webContents.sendInputEvent({type:'mouseMove',x:798,y:30});await new Promise(r=>setTimeout(r,200));assert.equal(await sample(),4,'hover expands the thumb');
