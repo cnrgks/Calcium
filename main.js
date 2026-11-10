@@ -1202,8 +1202,17 @@ function createView(tab) {
   on('before-input-event', (e, input) => { if (handleShortcut(input)) e.preventDefault(); });
   on('context-menu', (_e, p) => {if(pageKind(wc.getURL())==='saved-tabs'&&!p.isEditable)return;showContextMenu(wc,p);});
   on('found-in-page', (_e, r) => {send('found', { active: r.activeMatchOrdinal, total: r.matches });if(tab.w.findView)tab.w.findView.webContents.send('page-update',{found:{active:r.activeMatchOrdinal,total:r.matches}});});
-  on('enter-html-full-screen', () => { htmlFullscreen = true; win.setFullScreen(true); layout(); });
-  on('leave-html-full-screen', () => { htmlFullscreen = false; win.setFullScreen(false); layout(); });
+  on('enter-html-full-screen', () => {
+    if (tab.id !== activeId) return;
+    if (!htmlFullscreen) W.fullscreenBeforeHtml = win.isFullScreen();
+    W.htmlFullscreenTab = tab;
+    htmlFullscreen = true; win.setFullScreen(true); layout(); pushState();
+  });
+  on('leave-html-full-screen', () => {
+    if (W.htmlFullscreenTab !== tab) return;
+    W.htmlFullscreenTab = null;
+    htmlFullscreen = false; win.setFullScreen(!!W.fullscreenBeforeHtml); layout(); pushState();
+  });
   const wcId = wc.id;
   on('destroyed', () => {
     if(byWcId.get(wcId)===tab)byWcId.delete(wcId);blockedNavigations.delete(wcId);
@@ -1383,6 +1392,7 @@ function activateTab(id) {
   if (!tab || !win) return;
   const prev = activeTab();
   if (prev && prev !== tab) {
+    if (htmlFullscreen) leaveFullscreenForChrome();
     prev.lastActive = Date.now();
     if (prev.view) { try { win.contentView.removeChildView(prev.view); } catch {} }
     if (findOpen) closeFind();
@@ -1626,7 +1636,16 @@ function bookmarksChanged(now = false) {
 }
 
 // ---------------------------------------------------------------- Layout and UI state
-const vertical = () => !!settings.verticalTabs && !htmlFullscreen;
+const vertical = () => !!settings.verticalTabs;
+function leaveFullscreenForChrome() {
+  if (!win || (!htmlFullscreen && !win.isFullScreen())) return;
+  const owner = W.htmlFullscreenTab;
+  W.htmlFullscreenTab = null;
+  htmlFullscreen = false;
+  if (liveTabView(owner)) owner.view.webContents.executeJavaScript('document.fullscreenElement && document.exitFullscreen()').catch(() => {});
+  win.setFullScreen(false);
+  layout(); pushState();
+}
 function layout() {
   if (!win || win.isDestroyed() || !ui || ui.webContents.isDestroyed()) return;
   const fullscreen=htmlFullscreen||win.isFullScreen();ui.setVisible(!fullscreen);
@@ -1644,11 +1663,13 @@ function layout() {
       t.view.setBounds({ x: sw, y: top, width: Math.max(0, width - sw), height: Math.max(0, height - top) });
       if (!overlayOpen && W && !W.sideClosing && W.uiAbove) { win.contentView.addChildView(t.view); W.uiAbove = false; }   // page back on top
     }
+    if (overlayOpen) raiseUi();
     layoutUpdateNotice(W);layoutFind(W);raiseSavedTabsPopup(W);return;
   }
   const h = uiHeight();
   ui.setBounds({ x: 0, y: 0, width, height: overlayOpen ? height : h });
   if (liveTabView(t)) t.view.setBounds({ x: 0, y: h, width, height: Math.max(0, height - h) });
+  if (overlayOpen) raiseUi();
   layoutUpdateNotice(W);layoutFind(W);raiseSavedTabsPopup(W);
 }
 // Bring the UI to the top (menus, bubbles, revealed sidebar)
@@ -1784,6 +1805,7 @@ function setPageZoom(wc,direction){
 const zoom=direction=>withActive(wc=>setPageZoom(wc,direction));
 
 function focusUrl(search = false) {
+  leaveFullscreenForChrome();
   if (settings.newTabPrompt !== false) { openSearchPrompt('address', search ? '' : displayUrl(activeTab()?.url || '')); return; }
   if (ui) { ui.webContents.focus(); send('focus-url', { search }); }
 }
@@ -1837,6 +1859,7 @@ function navigateInput(input,{newTab:makeTab=false,background=false,closePrompt=
 }
 function openSearchPrompt(kind = 'newtab', value = '') {
   if (!win || !ui || overlayKind === 'prompt') return;
+  leaveFullscreenForChrome();
   // Refocusing an already open prompt must not clear an in-progress query.
   if (overlayOpen && overlayKind === kind) return;
   if (kind === 'newtab') {
@@ -3355,7 +3378,7 @@ function createWindow(opts = {}) {
 
   const on = (ev, fn) => win.on(ev, (...a) => { useWin(w); return fn(...a); });
   for (const ev of ['resize', 'maximize', 'unmaximize', 'restore', 'enter-full-screen', 'leave-full-screen']) on(ev, layout);
-  on('leave-full-screen', () => { if (htmlFullscreen) { htmlFullscreen = false; layout(); } });
+  on('leave-full-screen', () => { if (htmlFullscreen) leaveFullscreenForChrome(); layout(); pushState(); });
   on('app-command', (_e, cmd) => {
     if (cmd === 'browser-backward') goBack();
     if (cmd === 'browser-forward') goForward();
