@@ -300,7 +300,7 @@ function sessionData() {
       const k = pageKind(t.url);
       if (k === 'newtab' || k === 'welcome' || k === 'security' || !t.url) continue;
       if (t.id === w.activeId) active = list.length;
-      list.push({ url: k ? displayUrl(t.url) : t.url, title: t.title || '', favicon: t.favicon || null, iconColor: t.iconColor || null, pinned: !!t.pinned, muted: !!t.muted });
+      list.push({ url: k ? displayUrl(t.url) : t.url, title: t.title || '', favicon: t.favicon || null, iconColor: t.iconColor || null, pinned: !!t.pinned, muted: !!t.muted, ...(typeof t.autoSleepExcluded==='boolean'?{autoSleepExcluded:t.autoSleepExcluded}:{}) });
     }
     return { active, tabs: list, placement: windowPlacement(w) };
   }).filter((x) => x.tabs.length) };
@@ -491,10 +491,15 @@ function broadcastSavedTabs(){
 }
 let quickSavedGroup=null;
 function sendTabToVault(id,now=Date.now()){
- if(!settings.savedTabsEnabled||W.incognito)return;const tab=getTab(id);if(!tab||!require('./saved-tabs').validUrl(tab.url))return;
+ return sendTabsToVault([id],now);
+}
+function sendTabsToVault(ids,now=Date.now()){
+ if(!settings.savedTabsEnabled||W.incognito)return;
+ const chosen=new Set(ids),selected=tabs.filter(t=>chosen.has(t.id)&&require('./saved-tabs').validUrl(t.url));if(!selected.length)return;
  const store=tabArchive(),destination=quickSavedGroup&&now<quickSavedGroup.expires&&store.data.groups.some(g=>g.id===quickSavedGroup.id&&!g.deleted)?quickSavedGroup.id:undefined;
- const groupId=store.store([tab],'',destination);quickSavedGroup={id:groupId,expires:now+60000};
- if(tabs.length===1)newTab(newtabUrl());closeTab(tab.id);
+ const groupId=store.store(selected,'',destination);quickSavedGroup={id:groupId,expires:now+60000};
+ if(selected.length===tabs.length)newTab(newtabUrl());
+ for(const tab of selected)closeTab(tab.id);
 }
 function closeSavedTabsPopup(owner){
  const view=owner?.savedTabsView;if(!view)return;savedTabPopups.delete(view);view.pendingOpen=false;if(!view.webContents.isDestroyed())view.setVisible(false);
@@ -1266,7 +1271,8 @@ function restoreWindow(data) {
     tabs.push({
       id: nextId++, w: W, view: null, url: toUrl(x.url), title: String(x.title || hostOf(x.url)).slice(0, 300),
       favicon: typeof x.favicon === 'string'&&x.favicon.length<=180*1024 ? x.favicon : null, iconColor: /^#[0-9a-f]{6}$/i.test(x.iconColor || '') ? x.iconColor : null, loading: false, lastActive: Date.now(),
-      blocked: 0, audible: false, pinned: !!x.pinned, muted: settings.tabAudio&&!!x.muted
+      blocked: 0, audible: false, pinned: !!x.pinned, muted: settings.tabAudio&&!!x.muted,
+      ...(typeof x.autoSleepExcluded==='boolean'?{autoSleepExcluded:x.autoSleepExcluded}:{})
     });
   }
   if (!tabs.length) return false;
@@ -1621,6 +1627,17 @@ function closeTab(id) {
   else pushState();
 }
 
+function sleepTabSelection(ids) {
+  const chosen = new Set(ids), group = tabs.filter(t => chosen.has(t.id));
+  if (!group.some(liveTabView)) return;
+  if (chosen.has(activeId)) {
+    const next = tabs.find(t => !chosen.has(t.id));
+    if (next) activateTab(next.id); else newTab(newtabUrl());
+  }
+  for (const tab of group) sleepTab(tab.id);
+  W.selectedTabIds = group.map(t => t.id);
+  pushState();
+}
 function sleepTab(id) {
   const tab = allTabs().find((t) => t.id === Number(id));
   if (!tab || !tab.view) return false;
@@ -1635,6 +1652,23 @@ function sleepTab(id) {
   destroyView(tab); tab.pendingNavigation = false; tab.loading = false; tab.audible = false;
   pushState(); return true;
 }
+function tabSleepExcluded(tab) {
+  return typeof tab.autoSleepExcluded === 'boolean' ? tab.autoSleepExcluded : settings.sleepExcludedSites.includes(calciumSite(tab.url));
+}
+function setTabSleepExclusion(ids, excluded) {
+  const chosen = new Set(ids);
+  for (const tab of tabs.filter(t => chosen.has(t.id))) {
+    tab.autoSleepExcluded = excluded;
+    if (excluded && (!liveTabView(tab) || tab.pendingNavigation)) {
+      if (tab.titleRequest) tab.titleRequest.abort();
+      if (!liveTabView(tab)) createView(tab);
+      tab.pendingNavigation = false;
+      tab.lastActive = Date.now();
+      go(tab.view.webContents, tab.url);
+    }
+  }
+  layout(); pushState();
+}
 function sleepIdleTabs(force = false, memory) {
   if(force!==true&&!settings.sleepTabs)return;
   memory=memory||{total:os.totalmem(),free:os.freemem()};
@@ -1643,7 +1677,7 @@ function sleepIdleTabs(force = false, memory) {
     const wc=t.view?.webContents;
     let captured=false;try{captured=!!wc?.isBeingCaptured();}catch{}
     return {tab:t,live:!!wc,active:t.id===(t.w===W?activeId:t.w.activeId),pending:t.pendingNavigation,loading:t.loading,audible:t.audible,
-      lastActive:t.lastActive,protected:!!(t.formDirty||t.mediaPermission||captured||settings.sleepExcludedSites.includes(calciumSite(t.url))||downloads.some(d=>d.tabId===t.id&&d.state==='progressing'))};
+      lastActive:t.lastActive,protected:!!(t.formDirty||t.mediaPermission||captured||tabSleepExcluded(t)||downloads.some(d=>d.tabId===t.id&&d.state==='progressing'))};
   });
   const plan=chooseSleepTabs(list,{timeoutMs:settings.sleepMinutes*60000,pressure,force:force===true});
   const changed=new Set();
@@ -1790,7 +1824,7 @@ function pushState() {
     onboarding:!settings.firstRunDone,
     tabs: tabs.map((x) => ({
       id: x.id, title: x.title, favicon: x.favicon, loading: x.loading && !!x.view,
-      sleepExcluded:settings.sleepExcludedSites.includes(calciumSite(x.url)),
+      sleepExcluded:tabSleepExcluded(x),
       iconColor: x.iconColor || null, sleeping: !x.view || !!x.pendingNavigation, audible: x.audible, pinned: !!x.pinned, muted: !!x.muted, volume: x.volume || 100
     })),
     activeId,
@@ -2777,17 +2811,18 @@ function showTabMenu(arg) {
   if (!t) return;
   if (!selectedTabIds().includes(t.id)) { W.selectedTabIds = [t.id]; W.tabSelectionAnchor = t.id; pushState(); }
   const selected = selectedTabIds(), group = tabs.filter(x => selected.includes(x.id)), multiple = group.length > 1;
+  const allSleepExcluded = group.every(tabSleepExcluded);
   const idx = tabs.indexOf(t);
   popAt([
     { label: 'Yeni sekme', click: () => openSearchPrompt() },
     { type: 'separator' },
-    { label: 'Yenile', enabled: group.some(x => !!x.view), click: () => group.forEach(x => { if(liveTabView(x)) x.view.webContents.reload(); }) },
-    {label:'Bu siteyi otomatik uyutma',type:'checkbox',checked:settings.sleepExcludedSites.includes(calciumSite(t.url)),enabled:!!calciumSite(t.url),click:()=>{const site=calciumSite(t.url);if(!site)return;settings.sleepExcludedSites=settings.sleepExcludedSites.includes(site)?settings.sleepExcludedSites.filter(x=>x!==site):[...settings.sleepExcludedSites,site];saveSettings(true);forEachWin(()=>pushState());notifyPages('settings');}},
-    ...(settings.savedTabsEnabled&&!W.incognito&&require('./saved-tabs').validUrl(t.url)?[{label:'Sekmeyi kasaya gönder',click:()=>{try{sendTabToVault(t.id);}catch(error){askPrompt({kind:'perm',title:'Sekme kaydedilemedi',rows:[{icon:'open',text:error.message}],ok:'Tamam',cancel:'Kapat'});}}}]:[]),
-    { label: 'Sekmeyi uyut', enabled: !!t.view && (t.id !== activeId || tabs.length > 1), click: () => sleepTab(t.id) },
-    { label: 'Kopyala', click: () => group.forEach(x => newTab(x.url, false, x.id)) },
-    { label: t.pinned ? 'Sabitlemeyi kaldır' : 'Sabitle', click: () => { const pinned = !t.pinned; group.forEach(x => { if (!!x.pinned !== pinned) togglePin(x.id); }); } },
-    ...(settings.tabAudio ? [{ label: t.muted ? 'Sitenin sesini aç' : 'Sitenin sesini kapat', click: () => { const muted = !t.muted; group.forEach(x => { if (!!x.muted !== muted) toggleMute(x.id); }); } }] : []),
+    { label: multiple ? 'Seçili sekmeleri yenile' : 'Yenile', enabled: group.some(x => !!x.view), click: () => group.forEach(x => { if(liveTabView(x)) x.view.webContents.reload(); }) },
+    {label:multiple?'Seçili sekmeleri otomatik uyutma':'Bu sekmeyi otomatik uyutma',type:'checkbox',checked:allSleepExcluded,click:()=>setTabSleepExclusion(selected,!allSleepExcluded)},
+    ...(settings.savedTabsEnabled&&!W.incognito&&group.some(x=>require('./saved-tabs').validUrl(x.url))?[{label:multiple?'Seçili sekmeleri kasaya gönder':'Sekmeyi kasaya gönder',click:()=>{try{sendTabsToVault(selected);}catch(error){askPrompt({kind:'perm',title:'Sekme kaydedilemedi',rows:[{icon:'open',text:error.message}],ok:'Tamam',cancel:'Kapat'});}}}]:[]),
+    { label: multiple ? 'Sekmeleri uyut' : 'Sekmeyi uyut', enabled: group.some(liveTabView), click: () => sleepTabSelection(selected) },
+    { label: multiple ? 'Seçili sekmeleri çoğalt' : 'Kopyala', click: () => group.forEach(x => newTab(x.url, false, x.id)) },
+    { label: multiple ? (t.pinned ? 'Seçili sekmelerin sabitlemesini kaldır' : 'Seçili sekmeleri sabitle') : (t.pinned ? 'Sabitlemeyi kaldır' : 'Sabitle'), click: () => { const pinned = !t.pinned; group.forEach(x => { if (!!x.pinned !== pinned) togglePin(x.id); }); } },
+    ...(settings.tabAudio ? [{ label: multiple ? (t.muted ? 'Seçili sekmelerin sesini aç' : 'Seçili sekmelerin sesini kapat') : (t.muted ? 'Sitenin sesini aç' : 'Sitenin sesini kapat'), click: () => { const muted = !t.muted; group.forEach(x => { if (!!x.muted !== muted) toggleMute(x.id); }); } }] : []),
     { label: settings.verticalTabs ? 'Yatay sekmelere geç' : 'Dikey sekmelere geç', click: () => setVerticalTabs(!settings.verticalTabs) },
     ...(settings.verticalTabs ? [{ label: 'Kenar çubuğunu otomatik gizle', type: 'checkbox', checked: !!settings.verticalAutoHide, ...hint('Ctrl+S'), click: () => toggleAutoHide() }] : []),
     ...([{ label: 'Ses seviyesi (%' + (t.volume || 100) + ')', enabled: /^https?:/i.test(t.url), submenu: VOLUME_STEPS.map((v) => ({

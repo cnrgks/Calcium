@@ -11,8 +11,19 @@ if (/^(https?:|file:|about:)$/.test(location.protocol)) {
     const entries = new Map();
     let pending = false;
     const schedule = () => { if (!pending) { pending = true; requestAnimationFrame(update); } };
+    const isOverlay = node => node?.hasAttribute?.('data-calcium-scrollbar') || node?.hasAttribute?.('data-calcium-scrollbar-horizontal');
+    // Panel overlays live outside the site's stacking contexts. Hide them when
+    // another element covers their edge rather than painting over menus/popups.
+    function covered(target, horizontal, start, edge, length) {
+      for (const fraction of [.02,.25,.5,.75,.98]) {
+        const point = start + Math.max(0,length-1)*fraction;
+        const hit = document.elementsFromPoint(horizontal?point:edge,horizontal?edge:point).find(node=>!isOverlay(node));
+        if (!hit || (hit!==target&&!target.contains(hit))) return true;
+      }
+      return false;
+    }
     function add(target) {
-      if (!target || entries.has(target) || entries.size >= 96) return;
+      if (!target || entries.has(target) || entries.size >= 96 || target.matches?.('input,select')) return;
       const host = document.createElement('div');
       host.setAttribute('data-calcium-scrollbar',target===document.scrollingElement?'document':'panel');
       if(target!==document.scrollingElement)target.setAttribute('data-calcium-scrollable','');
@@ -62,18 +73,23 @@ if (/^(https?:|file:|about:)$/.test(location.protocol)) {
         e.host.style.setProperty('display',max>1&&r.right>0&&r.bottom>0&&height>0&&(!activeDialog||activeDialog===target)?'block':'none','important');
         const visible=(!activeDialog||activeDialog===target)&&r.right>0&&r.bottom>0&&height>0;
         const width=root?innerWidth:target.clientWidth,left=Math.max(0,root?0:r.left),visibleWidth=Math.max(0,Math.min(width,innerWidth-left));e.left=left;e.width=visibleWidth;e.hmax=target.scrollWidth-width;e.thumbWidth=Math.min(visibleWidth,Math.max(24,visibleWidth*width/Math.max(1,target.scrollWidth)));
-        e.horizontal.style.setProperty('display',visible&&e.hmax>1?'block':'none','important');e.horizontal.style.setProperty('left',left+'px','important');e.horizontal.style.setProperty('top',(Math.min(innerHeight,r.bottom)-10)+'px','important');e.horizontal.style.setProperty('width',visibleWidth+'px','important');e.hb.style.width=e.thumbWidth+'px';e.hb.style.left=(e.hmax>0?Math.max(0,target.scrollLeft)/e.hmax*(visibleWidth-e.thumbWidth):0)+'px';e.ht.setAttribute('aria-valuemax',String(Math.max(0,e.hmax)));e.ht.setAttribute('aria-valuenow',String(target.scrollLeft));
+        const bottom=Math.min(innerHeight,r.bottom),horizontalVisible=visible&&e.hmax>1&&visibleWidth>0&&(root||!covered(target,true,left,bottom-2,visibleWidth));
+        e.horizontal.style.setProperty('display',horizontalVisible?'block':'none','important');e.horizontal.style.setProperty('left',left+'px','important');e.horizontal.style.setProperty('top',(bottom-10)+'px','important');e.horizontal.style.setProperty('width',visibleWidth+'px','important');e.hb.style.width=e.thumbWidth+'px';e.hb.style.left=(e.hmax>0?Math.max(0,target.scrollLeft)/e.hmax*(visibleWidth-e.thumbWidth):0)+'px';e.ht.setAttribute('aria-valuemax',String(Math.max(0,e.hmax)));e.ht.setAttribute('aria-valuenow',String(target.scrollLeft));
         if(max<=1)continue;
         const top=Math.max(0,r.top),visibleHeight=Math.min(height,innerHeight-top);
+        if(!root&&visibleHeight>0&&covered(target,false,top,Math.min(innerWidth,r.right)-2,visibleHeight))e.host.style.setProperty('display','none','important');
         e.top=top;e.height=visibleHeight;e.max=max;e.thumbHeight=Math.min(visibleHeight,Math.max(24,visibleHeight*height/target.scrollHeight));
         e.host.style.setProperty('top',top+'px','important');e.host.style.setProperty('right',Math.max(0,innerWidth-r.right)+'px','important');e.host.style.setProperty('height',visibleHeight+'px','important');
         e.thumb.style.height=e.thumbHeight+'px';e.thumb.style.top=Math.max(0,target.scrollTop)/max*(visibleHeight-e.thumbHeight)+'px';
         e.track.setAttribute('aria-valuemax',String(Math.round(max)));e.track.setAttribute('aria-valuenow',String(Math.round(target.scrollTop)));
       }
     }
-    // Web pages often animate classes/styles continuously. Size and scroll events
-    // are enough there; observe DOM mutations only for our own dynamic dialogs.
-    if(location.protocol==='file:')new MutationObserver(records=>{if(records.some(r=>!r.target.hasAttribute?.('data-calcium-scrollbar')&&!r.target.hasAttribute?.('data-calcium-scrollbar-horizontal')))schedule();}).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','class','style']});
+    // Recheck occlusion when a site opens/closes a popup, including keyboard
+    // suggestions. Ignore our own geometry writes to avoid a feedback loop.
+    new MutationObserver(records=>{
+      if(location.protocol!=='file:'&&entries.size<2)return;
+      if(records.some(r=>!isOverlay(r.target)&&(r.type!=='childList'||[...r.addedNodes,...r.removedNodes].some(node=>!isOverlay(node)))))schedule();
+    }).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','class','style']});
     const discover=event=>{for(const node of event.composedPath()){if(node?.nodeType!==1||node.hasAttribute('data-calcium-scrollbar'))continue;const style=getComputedStyle(node);if((/auto|scroll/.test(style.overflowY)&&node.scrollHeight>node.clientHeight+1)||(/auto|scroll/.test(style.overflowX)&&node.scrollWidth>node.clientWidth+1))add(node);}schedule();};
     document.addEventListener('pointerover',discover,{capture:true,passive:true});document.addEventListener('wheel',discover,{capture:true,passive:true});document.addEventListener('focusin',discover,true);
     window.addEventListener('load',schedule,true);

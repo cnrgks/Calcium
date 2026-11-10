@@ -21,6 +21,16 @@ app.whenReady().then(async()=>{
  await win.webContents.executeJavaScript('scrollTo(0,0)');win.webContents.sendInputEvent({type:'mouseMove',x:120,y:120});await new Promise(r=>setTimeout(r,100));
  assert.equal(await win.webContents.executeJavaScript('document.querySelectorAll("[data-calcium-scrollbar=panel]").length'),1,'nested panel discovers its overlay');
  assert(await win.webContents.executeJavaScript('[...document.querySelectorAll("[data-calcium-scrollbar-horizontal]")].some(e=>getComputedStyle(e).display!=="none")'),'nested horizontal scroll has an overlay');
+ const horizontalVisible=()=>win.webContents.executeJavaScript('[...document.querySelectorAll("[data-calcium-scrollbar-horizontal]")].filter(e=>getComputedStyle(e).display!=="none").length');
+ await win.webContents.executeJavaScript('var popup=document.createElement("div");popup.id="suggestions";popup.style.cssText="position:absolute;left:120px;top:160px;width:100px;height:80px;z-index:10;background:#333;color:white";popup.textContent="Search suggestions";document.body.append(popup)');await new Promise(r=>setTimeout(r,120));
+ assert.equal(await horizontalVisible(),0,'horizontal panel bar stays behind overlapping suggestions');
+ assert.equal(await win.webContents.executeJavaScript('document.elementFromPoint(150,198).id'),'suggestions','scrollbar does not intercept popup clicks');
+ await win.webContents.executeJavaScript('popup.hidden=true');await new Promise(r=>setTimeout(r,120));assert.equal(await horizontalVisible(),1,'panel scrollbar returns when suggestions close');
+ await win.webContents.executeJavaScript('popup.hidden=false;popup.style.left="300px"');await new Promise(r=>setTimeout(r,120));assert.equal(await horizontalVisible(),1,'unrelated popup does not hide the panel scrollbar');
+ await win.webContents.executeJavaScript('popup.style.left="120px";popup.style.top="80px";popup.style.width="160px";popup.style.height="160px"');await new Promise(r=>setTimeout(r,120));
+ assert.equal(await win.webContents.executeJavaScript('[...document.querySelectorAll("[data-calcium-scrollbar=panel]")].filter(e=>getComputedStyle(e).display!=="none").length'),0,'vertical panel edge also respects overlapping popups');
+ await win.webContents.executeJavaScript('popup.remove();var search=document.createElement("input");search.style.cssText="position:absolute;left:300px;top:100px;width:80px";search.value="a very long search query that scrolls horizontally";document.body.append(search);search.focus();search.scrollLeft=200');win.webContents.sendInputEvent({type:'mouseMove',x:320,y:110});await new Promise(r=>setTimeout(r,120));
+ assert.equal(await win.webContents.executeJavaScript('document.querySelectorAll("[data-calcium-scrollbar=panel]").length'),1,'single-line inputs never acquire a horizontal overlay');
  // A dynamic site's scroll anchoring and positioning must stay synchronous.
  assert.equal(await win.webContents.executeJavaScript('scrollTo(0,600);scrollY'),600,'site scroll corrections are not animated');
  await win.webContents.executeJavaScript("window.scrollSamples=[];window.addEventListener('scroll',()=>scrollSamples.push(scrollY));window.wheelChecks=[];window.addEventListener('wheel',e=>wheelChecks.push({prevented:e.defaultPrevented,trusted:e.isTrusted}));scrollTo(0,0)");
