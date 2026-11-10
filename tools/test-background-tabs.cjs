@@ -5,7 +5,7 @@ app.whenReady().then(async()=>{
  const source=fs.readFileSync(require('path').join(__dirname,'..','main.js'),'utf8');
  const win=new BaseWindow({show:false});const w={win,tabs:[],incognito:false};
  let loads=0;
- const ctx={W:w,win,activeId:null,nextId:1,tabs:w.tabs,Date,Math,toUrl:u=>u,orderPinned:()=>{},queueTabTitle:()=>{},go:()=>{loads++},pushState:()=>{},layout:()=>{},isNewtab:()=>false,isInternal:()=>false,hostOf:u=>new URL(u).hostname,overlayOpen:false,findOpen:false};
+ const ctx={W:w,win,activeId:null,nextId:1,tabs:w.tabs,Date,Math,toUrl:u=>u,orderPinned:()=>{},queueTabTitle:()=>{},go:()=>{loads++},pushState:()=>{},layout:()=>{},isNewtab:()=>false,isInternal:()=>false,hostOf:u=>new URL(u).hostname,overlayOpen:false,findOpen:false,htmlFullscreen:false};
  ctx.bridgeFor=()=>ctx.extensions;vm.createContext(ctx);
  vm.runInContext(source.slice(source.indexOf('let extensionTabRegistrationDepth'),source.indexOf('function toUrl(')),ctx);
  vm.runInContext(source.slice(source.indexOf('function newTab('),source.indexOf('function destroyView(')),ctx);
