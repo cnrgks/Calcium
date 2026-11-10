@@ -38,7 +38,7 @@ function browsingSuggestions(visits,searches,text){
   seen.add(h.url);items.push({url:h.url,title:h.title||label,kind:'history'});
  }
  items.push(...suggestions(searches,text).items);items.splice(8);
- const prefix=items.find(h=>h.url&&h.url.replace(/^https?:\/\/(?:www\.)?/i,'').toLowerCase().startsWith(q));
+ const prefix=!/\s/.test(String(text||''))&&items.find(h=>h.url&&h.url.replace(/^https?:\/\/(?:www\.)?/i,'').toLowerCase().startsWith(q));
  return {items,inline:prefix?prefix.url.replace(/^https?:\/\/(?:www\.)?/i,''):''};
 }
 function suggestions(history,text){const q=String(text||'').trim().toLocaleLowerCase('tr');if(!q)return {items:[],inline:''};const words=q.split(/\s+/);return {items:history.filter(h=>typeof h.query==='string'&&words.every(w=>h.query.toLocaleLowerCase('tr').includes(w))).slice(0,6).map(h=>({value:h.query,title:h.query,kind:'search'})),inline:''};}

@@ -17,6 +17,16 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));const until=async fn=>{for(let 
  assert(!await wc.executeJavaScript("document.body.innerText.includes('Yumuşak kaydırma')"),'animation option removed');
  api.history.unshift({url:'https://www.youtube.com/',title:'YouTube',t:Date.now()});const suggestions=api.omniSuggest('you');assert(suggestions.items.some(x=>x.url==='https://www.youtube.com/'));assert.equal(suggestions.inline,'youtube.com/');
  api.openSearchPrompt('address','');await pause(100);await w.ui.webContents.executeJavaScript("document.querySelector('#newtabQuery').value='you';document.querySelector('#newtabQuery').dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:'u'}))");await until(()=>w.ui.webContents.executeJavaScript("document.querySelector('#newtabQuery').value==='youtube.com/'"));assert.equal(await w.ui.webContents.executeJavaScript("document.querySelector('#newtabQuery').selectionStart"),3);api.closeOverlay(false);
+ api.openSearchPrompt('address','');await pause(100);
+ const ui=w.ui.webContents;
+ await ui.insertText('you');await until(()=>ui.executeJavaScript("document.querySelector('#newtabQuery').value==='youtube.com/'"));
+ await ui.insertText(' ');await pause(200);assert.equal(await ui.executeJavaScript("document.querySelector('#newtabQuery').value"),'you ','space replaces the suggested suffix');
+ for(let i=0;i<2;i++){
+  ui.sendInputEvent({type:'keyDown',keyCode:'Backspace'});ui.sendInputEvent({type:'keyUp',keyCode:'Backspace'});await pause(200);
+  assert.equal(await ui.executeJavaScript("document.querySelector('#newtabQuery').value"),'you');
+  await ui.insertText(' ');await pause(200);assert.equal(await ui.executeJavaScript("document.querySelector('#newtabQuery').value"),'you ','space after backspace must not restore completion');
+ }
+ await ui.insertText('how to');await pause(200);assert.equal(await ui.executeJavaScript("document.querySelector('#newtabQuery').value"),'you how to');api.closeOverlay(false);
  const before=tab.view.getBounds(),sideBefore=await w.ui.webContents.executeJavaScript('document.querySelector("#side").getBoundingClientRect().top');api.openFind();await until(()=>w.findView&&!w.findView.webContents.isLoading());await pause(150);
  assert.deepEqual(tab.view.getBounds(),before,'find popup does not move page');assert.equal(await w.ui.webContents.executeJavaScript('document.querySelector("#side").getBoundingClientRect().top'),sideBefore,'find popup does not move vertical tabs');
  assert.equal(await w.findView.webContents.executeJavaScript('!!window.pageApi'),true);assert.equal(await w.ui.webContents.executeJavaScript('getComputedStyle(document.querySelector("#find")).display'),'none');
