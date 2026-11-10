@@ -695,6 +695,7 @@
   "Görev yöneticisini aç": "Open task manager",
   "Okuma modunu aç / kapat": "Toggle reader mode",
   "Tam ekranı aç / kapat": "Toggle fullscreen",
+  "Seçili sekmeleri kapat": "Close selected tabs",
   "Yakınlaştır / uzaklaştır": "Zoom in / out",
   "Yakınlaştırmayı sıfırla": "Reset zoom",
   "Sayfayı kaydet": "Save page",

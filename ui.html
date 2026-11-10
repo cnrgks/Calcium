@@ -2,8 +2,8 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-trsGuj9I96GcwOk/DW0Lsv5oPcbw6sgmUHDIASixrCo=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-vOSKNT+YUzVAB47bC6bVMO/nun4NHMoJ0K4Nqtjn/GQ='; style-src 'unsafe-inline'; img-src https: http: data: crx: chrome-extension:">
-<script src="i18n.js" integrity="sha256-trsGuj9I96GcwOk/DW0Lsv5oPcbw6sgmUHDIASixrCo="></script><script src="browser-font.js" integrity="sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c="></script>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Qo8RrzhgqAXX10IJ1ild3GnHmT/rOyiHXftmh6yEMow=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-YdnpXgJPKxIkcBjI9cI+a9tYjWjvYwIpjv7YZXq7O9s='; style-src 'unsafe-inline'; img-src https: http: data: crx: chrome-extension:">
+<script src="i18n.js" integrity="sha256-Qo8RrzhgqAXX10IJ1ild3GnHmT/rOyiHXftmh6yEMow="></script><script src="browser-font.js" integrity="sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c="></script>
 <title>Calcium</title>
 <style>
   :root {
@@ -40,6 +40,9 @@
   body:not(.vert) .tab.on { background:var(--toolbar); }
   .tab.on .c1, .tab.on .c2 { position:absolute; bottom:0; width:10px; height:10px; display:block; }
   .tab .c1, .tab .c2 { display:none; }
+  .tab.selected:not(.on)::before { background:var(--sel); }
+  body .tab.selected { outline:2px solid var(--accent); outline-offset:-3px; }
+  body.vert .tab.selected:not(.on) { background:var(--sel); }
   .tab.on .c1 { left:-10px; background:radial-gradient(circle at 0 0, transparent 10px, var(--toolbar) 10.5px); }
   .tab.on .c2 { right:-10px; background:radial-gradient(circle at 100% 0, transparent 10px, var(--toolbar) 10.5px); }
   .tab .ico { width:16px; height:16px; flex:none; display:flex; align-items:center; justify-content:center; }
@@ -343,7 +346,7 @@
 </head>
 <body>
   <div id="strip">
-    <div id="tabs" role="tablist"></div>
+    <div id="tabs" role="tablist" aria-multiselectable="true"></div>
     <button id="newtab" title="Yeni sekme (Ctrl+T)"><svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></button>
     <div id="incog" hidden title="Gizli pencere: geçmiş, çerezler ve site verileri pencere kapanınca silinir"></div>
   </div>
@@ -383,9 +386,9 @@
     <div id="sidehead">
       <span id="sidetitle"></span>
     </div>
-    <div id="pinnedtabs" role="tablist"></div>
+    <div id="pinnedtabs" role="tablist" aria-multiselectable="true"></div>
     <div id="pinnedSeparator" role="separator"></div>
-    <div id="vtabs" role="tablist" aria-orientation="vertical"></div>
+    <div id="vtabs" role="tablist" aria-orientation="vertical" aria-multiselectable="true"></div>
     <div id="sidespace" title="Pencereyi taşımak için sürükleyin"></div>
     <div id="sidefoot"><button id="snew" title="Yeni sekme (Ctrl+T)"><svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg><span>Yeni sekme</span></button></div>
     <div id="grip" title="Genişliği ayarlamak için sürükleyin"></div>
@@ -626,14 +629,16 @@ function tabEl(t, active, existing) {
   d.replaceChildren();
   d.className = 'tab' + (active ? ' on' : '') + (t.sleeping ? ' sleep' : '') + (t.pinned ? ' pin' : '');
   d.dataset.id = t.id;
-  d.tabIndex=active?0:-1;d.setAttribute('role','tab');d.setAttribute('aria-selected',String(active));d.setAttribute('aria-label',t.title||'Yeni Sekme');
+  const selected=state?.selectedTabIds?.includes(t.id) ?? active;
+  d.classList.toggle('selected',selected && state.selectedTabIds?.length>1);
+  d.tabIndex=active?0:-1;d.setAttribute('role','tab');d.setAttribute('aria-selected',String(selected));d.setAttribute('aria-label',t.title||'Yeni Sekme');
   d.onkeydown=e=>{
     if(e.target!==d||e.ctrlKey||e.metaKey||e.altKey)return;
     const list=[...document.querySelectorAll('.tab[data-id]')].filter(el=>el.getClientRects().length),index=list.indexOf(d);
     if(['ArrowDown','ArrowRight','ArrowUp','ArrowLeft','Home','End'].includes(e.key)){
       e.preventDefault();const next=e.key==='Home'?0:e.key==='End'?list.length-1:(index+(['ArrowDown','ArrowRight'].includes(e.key)?1:-1)+list.length)%list.length;
       list[next]?.focus({preventScroll:true});list[next]?.scrollIntoView({block:'nearest'});
-    }else if(e.key==='Enter'||e.key===' '){e.preventDefault();send('activate',t.id);}
+    }else if(e.key==='Enter'||e.key===' '){e.preventDefault();send('select-tab',{id:t.id,range:e.shiftKey});}
     else if(e.key==='Delete'){e.preventDefault();send('close-tab',t.id);}
     else if(e.key==='ContextMenu'||e.key==='F10'&&e.shiftKey){e.preventDefault();const r=d.getBoundingClientRect();send('tab-menu',{id:t.id,x:r.left,y:r.bottom});}
   };
@@ -673,6 +678,7 @@ function tabEl(t, active, existing) {
     if (e.button === 1) { e.preventDefault(); send('close-tab', t.id); return; }
     if (e.button !== 0) return;
     e.preventDefault();
+    if(e.ctrlKey||e.metaKey||e.shiftKey){send('select-tab',{id:t.id,toggle:e.ctrlKey||e.metaKey,range:e.shiftKey});return;}
     drag = { id: t.id, el: d, startX: e.clientX, startY: e.clientY, moved: false };
   };
   d.oncontextmenu = (e) => { e.preventDefault(); send('tab-menu', { id: t.id, x: e.clientX, y: e.clientY }); };
@@ -759,7 +765,7 @@ window.addEventListener('mousemove', (e) => {
 window.addEventListener('mouseup', (e) => {
   if (!drag) return;
   const d = drag; drag = null;
-  if (!d.moved) { send('activate', d.id); return; }
+  if (!d.moved) { send('select-tab', {id:d.id}); return; }
   const pinnedDrag = document.body.classList.contains('vert') && d.el.parentNode === $('pinnedtabs');
   const els = pinnedDrag ? [...$('pinnedtabs').children] : document.body.classList.contains('vert') ? [...$('pinnedtabs').children, ...tabsEl.children] : [...tabsEl.children];
   const to = els.indexOf(d.el);
@@ -785,7 +791,7 @@ window.addEventListener('blur', () => {
 function reconcileTabs(container, items, state) {
   const old=new Map([...container.children].map(el=>[Number(el.dataset.id),el]));
   items.forEach((tab,index)=>{
-    let el=old.get(tab.id);const key=JSON.stringify(tab)+'|'+(tab.id===state.activeId)+'|'+state.tabAudio;
+    let el=old.get(tab.id);const key=JSON.stringify(tab)+'|'+(tab.id===state.activeId)+'|'+state.tabAudio+'|'+state.selectedTabIds?.includes(tab.id)+'|'+(state.selectedTabIds?.length>1);
     if(!el||el.dataset.renderKey!==key){el=tabEl(tab,tab.id===state.activeId,el);el.dataset.renderKey=key;}
     if(container.children[index]!==el)container.insertBefore(el,container.children[index]||null);old.delete(tab.id);
   });
@@ -841,7 +847,7 @@ function render(s) {
   document.body.classList.toggle('find', !!s.findOpen);
   renderSide(s);
   // Tab strip is redrawn only if tabs actually changed (no needless DOM work or image loads)
-  const tKey = s.activeId + '|' + JSON.stringify(s.tabs);
+  const tKey = s.activeId + '|' + JSON.stringify(s.tabs) + '|' + JSON.stringify(s.selectedTabIds);
   if (tKey !== tabsKey) {
     tabsKey = tKey;
     reconcileTabs($('pinnedtabs'),s.vertical?s.tabs.filter(t=>t.pinned):[],s);

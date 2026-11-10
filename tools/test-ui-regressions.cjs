@@ -4,7 +4,7 @@ const profile=process.env.CALCIUM_PROFILE;if(!profile)throw Error('Use run-elect
 process.env.CALCIUM_TEST_MODE='1';process.env.CALCIUM_TEST_DISPLAY='0';app.disableHardwareAcceleration();
 fs.writeFileSync(path.join(profile,'ayarlar.json'),JSON.stringify({firstRunDone:true,language:'tr',verticalTabs:true,verticalAutoHide:false}));
 const entry=path.resolve(__dirname,'..','main.js'),m=new Module(entry,module);m.filename=entry;m.paths=Module._nodeModulePaths(path.dirname(entry));
-m._compile(fs.readFileSync(entry,'utf8')+'\nmodule.exports.test={ready:mainBlockReady,windows:()=>windows,newTab,SETTINGS_URL,settingsSet,openFind,closeFind,layout,showDownloadsPanel,showTaskManager,history,omniSuggest,openSearchPrompt,closeOverlay};',entry);
+m._compile(fs.readFileSync(entry,'utf8')+'\nmodule.exports.test={ready:mainBlockReady,windows:()=>windows,newTab,SETTINGS_URL,settingsSet,openFind,closeFind,layout,showDownloadsPanel,showTaskManager,history,omniSuggest,openSearchPrompt,closeOverlay,handleShortcut,pushState,showTabMenu,runContextAction};',entry);
 const capture=async(wc,name)=>{try{fs.writeFileSync(path.resolve('dist/ui-review/'+name),(await wc.capturePage()).toPNG());}catch{}};
 const pause=ms=>new Promise(r=>setTimeout(r,ms));const until=async fn=>{for(let i=0;i<100;i++){const x=await fn();if(x)return x;await pause(50);}throw Error('UI regression timeout');};
 (async()=>{
@@ -39,5 +39,48 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));const until=async fn=>{for(let 
  const colors=async panel=>panel.webContents.executeJavaScript("({bg:getComputedStyle(document.body).backgroundColor,text:getComputedStyle(document.body).color,close:getComputedStyle(document.querySelector('#closePanel')).display,svg:!!document.querySelector('#closePanel svg')})");
  const a=await colors(downloads),b=await colors(tasks);assert.equal(a.bg,b.bg);assert.equal(a.text,b.text);assert.equal(a.close,'grid');assert.equal(b.close,'grid');assert(a.svg&&b.svg);
  await capture(tasks.webContents,'taskmanager-popup.png');await capture(downloads.webContents,'downloads-popup.png');
+
+ // Exercise the actual tab mouse handlers and IPC in both orientations.
+ downloads.close();tasks.close();w.win.show();w.win.focus();
+ await w.ui.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});
+ await w.ui.webContents.insertCSS('#side { transition:none !important; }');
+ const clickTab=async(id,modifiers=0,close=false)=>{
+  const selector='.tab[data-id="'+id+'"]'+(close?' .x':'');
+  const point=await w.ui.webContents.executeJavaScript('(()=>{window.scrollTo(0,0);const el=document.querySelector('+JSON.stringify(selector)+');const r=el.getBoundingClientRect();return {x:r.left+(Math.min(40,r.width/2)),y:r.top+r.height/2};})()');
+  await w.ui.webContents.debugger.sendCommand('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'left',clickCount:1,modifiers});
+  await w.ui.webContents.debugger.sendCommand('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1,modifiers});
+ };
+ const expectSelection=async ids=>until(()=>w.ui.webContents.executeJavaScript('JSON.stringify(state.selectedTabIds.slice().sort((a,b)=>a-b))').then(value=>value===JSON.stringify(ids.slice().sort((a,b)=>a-b))));
+ for(const vertical of [true,false]){
+  api.closeOverlay(false);api.settingsSet('verticalTabs',vertical);api.settingsSet('verticalAutoHide',false);
+  await pause(300);
+  const group=Array.from({length:4},()=>api.newTab('about:blank',true,null,-1,true));
+  api.pushState();await until(()=>w.ui.webContents.executeJavaScript('!!document.querySelector('+JSON.stringify('.tab[data-id="'+group[3].id+'"]')+')'));
+  await clickTab(group[0].id);await expectSelection([group[0].id]);
+  await clickTab(group[2].id,2);await expectSelection([group[0].id,group[2].id]);
+  await clickTab(group[2].id,2);await expectSelection([group[0].id]);
+  await clickTab(group[0].id);await clickTab(group[2].id,8);await expectSelection(group.slice(0,3).map(t=>t.id));
+  assert.equal(await w.ui.webContents.executeJavaScript('document.querySelectorAll(".tab.selected[aria-selected=true]").length'),3);
+  api.pushState();await expectSelection(group.slice(0,3).map(t=>t.id));
+  await clickTab(group[3].id,10);await expectSelection(group.map(t=>t.id));
+  await clickTab(group[1].id);await expectSelection([group[1].id]);
+  await clickTab(group[3].id,2);await expectSelection([group[1].id,group[3].id]);
+  api.settingsSet('uiFont','consolas');
+  const menuAction=async(label)=>{
+   api.showTabMenu({id:group[3].id,x:100,y:100});await expectSelection([group[1].id,group[3].id]);
+   const context=w.contextMenu,action=[...context.actions].find(([,item])=>item.label===label);assert(action,'group menu action '+label);
+   api.runContextAction({token:context.token,id:action[0]});
+  };
+  await menuAction('Sabitle');assert(group[1].pinned&&group[3].pinned);assert(!group[0].pinned&&!group[2].pinned);
+  await menuAction('Sabitlemeyi kaldır');assert(!group[1].pinned&&!group[3].pinned);
+  await until(()=>w.ui.webContents.executeJavaScript('!!document.querySelector('+JSON.stringify('.tab:not(.pin)[data-id="'+group[3].id+'"]')+')'));
+  await pause(250);
+  await clickTab(group[3].id,0,true);await until(()=>!w.tabs.includes(group[1])&&!w.tabs.includes(group[3]));
+  assert(w.tabs.includes(group[0])&&w.tabs.includes(group[2]),'bulk close preserves unselected tabs');
+  await clickTab(group[0].id);await clickTab(group[2].id,2);await expectSelection([group[0].id,group[2].id]);
+  api.handleShortcut({key:'w',control:true,type:'keyDown'});await until(()=>group.every(t=>!w.tabs.includes(t)));
+ }
+ api.settingsSet('verticalTabs',true);
+ console.log('PASS: Ctrl toggle, Shift range, Ctrl+Shift union, plain-click reset, selection styling, bulk close button and Ctrl+W in vertical and horizontal tabs.');
  console.log('PASS: native Settings scrolling, visited URL completion, floating find without layout shifts, popup colors and centered close icons.');app.exit(0);
 })().catch(e=>{console.error(e);app.exit(1)});

@@ -1386,10 +1386,42 @@ const getTab = (id) => tabs.find((t) => t.id === id);
 const activeTab = () => getTab(activeId);
 const liveTabView = tab => !!tab?.view && !tab.view.webContents.isDestroyed();
 
-function activateTab(id) {
+function selectedTabIds() {
+  const ids = (W?.selectedTabIds || []).filter(id => tabs.some(t => t.id === id));
+  return ids.length ? ids : tabs.some(t => t.id === activeId) ? [activeId] : [];
+}
+function selectTab(arg) {
+  const tab = getTab(arg?.id);
+  if (!tab) return;
+  const selected = selectedTabIds();
+  if (arg.range) {
+    const anchor = tabs.findIndex(t => t.id === (W.tabSelectionAnchor ?? activeId));
+    const end = tabs.indexOf(tab), start = anchor < 0 ? end : anchor;
+    const range = tabs.slice(Math.min(start,end),Math.max(start,end)+1).map(t => t.id);
+    W.selectedTabIds = arg.toggle ? [...new Set([...selected,...range])] : range;
+    activateTab(tab.id, true);
+  } else if (arg.toggle) {
+    W.tabSelectionAnchor = tab.id;
+    if (selected.includes(tab.id) && selected.length > 1) {
+      W.selectedTabIds = selected.filter(id => id !== tab.id);
+      if (activeId === tab.id) activateTab(W.selectedTabIds.at(-1), true); else pushState();
+    } else {
+      W.selectedTabIds = [...new Set([...selected,tab.id])];
+      activateTab(tab.id, true);
+    }
+  } else activateTab(tab.id);
+}
+function closeTabSelection(id = activeId) {
+  const selected = selectedTabIds();
+  const ids = selected.includes(id) ? selected : [id];
+  // Close the active tab last so intermediate activation cannot alter the batch.
+  for (const target of ids.filter(target => target !== activeId).concat(ids.includes(activeId) ? [activeId] : [])) closeTab(target);
+}
+function activateTab(id, preserveSelection = false) {
   if (!win) return;
   const tab = getTab(id);
   if (!tab || !win) return;
+  if (!preserveSelection) { W.selectedTabIds = [id]; W.tabSelectionAnchor = id; }
   const prev = activeTab();
   if (prev && prev !== tab) {
     if (htmlFullscreen) leaveFullscreenForChrome();
@@ -1581,7 +1613,11 @@ function closeTab(id) {
   if (tab.titleRequest) tab.titleRequest.abort();
   destroyView(tab);
   if (tabs.length === 0) { if (win) win.close(); return; }
-  if (activeId === id) { activeId = null; activateTab(tabs[Math.min(i, tabs.length - 1)].id); }
+  if (activeId === id) {
+    const remaining = (W.selectedTabIds || []).filter(id => tabs.some(t => t.id === id));
+    activeId = null;
+    activateTab(remaining[0] ?? tabs[Math.min(i, tabs.length - 1)].id, remaining.length > 0);
+  }
   else pushState();
 }
 
@@ -1758,6 +1794,7 @@ function pushState() {
       iconColor: x.iconColor || null, sleeping: !x.view || !!x.pendingNavigation, audible: x.audible, pinned: !!x.pinned, muted: !!x.muted, volume: x.volume || 100
     })),
     activeId,
+    selectedTabIds: selectedTabIds(),
     activeWcId: wc ? wc.id : -1,
     theme: W.incognito ? INCOGNITO_THEME : themeVars(),
     incognito: !!W.incognito,
@@ -1930,7 +1967,8 @@ ipcMain.on('ui', (e, cmd, arg) => {
     }
     case 'side-drag-end': saveSettings(); if (overlayKind === 'sidedrag') closeOverlay(false); forEachWin(() => pushState()); break;
     case 'toggle-autohide': toggleAutoHide(); break;
-    case 'close-tab': closeTab(arg); break;
+    case 'close-tab': closeTabSelection(arg); break;
+    case 'select-tab': selectTab(arg); break;
     case 'activate': activateTab(arg); break;
     case 'find': withActive((wc) => { if (arg.text) wc.findInPage(arg.text, { forward: arg.forward !== false, findNext: !!arg.next }); else wc.stopFindInPage('clearSelection'); }); break;
     case 'find-close': closeFind(); break;
@@ -1989,7 +2027,7 @@ function handleShortcut(input, fromUi = false) {
   if (ctrl && k === 'n') { newWindow(false); return true; }                              // new window
   if (ctrl && k === 't') { openSearchPrompt(); return true; }
   if (ctrl && input.shift && (k === 'w' || k === 'q')) { if (win) win.close(); return true; }
-  if ((ctrl && k === 'w') || (ctrl && k === 'f4')) { if (activeId) closeTab(activeId); return true; }
+  if ((ctrl && k === 'w') || (ctrl && k === 'f4')) { if (activeId) closeTabSelection(); return true; }
   if (ctrl && (k === 'pagedown' || k === 'pageup')) {
     if (input.shift) { moveActiveTab(k === 'pagedown' ? 1 : -1); return true; }
     const i = tabs.findIndex((t) => t.id === activeId), n = tabs.length;
@@ -2379,7 +2417,7 @@ async function setupExtensions() {
           const t = newTab(u, details.active === false, activeId, -1, true);
           return [t.view.webContents, win];
         },
-        selectTab: (wc) => { if (extensionTabRegistrationDepth || !wc || wc.isDestroyed()) return; const t = byWcId.get(wc.id); if (t) { useWin(t.w); activateTab(t.id); } },
+        selectTab: (wc) => { if (extensionTabRegistrationDepth || !wc || wc.isDestroyed()) return; const t = byWcId.get(wc.id); if (t) { useWin(t.w); if(activeId !== t.id) activateTab(t.id); } },
         // The library also calls this for closed/slept tabs; only close live tabs the extension asked for
         removeTab: (wc) => { if (!wc || wc.isDestroyed()) return; const t = byWcId.get(wc.id); if (t && t.w && t.w.win) { useWin(t.w); closeTab(t.id); } },
         createWindow: async (details) => { const urls=[].concat(details.url || 'about:blank');if(urls.some(u=>!extensionOpenable(u)))throw Error('Extension navigation blocked');useWin(lastWin(true));urls.forEach((u) => newTab(u)); return win; },
@@ -2737,17 +2775,19 @@ function showInternalPanel(url,title,panels,preferredWidth,preferredHeight){
 function showTabMenu(arg) {
   const t = getTab(arg.id);
   if (!t) return;
+  if (!selectedTabIds().includes(t.id)) { W.selectedTabIds = [t.id]; W.tabSelectionAnchor = t.id; pushState(); }
+  const selected = selectedTabIds(), group = tabs.filter(x => selected.includes(x.id)), multiple = group.length > 1;
   const idx = tabs.indexOf(t);
   popAt([
     { label: 'Yeni sekme', click: () => openSearchPrompt() },
     { type: 'separator' },
-    { label: 'Yenile', enabled: !!t.view, click: () => t.view && t.view.webContents.reload() },
+    { label: 'Yenile', enabled: group.some(x => !!x.view), click: () => group.forEach(x => { if(liveTabView(x)) x.view.webContents.reload(); }) },
     {label:'Bu siteyi otomatik uyutma',type:'checkbox',checked:settings.sleepExcludedSites.includes(calciumSite(t.url)),enabled:!!calciumSite(t.url),click:()=>{const site=calciumSite(t.url);if(!site)return;settings.sleepExcludedSites=settings.sleepExcludedSites.includes(site)?settings.sleepExcludedSites.filter(x=>x!==site):[...settings.sleepExcludedSites,site];saveSettings(true);forEachWin(()=>pushState());notifyPages('settings');}},
     ...(settings.savedTabsEnabled&&!W.incognito&&require('./saved-tabs').validUrl(t.url)?[{label:'Sekmeyi kasaya gönder',click:()=>{try{sendTabToVault(t.id);}catch(error){askPrompt({kind:'perm',title:'Sekme kaydedilemedi',rows:[{icon:'open',text:error.message}],ok:'Tamam',cancel:'Kapat'});}}}]:[]),
     { label: 'Sekmeyi uyut', enabled: !!t.view && (t.id !== activeId || tabs.length > 1), click: () => sleepTab(t.id) },
-    { label: 'Kopyala', click: () => newTab(t.url, false, t.id) },
-    { label: t.pinned ? 'Sabitlemeyi kaldır' : 'Sabitle', click: () => togglePin(t.id) },
-    ...(settings.tabAudio ? [{ label: t.muted ? 'Sitenin sesini aç' : 'Sitenin sesini kapat', click: () => toggleMute(t.id) }] : []),
+    { label: 'Kopyala', click: () => group.forEach(x => newTab(x.url, false, x.id)) },
+    { label: t.pinned ? 'Sabitlemeyi kaldır' : 'Sabitle', click: () => { const pinned = !t.pinned; group.forEach(x => { if (!!x.pinned !== pinned) togglePin(x.id); }); } },
+    ...(settings.tabAudio ? [{ label: t.muted ? 'Sitenin sesini aç' : 'Sitenin sesini kapat', click: () => { const muted = !t.muted; group.forEach(x => { if (!!x.muted !== muted) toggleMute(x.id); }); } }] : []),
     { label: settings.verticalTabs ? 'Yatay sekmelere geç' : 'Dikey sekmelere geç', click: () => setVerticalTabs(!settings.verticalTabs) },
     ...(settings.verticalTabs ? [{ label: 'Kenar çubuğunu otomatik gizle', type: 'checkbox', checked: !!settings.verticalAutoHide, ...hint('Ctrl+S'), click: () => toggleAutoHide() }] : []),
     ...([{ label: 'Ses seviyesi (%' + (t.volume || 100) + ')', enabled: /^https?:/i.test(t.url), submenu: VOLUME_STEPS.map((v) => ({
@@ -2755,8 +2795,8 @@ function showTabMenu(arg) {
     })) }]),
     ...(settings.bookmarksEnabled === false ? [] : [{ label: 'Yer işareti koy', enabled: !isNewtab(t.url) && !isBookmarked(t.url), click: () => { settings.bookmarks.push({ url: t.url, title: t.title, favicon: t.favicon }); bookmarksChanged(); } }]),
     { type: 'separator' },
-    { label: 'Kapat', click: () => closeTab(t.id) },
-    { label: 'Diğer sekmeleri kapat', enabled: tabs.length > 1, click: () => tabs.filter((x) => x !== t).map((x) => x.id).forEach(closeTab) },
+    { label: multiple ? T('Seçili sekmeleri kapat') + ' (' + group.length + ')' : 'Kapat', click: () => closeTabSelection(t.id) },
+    { label: 'Diğer sekmeleri kapat', enabled: tabs.length > group.length, click: () => tabs.filter((x) => !selected.includes(x.id)).map((x) => x.id).forEach(closeTab) },
     { label: 'Sağdaki sekmeleri kapat', enabled: idx < tabs.length - 1, click: () => tabs.slice(idx + 1).map((x) => x.id).forEach(closeTab) },
     { type: 'separator' },
     { label: 'Kapatılan sekmeyi yeniden aç', ...hint('Ctrl+Shift+T'), enabled: closedTabs.length > 0, click: () => reopenClosed() }
