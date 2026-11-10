@@ -81,6 +81,8 @@ const DEFAULTS = {
   disabledExtensions: [],    // disabled extensions {id, path}: files kept, not loaded (no RAM)
   hiddenExtensions: [],      // extension IDs whose toolbar icon is hidden
   hoverZoom: true,           // built-in image hover zoom (Imagus-like), on by default
+  savedTabsShowList: true,
+  savedTabsEnabled: false,   // optional built-in tab archive
   tabAudio: false,            // speaker icon on tabs + click to mute (both gone when off)
   memorySaver:true, sleepExcludedSites:[],
   sleepTabs: true,           // put unused background tabs to sleep (after sleepMinutes)
@@ -192,6 +194,7 @@ const NEWTAB_BASE = pathToFileURL(path.join(__dirname, 'newtab.html')).href;
 const newtabUrl = () => NEWTAB_BASE + '#' + encodeURIComponent(searchUrl());
 const isNewtab = (u) => typeof u === 'string' && u.split('#')[0] === NEWTAB_BASE;
 const WELCOME_URL = pathToFileURL(path.join(__dirname, 'welcome.html')).href;
+const SAVED_TABS_URL = pathToFileURL(path.join(__dirname, 'saved-tabs.html')).href;
 const HISTORY_URL = pathToFileURL(path.join(__dirname, 'history.html')).href;
 const DOWNLOADS_URL = pathToFileURL(path.join(__dirname, 'downloads.html')).href;
 const SETTINGS_URL = pathToFileURL(path.join(__dirname, 'settings.html')).href;
@@ -203,6 +206,7 @@ const EXTENSIONS_URL = pathToFileURL(path.join(__dirname, 'extensions.html')).hr
 const baseOf = (u) => (typeof u === 'string' ? u.split('#')[0].split('?')[0] : '');
 // Short names shown in and typeable into the address bar
 const PAGE_ALIASES = {
+ 'calcium://saved-tabs': SAVED_TABS_URL, 'calcium://onetab': SAVED_TABS_URL,
   'calcium://tasks': TASKS_URL, 'calcium://task-manager': TASKS_URL,
   'calcium://history': HISTORY_URL, 'calcium://gecmis': HISTORY_URL,
   'calcium://downloads': DOWNLOADS_URL, 'calcium://indirilenler': DOWNLOADS_URL,
@@ -221,7 +225,8 @@ function pageKind(u) {
   if (b === UPDATE_NOTICE_URL) return 'update-notice';
   if (b === FIND_URL) return 'find';
   if (b === TASKS_URL) return 'tasks';
-  if (b === HISTORY_URL) return 'history';
+  if (b === SAVED_TABS_URL) return 'saved-tabs';
+ if (b === HISTORY_URL) return 'history';
   if (b === DOWNLOADS_URL) return 'downloads';
   if (b === SETTINGS_URL) return 'settings';
   if (b === EXTENSIONS_URL) return 'extensions';
@@ -234,7 +239,8 @@ function displayUrl(u) {
   const k = pageKind(u);
   if (k === 'security') return 'calcium://security';
   if (k === 'tasks') return 'calcium://tasks';
-  if (k === 'history') return 'calcium://history';
+  if (k === 'saved-tabs') return 'calcium://saved-tabs';
+ if (k === 'history') return 'calcium://history';
   if (k === 'downloads') return 'calcium://downloads';
   if (k === 'settings') return 'calcium://settings';
   if (k === 'extensions') return 'calcium://extensions';
@@ -476,6 +482,98 @@ function useWin(w) {
 }
 const downloadPanels=new Map(),taskPanels=new Map();
 const winOfWc = (wc) => { const t = wc && !wc.isDestroyed() ? byWcId.get(wc.id) : null; return t ? t.w : windows.find(w=>w.updateNotice?.webContents===wc||w.findView?.webContents===wc) || [...downloadPanels,...taskPanels].find(([,p])=>p.webContents===wc)?.[0] || null; };
+// A durable archive write must succeed before any source tab is closed.
+let savedTabsStore;
+const savedTabPopups=new Map();
+function tabArchive(){if(!savedTabsStore)savedTabsStore=new (require('./saved-tabs').SavedTabs)(path.join(app.getPath('userData'),'saved-tabs.json'),broadcastSavedTabs);return savedTabsStore;}
+function broadcastSavedTabs(){
+ for(const w of windows){for(const t of w.tabs)if(t.view&&pageKind(t.url)==='saved-tabs'&&!t.view.webContents.isDestroyed())t.view.webContents.send('saved-tabs-update');const view=w.savedTabsView;if(view&&savedTabPopups.has(view)&&!view.webContents.isDestroyed())view.webContents.send('saved-tabs-update');}
+}
+let quickSavedGroup=null;
+function sendTabToVault(id,now=Date.now()){
+ if(!settings.savedTabsEnabled||W.incognito)return;const tab=getTab(id);if(!tab||!require('./saved-tabs').validUrl(tab.url))return;
+ const store=tabArchive(),destination=quickSavedGroup&&now<quickSavedGroup.expires&&store.data.groups.some(g=>g.id===quickSavedGroup.id&&!g.deleted)?quickSavedGroup.id:undefined;
+ const groupId=store.store([tab],'',destination);quickSavedGroup={id:groupId,expires:now+60000};
+ if(tabs.length===1)newTab(newtabUrl());closeTab(tab.id);
+}
+function closeSavedTabsPopup(owner){
+ const view=owner?.savedTabsView;if(!view)return;savedTabPopups.delete(view);view.pendingOpen=false;if(!view.webContents.isDestroyed())view.setVisible(false);
+}
+function disposeSavedTabsPopup(owner){
+ const view=owner?.savedTabsView;if(!view)return;closeSavedTabsPopup(owner);owner.savedTabsView=null;
+ const host=view.hostWindow;host?.off('resize',view.dismiss);host?.off('blur',view.dismiss);host?.off('closed',view.dispose);
+ try{if(host&&!host.isDestroyed())host.contentView.removeChildView(view);}catch{}if(!view.webContents.isDestroyed())view.webContents.close();
+}
+function raiseSavedTabsPopup(owner){const view=owner?.savedTabsView;if(view&&savedTabPopups.has(view)&&view.archiveReady&&!view.webContents.isDestroyed()&&owner.win&&!owner.win.isDestroyed()&&owner.win.contentView.children.at(-1)!==view)owner.win.contentView.addChildView(view);}
+function prepareSavedTabsPopup(owner){
+ if(!settings.savedTabsEnabled||!owner||owner.incognito||owner.savedTabsView||!owner.win||owner.win.isDestroyed())return owner?.savedTabsView;
+ const view=owner.savedTabsView=new WebContentsView({webPreferences:{session:owner.ses,preload:path.join(__dirname,'saved-tabs-preload.js'),sandbox:true,contextIsolation:true,nodeIntegration:false}});
+ view.hostWindow=owner.win;view.setVisible(false);view.setBackgroundColor(inWin(owner,()=>effectiveTheme().page));view.setBounds({x:0,y:0,width:800,height:400});owner.win.contentView.addChildView(view);
+ view.dismiss=()=>closeSavedTabsPopup(owner);view.dispose=()=>disposeSavedTabsPopup(owner);
+ owner.win.on('resize',view.dismiss);owner.win.on('blur',view.dismiss);owner.win.on('closed',view.dispose);view.webContents.on('blur',view.dismiss);
+ view.webContents.setWindowOpenHandler(()=>({action:'deny'}));view.webContents.on('will-navigate',e=>e.preventDefault());
+ view.webContents.loadURL(SAVED_TABS_URL+'?popup=1&width=800&height=400');return view;
+}
+function showSavedTabsPopup(anchor){
+ if(!settings.savedTabsEnabled||W.incognito)return;
+ const owner=W,view=prepareSavedTabsPopup(owner);if(savedTabPopups.has(view)){closeSavedTabsPopup(owner);return;}
+ const {width,height}=win.getContentBounds(),zoom=ui.webContents.getZoomFactor();
+ const panelWidth=Math.min(800,width-16),top=Math.max(8,Math.min(height-100,Math.round((Number(anchor?.y)||TOOLBAR)*zoom)));
+ const left=Math.max(8,Math.min(width-panelWidth-8,Math.round((Number(anchor?.x)||width/zoom)*zoom)+34-panelWidth));
+ const count=tabs.filter(t=>!t.pinned&&require('./saved-tabs').validUrl(t.url)).length;
+ view.setBounds({x:left,y:top,width:panelWidth,height:Math.min(Math.max(372,152+count*34),height-top-8)});view.setBackgroundColor(effectiveTheme().page);
+ savedTabPopups.set(view,owner);view.pendingOpen=true;
+ if(view.archiveReady)view.webContents.send('saved-popup-open');
+}
+ipcMain.handle('saved-tabs',(e,cmd,arg={})=>{
+ const popup=[...savedTabPopups.keys()].find(p=>p.webContents===e.sender);
+ const cached=windows.find(w=>w.savedTabsView?.webContents===e.sender);
+ const owner=popup?savedTabPopups.get(popup):cached||winOfWc(e.sender);
+ if(e.senderFrame!==e.sender.mainFrame||baseOf(e.senderFrame.url)!==SAVED_TABS_URL)throw Error('izin yok');
+ if(!owner)return {error:'Sekme Kasası kapandı.'};
+ if(owner.incognito)throw Error('izin yok');
+ if(!settings.savedTabsEnabled)return {error:T('Sekme Kasası kapalı. Ayarlar → Araçlar bölümünden açabilirsiniz.')};
+ return inWin(owner,()=>{try{
+ const store=tabArchive(),eligible=t=>!t.pinned&&require('./saved-tabs').validUrl(t.url);
+ if(cmd==='ready'){const view=owner.savedTabsView;if(view?.webContents===e.sender){view.archiveReady=true;if(view.pendingOpen)view.webContents.send('saved-popup-open');}return {ok:true};}
+ if(cmd==='present'){if(popup?.pendingOpen){const bounds=popup.getBounds(),available=owner.win.getContentBounds().height-bounds.y-8;const desired=Number(arg.height);if(Number.isFinite(desired)&&desired>0)popup.setBounds({...bounds,height:Math.max(1,Math.min(Math.max(372,Math.ceil(desired)),available))});popup.pendingOpen=false;raiseSavedTabsPopup(owner);popup.setVisible(true);popup.webContents.focus();}return {ok:true};}
+ if(cmd==='set-show-list'){if(typeof arg!=='boolean')throw Error('Geçersiz tercih.');settings.savedTabsShowList=arg;saveSettings(true);return {ok:true};}
+ if(cmd==='close'){if(popup)setTimeout(()=>closeSavedTabsPopup(owner),0);return {ok:true};}
+ if(cmd==='get')return {theme:effectiveTheme(),font:uiFontFamily(settings.uiFont),showList:settings.savedTabsShowList!==false,groups:store.data.groups,open:tabs.filter(eligible).map(t=>({id:t.id,title:t.title,url:t.url})),activeId};
+ if(cmd==='open-list'){openPage(SAVED_TABS_URL);if(popup)setTimeout(()=>closeSavedTabsPopup(owner),100);return {ok:true};}
+ if(cmd==='store'){
+  const ids=new Set(Array.isArray(arg.ids)?arg.ids:[]),selected=tabs.filter(t=>ids.has(t.id)&&eligible(t));
+  store.store(selected,arg.name,arg.destination);
+  const showList=typeof arg.showList==='boolean'?arg.showList:settings.savedTabsShowList!==false;
+  if(showList)openPage(SAVED_TABS_URL);
+  if(tabs.every(t=>selected.includes(t)))newTab(newtabUrl());
+  for(const t of selected)closeTab(t.id);
+  if(popup&&showList)setTimeout(()=>closeSavedTabsPopup(owner),100);
+  return {ok:true};
+ }
+ if(cmd==='empty-trash'){store.emptyTrash();return {ok:true};}
+ if(cmd==='trash-tab'){const group=store.data.groups.find(g=>g.id===arg.id&&!g.deleted);if(!group?.tabs.some(t=>t.id===arg.tabId))throw Error('Sekme bulunamadı.');store.consume(group.id,[arg.tabId],typeof arg.batch==='string'&&arg.batch.length<=80?e.sender.id+':'+arg.batch:undefined);return {ok:true};}
+ if(cmd==='split-tab'){store.splitTab(arg.id,arg.tabId);return {ok:true};}
+ if(cmd==='merge-groups'){store.mergeGroups(arg.id,arg.targetId);return {ok:true};}
+ if(cmd==='move-group'){store.moveGroup(arg.id,arg.beforeId);return {ok:true};}
+ if(cmd==='move-tab'){store.moveTab(arg.id,arg.tabId,arg.targetId,arg.beforeId);return {ok:true};}
+ if(cmd==='export-text')return {text:require('./saved-tabs').exportText(store.data)};
+ if(cmd==='import-text'){store.import(require('./saved-tabs').parseText(arg));return {ok:true};}
+ if(cmd==='recover-tab'){store.recoverTab(arg.id,arg.tabId);return {ok:true};}
+ if(cmd==='import'){store.import(arg);return {ok:true};}
+ if(cmd==='edit'){store.edit(arg.id,arg.action,arg.value);return {ok:true};}
+ if(cmd==='restore'){
+  const g=store.data.groups.find(g=>g.id===arg.id&&!g.deleted);if(!g)throw Error('Grup bulunamadı.');
+  const selectedIds=Array.isArray(arg.tabIds)?new Set(arg.tabIds):null;
+  const links=g.tabs.filter(t=>(!selectedIds||selectedIds.has(t.id))&&(!arg.tabId||t.id===arg.tabId)&&require('./saved-tabs').validUrl(t.url));
+  const opened=[];
+  for(const link of links){const t=newTab(link.url,true);t.title=link.title;opened.push(link.id);}
+  store.consume(g.id,opened,typeof arg.batch==='string'&&arg.batch.length<=80?e.sender.id+':'+arg.batch:undefined);
+  pushState();return {ok:true};
+ }
+ return {error:'Geçersiz işlem.'};
+ }catch(error){return {error:error.message};}});
+});
 const allTabs = () => windows.flatMap((w) => w.tabs);
 // Run a job in another window, then switch back to the previous one
 function inWin(w, fn) {
@@ -1102,7 +1200,7 @@ function createView(tab) {
   wc.setZoomMode('manual');wc.setZoomFactor(tab.zoomFactor||1);
   on('zoom-changed',(event,direction)=>{event.preventDefault();setPageZoom(wc,direction==='in'?1:-1);});
   on('before-input-event', (e, input) => { if (handleShortcut(input)) e.preventDefault(); });
-  on('context-menu', (_e, p) => showContextMenu(wc, p));
+  on('context-menu', (_e, p) => {if(pageKind(wc.getURL())==='saved-tabs'&&!p.isEditable)return;showContextMenu(wc,p);});
   on('found-in-page', (_e, r) => {send('found', { active: r.activeMatchOrdinal, total: r.matches });if(tab.w.findView)tab.w.findView.webContents.send('page-update',{found:{active:r.activeMatchOrdinal,total:r.matches}});});
   on('enter-html-full-screen', () => { htmlFullscreen = true; win.setFullScreen(true); layout(); });
   on('leave-html-full-screen', () => { htmlFullscreen = false; win.setFullScreen(false); layout(); });
@@ -1535,15 +1633,15 @@ function layout() {
       t.view.setBounds({ x: sw, y: top, width: Math.max(0, width - sw), height: Math.max(0, height - top) });
       if (!overlayOpen && W && !W.sideClosing && W.uiAbove) { win.contentView.addChildView(t.view); W.uiAbove = false; }   // page back on top
     }
-    layoutUpdateNotice(W);layoutFind(W);return;
+    layoutUpdateNotice(W);layoutFind(W);raiseSavedTabsPopup(W);return;
   }
   const h = uiHeight();
   ui.setBounds({ x: 0, y: 0, width, height: overlayOpen ? height : h });
   if (liveTabView(t)) t.view.setBounds({ x: 0, y: h, width, height: Math.max(0, height - h) });
-  layoutUpdateNotice(W);layoutFind(W);
+  layoutUpdateNotice(W);layoutFind(W);raiseSavedTabsPopup(W);
 }
 // Bring the UI to the top (menus, bubbles, revealed sidebar)
-function raiseUi() { win.contentView.addChildView(ui); if (W) W.uiAbove = true; }
+function raiseUi() { win.contentView.addChildView(ui); if (W) W.uiAbove = true;raiseSavedTabsPopup(W); }
 
 // ---------- Vertical tabs
 function setVerticalTabs(on) {
@@ -1611,6 +1709,7 @@ function schedulePush() {
 }
 
 function pushState() {
+  if(W&&settings.savedTabsEnabled)prepareSavedTabsPopup(W);
   if (pushTimer) { clearTimeout(pushTimer); pushTimer = null; }
   if (!win) return;
   const t = activeTab();
@@ -1631,6 +1730,7 @@ function pushState() {
     theme: W.incognito ? INCOGNITO_THEME : themeVars(),
     incognito: !!W.incognito,
     tabAudio: !!settings.tabAudio,
+    savedTabsEnabled: !!settings.savedTabsEnabled,
     newTabPrompt: settings.newTabPrompt !== false,
     textReplacements:settings.textReplacements,
     vertical: vertical(), autoHide: !!settings.verticalAutoHide, sideWidth: sideWidth(win.getContentBounds().width), sideMin: SIDE_MIN,
@@ -1771,6 +1871,7 @@ ipcMain.on('ui', (e, cmd, arg) => {
     case 'zoom-wheel': if(arg===1||arg===-1)zoom(arg); break;
     case 'zoom-reset': zoom(0);break;
     case 'site-setting': updateSiteControl(arg);break;
+    case 'saved-tabs': showSavedTabsPopup(arg); break;
     case 'site-dependencies': confirmSiteDependencies(arg);break;
     case 'extension-menu': if(e.senderFrame===e.sender.mainFrame)showToolbarExtensionMenu(arg);break;
     case 'stop': withActive((wc) => wc.stop()); break;
@@ -2040,7 +2141,8 @@ function menuAction(id, arg) {
     case 'new-window': newWindow(false); break;
     case 'new-incognito': newWindow(true); break;
     case 'downloads': openPage(DOWNLOADS_URL); break;
-    case 'history': openPage(HISTORY_URL); break;
+    case 'saved-tabs': showSavedTabsPopup(arg); break;
+ case 'history': openPage(HISTORY_URL); break;
     case 'settings': openPage(SETTINGS_URL+(arg?'#'+encodeURIComponent(arg):'')); break;
     case 'reopen': reopenClosed(Number(arg) || 0); break;
     case 'reader': withActive((wc) => toggleReader(wc)); break;
@@ -2607,6 +2709,7 @@ function showTabMenu(arg) {
     { type: 'separator' },
     { label: 'Yenile', enabled: !!t.view, click: () => t.view && t.view.webContents.reload() },
     {label:'Bu siteyi otomatik uyutma',type:'checkbox',checked:settings.sleepExcludedSites.includes(calciumSite(t.url)),enabled:!!calciumSite(t.url),click:()=>{const site=calciumSite(t.url);if(!site)return;settings.sleepExcludedSites=settings.sleepExcludedSites.includes(site)?settings.sleepExcludedSites.filter(x=>x!==site):[...settings.sleepExcludedSites,site];saveSettings(true);forEachWin(()=>pushState());notifyPages('settings');}},
+    ...(settings.savedTabsEnabled&&!W.incognito&&require('./saved-tabs').validUrl(t.url)?[{label:'Sekmeyi kasaya gönder',click:()=>{try{sendTabToVault(t.id);}catch(error){askPrompt({kind:'perm',title:'Sekme kaydedilemedi',rows:[{icon:'open',text:error.message}],ok:'Tamam',cancel:'Kapat'});}}}]:[]),
     { label: 'Sekmeyi uyut', enabled: !!t.view && (t.id !== activeId || tabs.length > 1), click: () => sleepTab(t.id) },
     { label: 'Kopyala', click: () => newTab(t.url, false, t.id) },
     { label: t.pinned ? 'Sabitlemeyi kaldır' : 'Sabitle', click: () => togglePin(t.id) },
@@ -2666,6 +2769,10 @@ function showContextMenu(wc, p) {
     items.push({ label: 'Yazdır...', click: () => wc.print() });
     items.push({ label: 'Sayfa kaynağını görüntüle', click: () => newTab('view-source:' + wc.getURL(), false, activeId) });
     if (/^https?:/i.test(wc.getURL())) items.push({ label: 'Okuma modu', accelerator: 'F9', registerAccelerator: false, click: () => toggleReader(wc) });
+  }
+  const vaultTab=byWcId.get(wc.id);
+  if(settings.savedTabsEnabled&&vaultTab&&!vaultTab.w.incognito&&require('./saved-tabs').validUrl(vaultTab.url)){
+    items.push({type:'separator'},{label:'Sekmeyi kasaya gönder',click:()=>inWin(vaultTab.w,()=>{try{sendTabToVault(vaultTab.id);}catch(error){askPrompt({kind:'perm',title:'Sekme kaydedilemedi',rows:[{icon:'open',text:error.message}],ok:'Tamam',cancel:'Kapat'});}})});
   }
   if (extensions) {
     try {
@@ -2890,7 +2997,7 @@ function settingsData() {
     sleepMinutes: settings.sleepMinutes, sleepChoices: SLEEP_CHOICES, downloadNotify: settings.downloadNotify,
     downloadsDir: app.getPath('downloads'),
     extSupport: !!extensions, webStore: !!CWS, extCount: listExtensions().length,
-    hoverZoom: settings.hoverZoom, tabAudio: settings.tabAudio, sleepTabs: settings.sleepTabs,
+    hoverZoom: settings.hoverZoom, savedTabsEnabled: !!settings.savedTabsEnabled, tabAudio: settings.tabAudio, sleepTabs: settings.sleepTabs,
     verticalTabs: settings.verticalTabs, verticalAutoHide: settings.verticalAutoHide, sideEdge: 60,
     pitchBlack: settings.pitchBlack, darkActive: effectiveTheme().mode === 'dark' || (effectiveTheme().mode === 'system' && nativeTheme.shouldUseDarkColors),
     uboError:uboErrors.get(mainSes)||null,
@@ -2914,6 +3021,11 @@ function setLanguage(v) {
 function settingsSet(key, value) {
   const bool = (k) => { if (typeof value !== 'boolean') return false; setSetting(k, value, k === 'forceDarkPages' || k === 'strictIsolation'); return true; };
   switch (key) {
+    case 'savedTabsEnabled':
+      if(typeof value!=='boolean')return false;
+      settings.savedTabsEnabled=value;saveSettings(true);
+      if(!value)for(const owner of windows)disposeSavedTabsPopup(owner);
+      forEachWin(()=>pushState());return true;
     case 'theme': if (!THEMES[value]) return false; settings.theme = value; saveSettings(); applyTheme(); return true;
     case 'engine': case 'searchEngine': if (!SEARCH_ENGINES[value]) return false; setSetting('searchEngine', value); broadcastPages(); return true;
     case 'sleepMinutes': if (!SLEEP_CHOICES.includes(value)) return false; setSetting('sleepMinutes', value); return true;

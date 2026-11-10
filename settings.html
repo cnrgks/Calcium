@@ -2,8 +2,8 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-n0TE3CJHpd2xvJe5tCkLFXet/3xqzKzWFUhlSHFhlQA=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-ozSNseUrR1ziepCz8n+aws5r1hApQSxcKs5/68Jh6/g='; img-src data:">
-<script src="i18n.js" integrity="sha256-n0TE3CJHpd2xvJe5tCkLFXet/3xqzKzWFUhlSHFhlQA="></script><script src="browser-font.js" integrity="sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c="></script>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-trsGuj9I96GcwOk/DW0Lsv5oPcbw6sgmUHDIASixrCo=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-yMhkYIbqkacfRGElBuM1ROHjlwTUBpwEOdeP2xMGm48='; img-src data:">
+<script src="i18n.js" integrity="sha256-trsGuj9I96GcwOk/DW0Lsv5oPcbw6sgmUHDIASixrCo="></script><script src="browser-font.js" integrity="sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c="></script>
 <title>Ayarlar</title>
 <style>
   :root { --bg:#f8fafd; --card:#ffffff; --text:#1f1f1f; --dim:#5f6368; --border:#e3e3e3; --hover:rgba(31,31,31,.06);
@@ -15,7 +15,7 @@
   * { box-sizing:border-box; margin:0; padding:0; }
   [hidden] { display:none !important; }
   html, body { min-height:100%; background:var(--bg); color:var(--text); font:13px "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; }
-  html { scroll-padding-top:64px; }
+  html { scroll-padding-top:64px; overflow-anchor:none; }
   svg { width:20px; height:20px; fill:currentColor; flex:none; }
   button, select { font:inherit; color:inherit; cursor:pointer; }
 
@@ -217,7 +217,7 @@ function row(label, desc, control, onClick) {
 }
 const set = (key, value) => api.call('settings-set', { key, value }).then(load);
 function toggle(key, label, desc) {
-  const b = el('button', 'sw' + (d[key] ? ' on' : '')); b.setAttribute('role', 'switch'); b.setAttribute('aria-checked', String(!!d[key]));
+  const b = el('button', 'sw' + (d[key] ? ' on' : '')); b.dataset.setting=key; b.setAttribute('role', 'switch'); b.setAttribute('aria-checked', String(!!d[key]));
   b.onclick=e=>{e.stopPropagation();set(key,!d[key]);};
   const r = row(label, desc, b);
   return r;
@@ -314,7 +314,7 @@ function render() {
         row('Site izinleri','Kamera, mikrofon, konum ve bildirim izinleri.',button('Sıfırla',()=>api.call('site-perms').then(()=>{toast('Site izinleri sıfırlandı');load()}))),
         row('Cihaz izinleri','USB, Bluetooth ve diğer cihazlar.',button('Göster',()=>api.call('device-grants'))))),
     ...siteSection(),
-    ...section('araclar','Araçlar',row('Ses yükseltme','Her sekmenin sesini ayrı ayarla. En fazla %600.',null),toggle('hoverZoom','Resim büyütme','Resmin üzerine gel. Z ile sabitle, S ile indir.')),
+    ...section('araclar','Araçlar',row('Ses yükseltme','Her sekmenin sesini ayrı ayarla. En fazla %600.',null),toggle('hoverZoom','Resim büyütme','Resmin üzerine gel. Z ile sabitle, S ile indir.'),toggle('savedTabsEnabled','Sekme Kasası','Sekmeleri gruplar halinde kaydet ve kapat. Araç çubuğundaki düğmeden geri aç.')),
     ...customInputSection(),
     ...section('indirmeler','İndirmeler',row('Kayıt konumu',d.downloadsDir,button('Klasörü aç',()=>api.call('open-downloads-folder'))),toggle('askDownloadLocation','İndirirken nereye kaydedileceğini sor','Her indirmede kayıt konumunu seç.')),
     ...section('uzantilar','Uzantılar ve reklam engelleme',
@@ -654,10 +654,16 @@ $('nav').addEventListener('click',e=>{
 window.addEventListener('scroll',()=>$('hdr').classList.toggle('scrolled',scrollY>0),{passive:true});
 $('toHist').onclick = () => api && api.call('open-page', 'history');
 
-let firstLoad = true;
+let firstLoad = true, loadVersion = 0;
 async function load() {
   if (!api) return;
-  d = await api.call('settings-get'); applyTheme(d.resolvedTheme); render();
+  const version=++loadVersion,next=await api.call('settings-get');if(version!==loadVersion)return;
+  const x=scrollX,y=scrollY,root=$('root'),details=[...root.querySelectorAll('details')].map(n=>n.open),focusKey=document.activeElement?.dataset.setting;
+  const minHeight=root.style.minHeight;root.style.minHeight=root.offsetHeight+'px';
+  d=next;applyTheme(d.resolvedTheme);render();
+  root.querySelectorAll('details').forEach((n,i)=>n.open=!!details[i]);
+  if(focusKey)root.querySelector('[data-setting="'+focusKey+'"]')?.focus({preventScroll:true});
+  root.style.minHeight=minHeight;window.scrollTo({left:x,top:y,behavior:'instant'});
   psLoad(); bmLoad();
   if (firstLoad) { firstLoad = false; setTimeout(hashAction, 50); }
 }

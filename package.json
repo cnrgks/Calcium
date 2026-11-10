@@ -1,7 +1,7 @@
 {
   "name": "calcium",
   "productName": "Calcium",
-  "version": "1.4.9",
+  "version": "1.4.10",
   "description": "Calcium — a bare bones browser.",
   "main": "main.js",
   "license": "GPL-3.0",
@@ -15,7 +15,7 @@
     "update-ublock": "node tools/update-ublock.js",
     "prepare-security": "node tools/prepare-security.js",
     "postinstall": "node tools/prepare-security.js",
-    "test:security": "node tools/test-pentest.cjs && node tools/test-webstore-origin.cjs && node tools/test-security.cjs && node tools/test-protection.cjs && node tools/test-device-policy.cjs && node tools/test-language-permissions.cjs && node tools/test-private-ubo.cjs && node tools/test-private-content-unit.cjs && node tools/test-stdio.cjs && node tools/test-app-updates.cjs && node tools/test-custom-shortcuts.cjs",
+    "test:security": "node tools/test-pentest.cjs && node tools/test-webstore-origin.cjs && node tools/test-security.cjs && node tools/test-protection.cjs && node tools/test-device-policy.cjs && node tools/test-language-permissions.cjs && node tools/test-private-ubo.cjs && node tools/test-private-content-unit.cjs && node tools/test-stdio.cjs && node tools/test-app-updates.cjs && node tools/test-custom-shortcuts.cjs && node tools/test-saved-tabs.cjs",
     "test:electron": "node tools/run-electron-tests.cjs",
     "check:engine": "node tools/check-engine.cjs",
     "update-protection": "node tools/update-protection.cjs",
@@ -90,7 +90,12 @@
       "app-updates.js",
       "update-notice.html",
       "custom-shortcuts.js",
-      "text-expansion.js"
+      "text-expansion.js",
+      "saved-tabs.js",
+      "saved-tabs.html",
+      "saved-tabs-ui.js",
+      "saved-tabs-preload.js",
+      "saved-tabs-interactions.js"
     ],
     "win": {
       "target": [

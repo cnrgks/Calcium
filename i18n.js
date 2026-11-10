@@ -7,6 +7,9 @@
 // Strings built from several parts are translated where they are built (see L() in the pages).
 (function (root) {
   const EN = {
+    'Sekme Kasası': 'Tab Vault',
+    'Sekmeleri gruplar halinde kaydet ve kapat. Araç çubuğundaki düğmeden geri aç.': 'Save and close tabs in groups. Restore them from the toolbar button.',
+    'Sekme Kasası kapalı. Ayarlar → Araçlar bölümünden açabilirsiniz.': 'Tab Vault is disabled. Enable it in Settings → Tools.',
     'Bu sitede üçüncü taraf çerezlerini kullanmak': 'Use third-party cookies on this site',
     'Harici uygulama açılacak:': 'External application type:',
     'Üçüncü taraf çerez erişimi:': 'Third-party cookie access:',

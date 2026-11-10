@@ -2,8 +2,8 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-n0TE3CJHpd2xvJe5tCkLFXet/3xqzKzWFUhlSHFhlQA=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-QwDVBiWZKMMioeGAb2Js69/aYKn1PrCoky8x6fH+CbA='; style-src 'unsafe-inline'; img-src https: http: data: crx: chrome-extension:">
-<script src="i18n.js" integrity="sha256-n0TE3CJHpd2xvJe5tCkLFXet/3xqzKzWFUhlSHFhlQA="></script><script src="browser-font.js" integrity="sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c="></script>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-trsGuj9I96GcwOk/DW0Lsv5oPcbw6sgmUHDIASixrCo=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-lzZghvK8mOTx4mlWImcaMPGBgg3npdpckDGEGtpBkp0='; style-src 'unsafe-inline'; img-src https: http: data: crx: chrome-extension:">
+<script src="i18n.js" integrity="sha256-trsGuj9I96GcwOk/DW0Lsv5oPcbw6sgmUHDIASixrCo="></script><script src="browser-font.js" integrity="sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c="></script>
 <title>Calcium</title>
 <style>
   :root {
@@ -258,7 +258,7 @@
   browser-action-list::part(action) { width:34px; height:34px; border-radius:50%; background-size:18px; background-position:center; background-repeat:no-repeat; }
   browser-action-list::part(action):hover { background-color:var(--hover); }
   browser-action-list::part(badge) { font-size:9px; border-radius:7px; padding:0 3px; bottom:4px; right:2px; }
-  #ext[hidden] { display:none; }
+  #ext[hidden], #savedTabs[hidden] { display:none; }
 
   /* ---------- Chrome-style menu ---------- */
   #pop { position:fixed; inset:0; z-index:100; }
@@ -355,6 +355,7 @@
       <button id="zoomPct" title="Yakınlaştırmayı %100’e sıfırla" hidden></button>
       <button id="vol" title="Ses yükseltme" hidden></button>
     </div>
+    <button class="btn" id="savedTabs" title="Sekme Kasası" hidden><svg viewBox="0 0 24 24"><path d="M4 3h16v4H4zm1 6h14v12H5zm4 3v2h6v-2z"/></svg></button>
     <div id="actions"></div>
     <button class="btn" id="ext" title="Uzantılar" hidden><svg viewBox="0 0 24 24"><path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7 1.49 0 2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"/></svg></button>
     <button class="btn" id="dl" title="İndirilenler (Ctrl+J)"><span class="ring" id="ring"></span><svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></button>
@@ -427,6 +428,7 @@ $('lead').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('l
 $('zoomPct').onclick=()=>send('zoom-reset');
 $('star').onclick = () => send('bookmark-toggle');
 const posOf = (el) => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.bottom + 2 }; };
+$('savedTabs').onclick = e => send('saved-tabs',posOf(e.currentTarget));
 $('dl').onclick = (e) => send('downloads', posOf(e.currentTarget));
 
 // Text the user typed is NOT cleared (like Chrome) when focus moves, the new tab page loads or state updates.
@@ -832,6 +834,7 @@ function render(s) {
     fitPinnedArea();
   }
   $('back').disabled = !s.canBack;
+  $('savedTabs').hidden = !s.savedTabsEnabled || s.incognito;
   $('fwd').disabled = !s.canForward;
   $('reload').innerHTML = s.loading ? I.stop : I.reload;
   $('reload').title = s.loading ? 'Bu sayfanın yüklenmesini durdur' : 'Yeniden yükle (Ctrl+R)';

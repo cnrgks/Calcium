@@ -19,6 +19,7 @@ function inMainWorld(fn) {
 // 1) The browser's own local pages (new tab, welcome, history, downloads): shortcuts, theme, list API.
 //    This API is never created on other sites. The main process also checks the sender page on every command.
 if (location.protocol === 'file:' && ipcRenderer.sendSync('calcium-internal-page') === true) {
+  contextBridge.exposeInMainWorld('savedApi',{call:(cmd,arg)=>ipcRenderer.invoke('saved-tabs',cmd,arg),onUpdate:fn=>ipcRenderer.on('saved-tabs-update',()=>fn())});
   contextBridge.exposeInMainWorld('pageApi', {
     lang: ipcRenderer.sendSync('calcium-lang'),
     getFont:()=>ipcRenderer.invoke('calcium-ui-font'),
