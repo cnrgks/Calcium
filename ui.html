@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-trsGuj9I96GcwOk/DW0Lsv5oPcbw6sgmUHDIASixrCo=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-lzZghvK8mOTx4mlWImcaMPGBgg3npdpckDGEGtpBkp0='; style-src 'unsafe-inline'; img-src https: http: data: crx: chrome-extension:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-trsGuj9I96GcwOk/DW0Lsv5oPcbw6sgmUHDIASixrCo=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-vOSKNT+YUzVAB47bC6bVMO/nun4NHMoJ0K4Nqtjn/GQ='; style-src 'unsafe-inline'; img-src https: http: data: crx: chrome-extension:">
 <script src="i18n.js" integrity="sha256-trsGuj9I96GcwOk/DW0Lsv5oPcbw6sgmUHDIASixrCo="></script><script src="browser-font.js" integrity="sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c="></script>
 <title>Calcium</title>
 <style>
@@ -163,6 +163,10 @@
   #sug .sr.sel { background:var(--sel); }
   #sug .sr .si { width:16px; height:16px; flex:none; color:var(--dim); display:flex; align-items:center; justify-content:center; }
   #sug .sr .si svg, #sug .sr .si img { width:16px; height:16px; }
+  .history-site-icon { position:relative; isolation:isolate; display:inline-flex; width:16px; height:16px; flex:none; }
+  .history-site-icon .site-icon { position:relative; z-index:1; display:flex; width:100%; height:100%; background:var(--toolbar); border-radius:3px; }
+  .history-site-icon .history-badge { position:absolute; z-index:0; top:-5px; right:-5px; display:flex; width:11px; height:11px; color:var(--dim); }
+  #sug .sr .history-badge svg, #newtabResults .history-badge svg { width:11px; height:11px; }
   #sug .sr .st { overflow:hidden; text-overflow:ellipsis; flex:0 1 auto; min-width:0; }
   #sug .sr .su { color:var(--accent); overflow:hidden; text-overflow:ellipsis; flex:1 1 0; min-width:60px; font-size:13px; }
   #sug .sr .su::before { content:"–"; color:var(--dim); margin-right:8px; }
@@ -478,6 +482,21 @@ function go(where) {
   hideSug(); url.blur();
   send(where === 'tab' ? 'navigate-tab' : 'navigate', v);
 }
+function drawSuggestionIcon(icon, item, typed = false) {
+  icon.classList.toggle('history-site-icon', !typed && item.kind === 'history');
+  icon.innerHTML = typed ? I.search : item.kind === 'bm' ? I.starSmall : item.kind === 'history' ? '' : I.clock;
+  let site = icon;
+  if (!typed && item.kind === 'history') {
+    const badge = document.createElement('span'); badge.className = 'history-badge'; badge.innerHTML = I.clock;
+    site = document.createElement('span'); site.className = 'site-icon'; site.innerHTML = I.globe;
+    icon.append(badge, site);
+  }
+  if (!typed && item.favicon) {
+    const img = document.createElement('img'); img.alt = '';
+    img.onerror = () => { site.innerHTML = I.globe; };
+    img.src = item.favicon; site.replaceChildren(img);
+  }
+}
 function drawSug(res) {
   const q = typed.trim();
   const rows = [{ typed: true, text: url.value.trim() }].concat(res.items.map((it) => ({ ...it })));
@@ -494,8 +513,7 @@ function drawSug(res) {
       u.textContent = isUrl ? 'Siteye git' : ((state && state.searchName) || 'Google') + ' ile ara';
       el.append(ic, t, u);
     } else {
-      if (r.favicon) { const im = document.createElement('img'); im.src = r.favicon; im.alt = ''; im.onerror = () => { ic.innerHTML = I.globe; }; ic.appendChild(im); }
-      else ic.innerHTML = r.kind === 'bm' ? I.starSmall : I.clock;
+      drawSuggestionIcon(ic, r);
       t.textContent = r.title || prettyUrl(r.url);
       const u = document.createElement('span'); u.className = 'su'; u.textContent = r.value ? 'Arama geçmişi' : prettyUrl(r.url);
       el.append(ic, t, u);
@@ -1382,9 +1400,8 @@ browserApi.onNewTabResults((r) => {
   $('newtabResults').replaceChildren(...promptRows.map((item,i)=>{
     const key=item.value||item.url||'query';const row=existing.get(key)||document.createElement('button');row.dataset.key=key;row.id='newtab-result-'+i;row.type='button';row.setAttribute('role','option');
     let icon=row.firstElementChild;if(!icon){icon=document.createElement('span');row.append(icon);}
-    const iconKey=item.favicon||(i===0?'search':item.kind||'history');
-    if(row.dataset.icon!==iconKey){row.dataset.icon=iconKey;icon.innerHTML=i===0?I.search:item.kind==='bm'?I.starSmall:I.clock;
-      if(item.favicon){const img=document.createElement('img');img.src=item.favicon;img.alt='';img.onerror=()=>{icon.innerHTML=I.globe};icon.replaceChildren(img);}
+    const iconKey=JSON.stringify([i===0,item.kind,item.favicon]);
+    if(row.dataset.icon!==iconKey){row.dataset.icon=iconKey;drawSuggestionIcon(icon,item,i===0);
     }
     let label=row.querySelector('.result-label');if(!label){label=document.createElement('span');label.className='result-label';row.append(label);}label.textContent=item.title||item.url;
     if(item.url){const small=document.createElement('small');small.textContent=prettyUrl(item.url);label.append(small);}

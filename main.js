@@ -1286,13 +1286,13 @@ function openPage(url) {
 // Pinned tabs always on the left (sort is stable, the rest keep their order)
 const orderPinned = () => tabs.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
-// Fetch only the HTML title for deferred tabs: no renderer, scripts, images or media.
+// Resolve real page titles before releasing temporary background renderers.
 const titleQueue = [];
 let titleJobs = 0;
 function queueTabTitle(tab) {
   if (!/^https?:/i.test(tab.url) || threatProtection.isBlocked(tab.url)) return;
   const known = settings.bookmarks.find((b) => b.url === tab.url) || history.find((h) => h.url === tab.url);
-  if (known && known.title) { tab.title = known.title; return; }
+  if (known && meaningfulTabTitle(known.title, tab.url)) tab.title = known.title;
   if(titleQueue.length>=128||titleQueue.includes(tab))return;
   titleQueue.push(tab);
   drainTabTitles();
@@ -1305,38 +1305,48 @@ function drainTabTitles() {
     readTabTitle(tab).finally(() => { titleJobs--; drainTabTitles(); });
   }
 }
+function meaningfulTabTitle(title, url) {
+  const text = String(title || '').replace(/\s+/g, ' ').trim();
+  if (!text || /^https?:/i.test(text)) return false;
+  try {
+    const host = new URL(url).hostname.replace(/^www\./i, '');
+    return ![host, host.split('.')[0], 'loading', 'yükleniyor', 'newtab', 'yenisekme'].includes(text.toLowerCase().replace(/\s+/g, ''));
+  } catch { return false; }
+}
 async function readTabTitle(tab) {
   const controller = new AbortController();
   tab.titleRequest = controller;
-  const timer = setTimeout(() => controller.abort(), 6000);
   const url = tab.url;
-  let reader;
+  // Render script-generated titles in a bounded, muted view, then release it.
+  const view = new WebContentsView({webPreferences:{session:tab.w.ses,sandbox:true,contextIsolation:true,nodeIntegration:false,autoplayPolicy:'user-gesture-required',backgroundThrottling:false}});
+  const wc = view.webContents;
+  wc.setAudioMuted(true);
+  wc.setWindowOpenHandler(() => ({action:'deny'}));
+  wc.on('will-navigate', (event, target) => { if (!/^https?:/i.test(target) || threatProtection.isBlocked(target)) event.preventDefault(); });
   try {
-    const response = await tab.w.ses.fetch(url, { signal: controller.signal });
-    if (!response.ok || !/text\/html|application\/xhtml/i.test(response.headers.get('content-type') || '')) return;
-    reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let html = '', bytes = 0, match;
-    while (bytes < 256 * 1024) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      bytes += chunk.value.length;
-      html += decoder.decode(chunk.value, { stream: true });
-      match = html.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
-      if (match || /<\/head\s*>/i.test(html)) break;
-    }
-    if (match && tab.url === url && tab.w.tabs.includes(tab) && (!tab.view || tab.pendingNavigation)) {
-      const entities = { amp: '&', quot: '"', apos: "'", lt: '<', gt: '>', nbsp: ' ' };
-      tab.title = match[1].replace(/&#(x[0-9a-f]+|[0-9]+);|&(amp|quot|apos|lt|gt|nbsp);/gi, (all, n, named) => {
-        if (named) return entities[named.toLowerCase()];
-        const code = n[0].toLowerCase() === 'x' ? parseInt(n.slice(1), 16) : parseInt(n, 10);
-        return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : all;
-      }).replace(/\s+/g, ' ').trim().slice(0, 300) || tab.title;
-      if (windows.includes(tab.w)) inWin(tab.w, () => pushState());
-    }
-  } catch {} finally {
-    if (reader) reader.cancel().catch(() => {});
-    controller.abort(); clearTimeout(timer);
+    await new Promise(resolve => {
+      let stableTimer;
+      const timer = setTimeout(finish, 20000);
+      function finish() { clearTimeout(timer); clearTimeout(stableTimer); controller.signal.removeEventListener('abort', finish); resolve(); }
+      function titleChanged() {
+        clearTimeout(stableTimer);
+        if (!meaningfulTabTitle(wc.getTitle(), url)) return;
+        stableTimer = setTimeout(() => {
+          if (!controller.signal.aborted && tab.url === url && tab.w.tabs.includes(tab) && (!tab.view || tab.pendingNavigation)) {
+            tab.title = wc.getTitle().replace(/\s+/g, ' ').trim().slice(0,300);
+            if (windows.includes(tab.w)) inWin(tab.w, () => pushState());
+          }
+          finish();
+        }, 1000);
+      }
+      controller.signal.addEventListener('abort', finish, {once:true});
+      wc.on('page-title-updated', titleChanged);
+      wc.on('did-finish-load', titleChanged);
+      wc.on('render-process-gone', finish);
+      wc.loadURL(url).catch(finish);
+    });
+  } finally {
+    if (!wc.isDestroyed()) await new Promise(resolve => { wc.once('destroyed', resolve); wc.close({waitForBeforeUnload:false}); });
     if (tab.titleRequest === controller) tab.titleRequest = null;
   }
 }
@@ -1350,13 +1360,14 @@ function newTab(url, background = false, openerId = null, at = -1, requireView =
   if (at >= 0) tabs.splice(Math.min(at, tabs.length), 0, tab);
   else if (openerIdx >= 0) tabs.splice(openerIdx + 1, 0, tab); else tabs.push(tab);
   orderPinned();
-  // Background links are URL records only; title metadata is fetched without a renderer or media.
+  // Background links retain only a URL record after their page title is resolved.
   // chrome.tabs.create requires a WebContents ID, so keep its background view blank until selected.
   if (background && activeId !== null) {
     tab.title = isInternal(tab.url) ? 'Yeni Sekme' : hostOf(tab.url);
     if (requireView) { tab.pendingNavigation = true; createView(tab); }
     const opener=getTab(openerId);const hint=opener?.linkTitleHint;
-    if(hint && hint.url===tab.url && Date.now()-hint.at<2000){tab.title=hint.title;opener.linkTitleHint=null;}else queueTabTitle(tab);
+    if(hint && hint.url===tab.url && Date.now()-hint.at<2000 && meaningfulTabTitle(hint.title,tab.url)){tab.title=hint.title;opener.linkTitleHint=null;}
+    queueTabTitle(tab);
   }
   if (!background || activeId === null) activateTab(tab.id); else pushState();
   return tab;

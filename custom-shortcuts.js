@@ -35,7 +35,7 @@ function browsingSuggestions(visits,searches,text){
   if(typeof h.url!=='string'||!/^https?:\/\//i.test(h.url)||seen.has(h.url))continue;
   const label=h.url.replace(/^https?:\/\/(?:www\.)?/i,''),haystack=(h.url+' '+label+' '+(h.title||'')).toLocaleLowerCase('tr');
   if(!words.every(w=>haystack.includes(w)))continue;
-  seen.add(h.url);items.push({url:h.url,title:h.title||label,kind:'history'});
+  seen.add(h.url);items.push({url:h.url,title:h.title||label,favicon:h.favicon||null,kind:'history'});
  }
  items.push(...suggestions(searches,text).items);items.splice(8);
  const prefix=!/\s/.test(String(text||''))&&items.find(h=>h.url&&h.url.replace(/^https?:\/\/(?:www\.)?/i,'').toLowerCase().startsWith(q));
