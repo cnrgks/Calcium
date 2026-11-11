@@ -1738,7 +1738,7 @@ function layout() {
     if (liveTabView(t) && settings.verticalAutoHide && ((overlayOpen && overlayKind === 'side') || (!overlayOpen && W.sideClosing))) {
       // Keep the original page viewport; expose its right-hand region above the
       // UI so the transparent area of the UI cannot swallow native mouse input.
-      const left = Math.min(width, sideWidth(width) + 8);
+      const left = Math.min(width, Math.max(SIDE_RAIL, W.sideVisibleWidth ?? SIDE_RAIL));
       const clip = W.sidePageClip ||= new View();
       clip.setBounds({x:left,y:top,width:Math.max(0,width-left),height:Math.max(0,height-top)});
       win.contentView.removeChildView(t.view);
@@ -1765,6 +1765,15 @@ function releaseSidePage() {
     if (activeTab()?.view === view) win.contentView.addChildView(view);
   }
   win.contentView.removeChildView(clip);
+}
+function updateSidePageWidth(value) {
+  if (!Number.isFinite(value) || !vertical() || !settings.verticalAutoHide) return;
+  W.sideVisibleWidth = Math.max(SIDE_RAIL, Math.min(sideWidth(win.getContentBounds().width), Math.ceil(value)));
+  const clip = W.sidePageClip, t = activeTab();
+  if (!clip || !liveTabView(t) || !clip.children.includes(t.view)) return;
+  const {width} = win.getContentBounds(), b = clip.getBounds(), left = Math.min(width, W.sideVisibleWidth);
+  clip.setBounds({...b,x:left,width:Math.max(0,width-left)});
+  t.view.setBounds({...t.view.getBounds(),x:SIDE_RAIL-left});
 }
 function raiseUi() { releaseSidePage();win.contentView.addChildView(ui); if (W) W.uiAbove = true;raiseSavedTabsPopup(W); }
 
@@ -1801,6 +1810,7 @@ function openSide() {
   if (!win || !ui || !vertical() || !settings.verticalAutoHide || overlayOpen || W.sideClosing) return;
   clearTimeout(W.sideCloseTimer);
   W.sideClosing = false;
+  W.sideVisibleWidth = SIDE_RAIL;
   overlayOpen = true;
   overlayKind = 'side';
   raiseUi();
@@ -2008,6 +2018,7 @@ ipcMain.on('ui', (e, cmd, arg) => {
     case 'address-focus': if (overlayKind !== 'newtab') openSearchPrompt('address', typeof arg === 'string' ? arg : displayUrl(activeTab()?.url || '')); break;
     case 'prompt-answer': answerPrompt(arg); break;
     case 'side-reveal': openSide(); break;
+    case 'side-animation-width': updateSidePageWidth(arg); break;
     case 'side-focus': W.sideKeyboardFocus=arg===true; if(W.sideKeyboardFocus)openSide();else W.sideHoldUntil=Date.now()+250; break;
     case 'side-hide': break; // Native cursor tracking owns sidebar dismissal.
     case 'tab-drag-start': W.tabDragging = true; if (!overlayOpen) { overlayOpen = true; overlayKind = 'tabdrag'; raiseUi(); layout(); } break;

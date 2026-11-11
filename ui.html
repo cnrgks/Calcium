@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-M+7boI8dfTY2xYX4c1VORwVqxb6IrPWgD09JnyrvoGw=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-YdnpXgJPKxIkcBjI9cI+a9tYjWjvYwIpjv7YZXq7O9s='; style-src 'unsafe-inline'; img-src https: http: data: crx: chrome-extension:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-M+7boI8dfTY2xYX4c1VORwVqxb6IrPWgD09JnyrvoGw=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-uqMPFDjxfmDpMeDaZVBz1ph+HirevKBc077i6k0oMcc='; style-src 'unsafe-inline'; img-src https: http: data: crx: chrome-extension:">
 <script src="i18n.js" integrity="sha256-M+7boI8dfTY2xYX4c1VORwVqxb6IrPWgD09JnyrvoGw="></script><script src="browser-font.js" integrity="sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c="></script>
 <title>Calcium</title>
 <style>
@@ -88,7 +88,7 @@
   body.vert.autohide:not(.onboarding) #sideRail{display:block;position:fixed;left:0;top:var(--top,46px);bottom:0;width:8px;background:var(--frame);-webkit-app-region:no-drag;z-index:61}
   /* Auto-hide mode: sidebar hidden on the left, slides over the page at the same width when opened */
   body.vert.autohide #side { transform:translateX(-102%);
-    box-shadow:6px 0 18px rgba(0,0,0,.28); z-index:60; border-radius:0 10px 10px 0; }
+    z-index:60; border-radius:0; }
   body.vert.autohide.reveal #side { transform:none; }
   #sidehead { flex:none; display:flex; align-items:center; gap:2px; padding:8px 6px 6px; }
   #snew { flex:1; min-width:0; height:34px; border-radius:8px; display:flex; align-items:center; gap:10px; padding:0 10px; color:var(--text); white-space:nowrap; overflow:hidden; }
@@ -958,7 +958,20 @@ window.addEventListener('mouseup', () => {
 // Visibility comes from the main process; DOM replacement cannot dismiss the sidebar.
 $('side').addEventListener('focusin',()=>send('side-focus',true));
 $('side').addEventListener('focusout',(e)=>{if(!$('side').contains(e.relatedTarget))send('side-focus',false);});
-browserApi.onSideReveal((v) => { document.body.classList.toggle('reveal', !!v); });
+let sideAnimationFrame = 0;
+function trackSideAnimation() {
+  cancelAnimationFrame(sideAnimationFrame);
+  const until = performance.now() + 240;
+  const frame = () => {
+    // Native page clipping follows the painted sidebar edge, not its final width.
+    send('side-animation-width', Math.max(8, $('side').getBoundingClientRect().right));
+    sideAnimationFrame = performance.now() < until ? requestAnimationFrame(frame) : 0;
+  };
+  frame();
+}
+browserApi.onSideReveal((v) => { document.body.classList.toggle('reveal', !!v); trackSideAnimation(); });
+$('side').addEventListener('transitionrun', (event) => { if (event.propertyName === 'transform') trackSideAnimation(); });
+new ResizeObserver(() => { if (state?.autoHide) trackSideAnimation(); }).observe($('side'));
 function renderBookmarks(s) {
   document.body.classList.toggle('bbar', !!s.bookmarksBar);
   const key = s.bookmarksBar + JSON.stringify(s.bookmarks);

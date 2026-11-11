@@ -1,0 +1,34 @@
+'use strict';
+const {app}=require('electron'),fs=require('fs'),path=require('path'),Module=require('module'),assert=require('assert');
+const profile=process.env.CALCIUM_PROFILE;if(!profile)throw Error('Use run-electron-tests');
+process.env.CALCIUM_TEST_MODE='1';process.env.CALCIUM_TEST_DISPLAY='0';app.disableHardwareAcceleration();
+fs.writeFileSync(path.join(profile,'ayarlar.json'),JSON.stringify({firstRunDone:true,language:'tr',verticalTabs:true,verticalAutoHide:true}));
+const entry=path.resolve(__dirname,'..','main.js'),m=new Module(entry,module);m.filename=entry;m.paths=Module._nodeModulePaths(path.dirname(entry));
+m._compile(fs.readFileSync(entry,'utf8')+'\nmodule.exports.test={ready:mainBlockReady,windows:()=>windows,openSide,closeOverlay,newTab};',entry);
+const pause=ms=>new Promise(r=>setTimeout(r,ms));
+const until=async fn=>{for(let i=0;i<100;i++){if(await fn())return;await pause(50);}throw Error('Sidebar animation timeout');};
+(async()=>{
+ await app.whenReady();const api=m.exports.test;await api.ready;
+ await until(()=>api.windows()[0]?.tabs.length);const w=api.windows()[0];
+ const tab=api.newTab('about:blank'),wc=tab.view.webContents;
+ await until(()=>!wc.isLoading()&&!w.ui.webContents.isLoading());
+ w.win.show();w.win.focus();await pause(300);
+ await until(()=>w.ui.webContents.executeJavaScript('!!state?.autoHide && document.body.classList.contains("autohide")').catch(()=>false));
+ // Keep cursor dismissal from racing the animation assertions.
+ w.sideKeyboardFocus=true;
+ const viewport=tab.view.getBounds();api.openSide();w.sideHoldUntil=Date.now()+5000;
+ assert.equal(w.sidePageClip.getBounds().x,8,'opening does not cut out the final sidebar width in advance');
+ await pause(260);
+ const openWidth=w.sidePageClip.getBounds().x;
+ assert(openWidth>8,JSON.stringify(await w.ui.webContents.executeJavaScript('({classes:document.body.className,right:document.querySelector("#side").getBoundingClientRect().right,stateOpen:state?.sideOpen,frame:sideAnimationFrame})')));
+ assert.equal(openWidth,await w.ui.webContents.executeJavaScript('Math.ceil(document.querySelector("#side").getBoundingClientRect().right)'),'native clip matches the painted sidebar edge');
+ assert.equal(tab.view.getBounds().width,viewport.width,'page viewport stays unchanged');
+ assert.equal(tab.view.getBounds().x+openWidth,8,'page origin stays unchanged');
+ assert(w.win.contentView.children.indexOf(w.sidePageClip)>w.win.contentView.children.indexOf(w.ui),'uncovered page stays above UI for native input');
+ api.closeOverlay(false);await pause(90);
+ const closingWidth=w.sidePageClip.getBounds().x;
+ assert(closingWidth<openWidth&&closingWidth>8,'closing uncovers the page progressively');
+ assert(w.sidePageClip.children.includes(tab.view),'page remains interactive during closing');
+ await pause(200);assert.equal(w.sidePageClip.children.length,0);assert.deepEqual(tab.view.getBounds(),viewport);
+ console.log('PASS: sidebar clipping follows animation, preserves viewport and keeps uncovered page interactive.');app.exit(0);
+})().catch(error=>{console.error(error);app.exit(1)});
