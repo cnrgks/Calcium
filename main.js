@@ -15,7 +15,7 @@ for (const stream of [process.stdout, process.stderr]) {
  *    reload menu (normal / hard / clear cache), full URL display, force dark pages
  */
 const {
-  app, nativeImage, BrowserWindow, BaseWindow, WebContentsView, session, ipcMain, Menu, MenuItem, clipboard,
+  app, nativeImage, BrowserWindow, BaseWindow, View, WebContentsView, session, ipcMain, Menu, MenuItem, clipboard,
   dialog, shell, nativeTheme, net, Notification, webFrameMain, webContents, screen
 } = require('electron');
 // castLabs Electron (Widevine DRM). Not in stock Electron; in that case we run without DRM.
@@ -1202,7 +1202,7 @@ function createView(tab) {
     applyVolume(wc, isMain ? null : webFrameMain.fromId(pid, rid), tab.volume);
   });
   on('render-process-gone', () => { tab.title = 'Sayfa çöktü - yenileyin'; tab.loading = false; pushState(); });
-  wc.setZoomMode('manual');wc.setZoomFactor(tab.zoomFactor||1);
+  wc.setZoomMode('isolated');wc.setZoomFactor(tab.zoomFactor||1);
   on('zoom-changed',(event,direction)=>{event.preventDefault();setPageZoom(wc,direction==='in'?1:-1);});
   on('before-input-event', (e, input) => { if (handleShortcut(input)) e.preventDefault(); });
   on('context-menu', (_e, p) => {if(pageKind(wc.getURL())==='saved-tabs'&&!p.isEditable)return;showContextMenu(wc,p);});
@@ -1718,6 +1718,7 @@ function leaveFullscreenForChrome() {
 }
 function layout() {
   if (!win || win.isDestroyed() || !ui || ui.webContents.isDestroyed()) return;
+  releaseSidePage();
   const fullscreen=htmlFullscreen||win.isFullScreen();ui.setVisible(!fullscreen);
   if(fullscreen&&W?.updateNotice)W.updateNotice.setVisible(false);
   if(fullscreen){W.findView?.setVisible(false);const {width,height}=win.getContentBounds();ui.setBounds({x:0,y:0,width,height:0});const t=activeTab();if(liveTabView(t)){t.view.setBounds({x:0,y:0,width,height});win.contentView.addChildView(t.view);if(W)W.uiAbove=false;}return;}
@@ -1734,6 +1735,17 @@ function layout() {
       if (!overlayOpen && W && !W.sideClosing && W.uiAbove) { win.contentView.addChildView(t.view); W.uiAbove = false; }   // page back on top
     }
     if (overlayOpen) raiseUi();
+    if (liveTabView(t) && settings.verticalAutoHide && ((overlayOpen && overlayKind === 'side') || (!overlayOpen && W.sideClosing))) {
+      // Keep the original page viewport; expose its right-hand region above the
+      // UI so the transparent area of the UI cannot swallow native mouse input.
+      const left = Math.min(width, sideWidth(width) + 8);
+      const clip = W.sidePageClip ||= new View();
+      clip.setBounds({x:left,y:top,width:Math.max(0,width-left),height:Math.max(0,height-top)});
+      win.contentView.removeChildView(t.view);
+      clip.addChildView(t.view);
+      t.view.setBounds({x:sw-left,y:0,width:Math.max(0,width-sw),height:Math.max(0,height-top)});
+      win.contentView.addChildView(clip);
+    }
     layoutUpdateNotice(W);layoutFind(W);raiseSavedTabsPopup(W);return;
   }
   const h = uiHeight();
@@ -1743,7 +1755,18 @@ function layout() {
   layoutUpdateNotice(W);layoutFind(W);raiseSavedTabsPopup(W);
 }
 // Bring the UI to the top (menus, bubbles, revealed sidebar)
-function raiseUi() { win.contentView.addChildView(ui); if (W) W.uiAbove = true;raiseSavedTabsPopup(W); }
+function releaseSidePage() {
+  const clip = W?.sidePageClip;
+  if (!clip) return;
+  for (const view of clip.children) {
+    const b = view.getBounds(), parent = clip.getBounds();
+    clip.removeChildView(view);
+    view.setBounds({...b,x:b.x+parent.x,y:b.y+parent.y});
+    if (activeTab()?.view === view) win.contentView.addChildView(view);
+  }
+  win.contentView.removeChildView(clip);
+}
+function raiseUi() { releaseSidePage();win.contentView.addChildView(ui); if (W) W.uiAbove = true;raiseSavedTabsPopup(W); }
 
 // ---------- Vertical tabs
 function setVerticalTabs(on) {
@@ -2190,6 +2213,7 @@ function closeOverlay(refocus = true, resumeContext = false) {
     const w = W;
     clearInterval(w.sideWatch);
     w.sideClosing = true;
+    layout();
     clearTimeout(w.sideCloseTimer);
     w.sideCloseTimer = setTimeout(() => { if (windows.includes(w) && !w.win.isDestroyed()) inWin(w, () => { w.sideClosing = false; layout(); }); }, 220);
     if(refocus)withActive(wc=>wc.focus());
