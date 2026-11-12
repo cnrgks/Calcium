@@ -1717,6 +1717,17 @@ function leaveFullscreenForChrome() {
   layout(); pushState();
 }
 function layout() {
+  return preservePageFocus(layoutViews);
+}
+// Reparenting a native page view clears its keyboard focus. Layout and sidebar
+// stacking must preserve an already focused page without stealing UI focus.
+function preservePageFocus(change) {
+  const tab = activeTab(), wc = liveTabView(tab) ? tab.view.webContents : null;
+  const focused = wc?.isFocused();
+  try { return change(); }
+  finally { if (focused && activeTab() === tab && liveTabView(tab) && win?.isFocused() && !wc.isFocused()) wc.focus(); }
+}
+function layoutViews() {
   if (!win || win.isDestroyed() || !ui || ui.webContents.isDestroyed()) return;
   releaseSidePage();
   const fullscreen=htmlFullscreen||win.isFullScreen();ui.setVisible(!fullscreen);
@@ -1775,7 +1786,7 @@ function updateSidePageWidth(value) {
   clip.setBounds({...b,x:left,width:Math.max(0,width-left)});
   t.view.setBounds({...t.view.getBounds(),x:SIDE_RAIL-left});
 }
-function raiseUi() { releaseSidePage();win.contentView.addChildView(ui); if (W) W.uiAbove = true;raiseSavedTabsPopup(W); }
+function raiseUi() { preservePageFocus(() => { releaseSidePage();win.contentView.addChildView(ui); if (W) W.uiAbove = true;raiseSavedTabsPopup(W); }); }
 
 // ---------- Vertical tabs
 function setVerticalTabs(on) {

@@ -4,7 +4,7 @@ const profile=process.env.CALCIUM_PROFILE;if(!profile)throw Error('Use run-elect
 process.env.CALCIUM_TEST_MODE='1';process.env.CALCIUM_TEST_DISPLAY='0';app.disableHardwareAcceleration();
 fs.writeFileSync(path.join(profile,'ayarlar.json'),JSON.stringify({firstRunDone:true,language:'tr',verticalTabs:true,verticalAutoHide:true}));
 const entry=path.resolve(__dirname,'..','main.js'),m=new Module(entry,module);m.filename=entry;m.paths=Module._nodeModulePaths(path.dirname(entry));
-m._compile(fs.readFileSync(entry,'utf8')+'\nmodule.exports.test={ready:mainBlockReady,windows:()=>windows,openSide,closeOverlay,newTab};',entry);
+m._compile(fs.readFileSync(entry,'utf8')+'\nmodule.exports.test={ready:mainBlockReady,windows:()=>windows,openSide,closeOverlay,newTab,activeTab,layout,openOverlay};',entry);
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 const until=async fn=>{for(let i=0;i<100;i++){if(await fn())return;await pause(50);}throw Error('Sidebar animation timeout');};
 (async()=>{
@@ -14,10 +14,14 @@ const until=async fn=>{for(let i=0;i<100;i++){if(await fn())return;await pause(5
  await until(()=>!wc.isLoading()&&!w.ui.webContents.isLoading());
  w.win.show();w.win.focus();await pause(300);
  await until(()=>w.ui.webContents.executeJavaScript('!!state?.autoHide && document.body.classList.contains("autohide")').catch(()=>false));
+ w.ui.webContents.debugger.attach('1.3');
+ await w.ui.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});
  // Keep cursor dismissal from racing the animation assertions.
  w.sideKeyboardFocus=true;
- const viewport=tab.view.getBounds();api.openSide();w.sideHoldUntil=Date.now()+5000;
+ wc.focus();const viewport=tab.view.getBounds();api.openSide();w.sideHoldUntil=Date.now()+5000;
+ assert(wc.isFocused(),'opening the sidebar preserves native page focus');
  assert.equal(w.sidePageClip.getBounds().x,8,'opening does not cut out the final sidebar width in advance');
+ await until(()=>w.sidePageClip.getBounds().x>8);
  await pause(260);
  const openWidth=w.sidePageClip.getBounds().x;
  assert(openWidth>8,JSON.stringify(await w.ui.webContents.executeJavaScript('({classes:document.body.className,right:document.querySelector("#side").getBoundingClientRect().right,stateOpen:state?.sideOpen,frame:sideAnimationFrame})')));
@@ -30,5 +34,25 @@ const until=async fn=>{for(let i=0;i<100;i++){if(await fn())return;await pause(5
  assert(closingWidth<openWidth&&closingWidth>8,'closing uncovers the page progressively');
  assert(w.sidePageClip.children.includes(tab.view),'page remains interactive during closing');
  await pause(200);assert.equal(w.sidePageClip.children.length,0);assert.deepEqual(tab.view.getBounds(),viewport);
- console.log('PASS: sidebar clipping follows animation, preserves viewport and keeps uncovered page interactive.');app.exit(0);
+ console.log('PASS: sidebar clipping follows animation, preserves viewport and keeps uncovered page interactive.');
+ const other=api.newTab('about:blank');await until(()=>!other.view.webContents.isLoading());
+ w.win.focus();other.view.webContents.focus();
+ const cycle=async shift=>{
+  const before=api.activeTab(),source=require('electron').webContents.getFocusedWebContents();
+  assert(source,'keyboard focus exists before cycling');
+  source.sendInputEvent({type:'keyDown',keyCode:'Tab',modifiers:shift?['control','shift']:['control']});
+  await until(()=>api.activeTab()!==before);
+  const current=api.activeTab().view.webContents;
+  current.sendInputEvent({type:'keyUp',keyCode:'Tab',modifiers:shift?['control','shift']:['control']});
+  assert(current.isFocused(),'tab cycling retains native keyboard focus after sidebar reparenting');
+ };
+ await cycle(false);await cycle(false);await cycle(true);await cycle(true);
+ api.closeOverlay(false);await pause(260);
+ assert(api.activeTab().view.webContents.isFocused(),'sidebar hide completion preserves page focus');
+ await cycle(false);
+ console.log('PASS: repeated Ctrl+Tab and Ctrl+Shift+Tab retain focus without page clicks.');
+ api.openOverlay({kind:'main'});await pause(100);api.layout();
+ assert(w.ui.webContents.isFocused(),'menu retains UI keyboard focus during layout');
+ api.closeOverlay();assert(api.activeTab().view.webContents.isFocused(),'closing menu restores page focus');
+ console.log('PASS: layout preserves UI menu focus and menu dismissal restores the page.');app.exit(0);
 })().catch(error=>{console.error(error);app.exit(1)});
