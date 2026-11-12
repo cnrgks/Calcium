@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-M+7boI8dfTY2xYX4c1VORwVqxb6IrPWgD09JnyrvoGw=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-uqMPFDjxfmDpMeDaZVBz1ph+HirevKBc077i6k0oMcc='; style-src 'unsafe-inline'; img-src https: http: data: crx: chrome-extension:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-M+7boI8dfTY2xYX4c1VORwVqxb6IrPWgD09JnyrvoGw=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-+61I0q0E19x62Lk6uzVImhBpxEniekXKLVgg9kFjdaw='; style-src 'unsafe-inline'; img-src https: http: data: crx: chrome-extension:">
 <script src="i18n.js" integrity="sha256-M+7boI8dfTY2xYX4c1VORwVqxb6IrPWgD09JnyrvoGw="></script><script src="browser-font.js" integrity="sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c="></script>
 <title>Calcium</title>
 <style>
@@ -1441,6 +1441,7 @@ $('newtabPrompt').querySelector('form').onsubmit = (e) => { e.preventDefault(); 
 $('newtabPrompt').onmousedown = (e) => { if (e.target === $('newtabPrompt')) send('newtab-cancel'); };
 $('newtabQuery').onkeydown = (e) => { if(expandTextInput($('newtabQuery'),e))return; if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && promptRows.length) { e.preventDefault(); selectPromptResult(promptSelected+(e.key==='ArrowDown'?1:-1),true); } else if (e.key === 'Escape') { e.preventDefault(); send('newtab-cancel'); } };
 browserApi.onMenuClosed((d) => {
+  if(d.releaseSideFocus && $('side').contains(document.activeElement)) document.activeElement.blur();
   $('newtabPrompt').hidden = !d.resumeSearch;
   if (menu || chooser) { menu = null; chooser = null; pop.hidden = true; pop.replaceChildren(); }
   if (!sug.hidden) { sug.hidden = true; sug.replaceChildren(); sugRows = []; }

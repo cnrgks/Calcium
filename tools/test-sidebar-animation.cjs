@@ -4,7 +4,7 @@ const profile=process.env.CALCIUM_PROFILE;if(!profile)throw Error('Use run-elect
 process.env.CALCIUM_TEST_MODE='1';process.env.CALCIUM_TEST_DISPLAY='0';app.disableHardwareAcceleration();
 fs.writeFileSync(path.join(profile,'ayarlar.json'),JSON.stringify({firstRunDone:true,language:'tr',verticalTabs:true,verticalAutoHide:true}));
 const entry=path.resolve(__dirname,'..','main.js'),m=new Module(entry,module);m.filename=entry;m.paths=Module._nodeModulePaths(path.dirname(entry));
-m._compile(fs.readFileSync(entry,'utf8')+'\nmodule.exports.test={ready:mainBlockReady,windows:()=>windows,openSide,closeOverlay,newTab,activeTab,layout,openOverlay};',entry);
+m._compile(fs.readFileSync(entry,'utf8')+'\nmodule.exports.test={ready:mainBlockReady,windows:()=>windows,openSide,closeOverlay,newTab,activeTab,layout,openOverlay,sleepTabSelection};',entry);
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 const until=async fn=>{for(let i=0;i<100;i++){if(await fn())return;await pause(50);}throw Error('Sidebar animation timeout');};
 (async()=>{
@@ -54,5 +54,28 @@ const until=async fn=>{for(let i=0;i<100;i++){if(await fn())return;await pause(5
  api.openOverlay({kind:'main'});await pause(100);api.layout();
  assert(w.ui.webContents.isFocused(),'menu retains UI keyboard focus during layout');
  api.closeOverlay();assert(api.activeTab().view.webContents.isFocused(),'closing menu restores page focus');
- console.log('PASS: layout preserves UI menu focus and menu dismissal restores the page.');app.exit(0);
+ console.log('PASS: layout preserves UI menu focus and menu dismissal restores the page.');
+ const sleepy=api.newTab('about:blank');await until(()=>!sleepy.view.webContents.isLoading());
+ const {screen}=require('electron'),cursor=screen.getCursorScreenPoint;
+ let cursorInside=true;
+ screen.getCursorScreenPoint=()=>{const b=w.win.getContentBounds();return {x:b.x+(cursorInside?40:b.width-40),y:b.y+180};};
+ try {
+ await pause(260);api.openSide();w.sideHoldUntil=Date.now()+5000;
+ await until(()=>w.ui.webContents.executeJavaScript('document.body.classList.contains("reveal")'));
+ await w.ui.webContents.executeJavaScript('document.querySelector("#snew").focus()');
+ w.ui.webContents.focus();await until(()=>w.sideKeyboardFocus);
+ api.sleepTabSelection([sleepy.id]);
+ assert(!sleepy.view,'selected active tab is asleep');
+ assert.notEqual(api.activeTab(),sleepy,'another tab is active');
+ assert.deepEqual(w.selectedTabIds,[api.activeTab().id],'selection follows active tab after sleep');
+ await pause(300);
+ assert(!w.sideKeyboardFocus,'sleep releases sidebar keyboard hold');
+ assert(await w.ui.webContents.executeJavaScript('document.body.classList.contains("reveal")'),'sidebar stays open while cursor remains inside after sleep');
+ assert(api.activeTab().view.webContents.isFocused(),'awake page receives keyboard focus');
+ cursorInside=false;await pause(100);
+ assert(await w.ui.webContents.executeJavaScript('document.body.classList.contains("reveal")'),'leaving the sidebar preserves normal dismissal delay');
+ await until(()=>w.ui.webContents.executeJavaScript('!document.body.classList.contains("reveal")'));
+ assert(!w.sideKeyboardFocus,'sidebar keyboard hold does not return');
+ } finally {screen.getCursorScreenPoint=cursor;}
+ console.log('PASS: sleeping a tab releases sidebar focus and preserves normal cursor-based dismissal timing.');app.exit(0);
 })().catch(error=>{console.error(error);app.exit(1)});

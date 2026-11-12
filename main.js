@@ -1635,7 +1635,13 @@ function sleepTabSelection(ids) {
     if (next) activateTab(next.id); else newTab(newtabUrl());
   }
   for (const tab of group) sleepTab(tab.id);
-  W.selectedTabIds = group.map(t => t.id);
+  // Sleeping tabs should not retain the sidebar's selection/keyboard focus.
+  W.selectedTabIds = activeId == null ? [] : [activeId];
+  W.tabSelectionAnchor = activeId;
+  W.sideKeyboardFocus = false;
+  W.sideHoldUntil = Date.now() + 250;
+  send('menu-closed', {refocus:false,releaseSideFocus:true});
+  withActive(wc => wc.focus());
   pushState();
 }
 function sleepTab(id) {

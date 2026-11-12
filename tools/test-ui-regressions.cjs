@@ -110,6 +110,8 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));const until=async fn=>{for(let 
 
  const sameSite=api.newTab('https://example.com/unselected-same-site',true);
  api.sleepTabSelection(vault.map(t=>t.id));assert(vault.every(t=>!t.view));const activeBeforeWake=api.activeTab();
+ assert.deepEqual(w.selectedTabIds,[activeBeforeWake.id],'sleeping tabs release selection to the active page');
+ w.selectedTabIds=vault.map(t=>t.id);w.tabSelectionAnchor=vault[0].id;
  exclusionMenu(vault[1].id,bulkExclusionLabel,false);
  assert(vault.every(t=>t.autoSleepExcluded===true&&t.view&&!t.pendingNavigation),'only selected sleeping tabs wake and stay protected');
  assert.equal(api.activeTab(),activeBeforeWake,'waking selected tabs preserves active tab');
