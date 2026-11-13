@@ -9,6 +9,7 @@ if (/^(https?:|file:|about:)$/.test(location.protocol)) {
   window[installed]=true;
   const start = () => {
     const entries = new Map();
+    const transitions = new Map();
     let pending = false;
     const schedule = () => { if (!pending) { pending = true; requestAnimationFrame(update); } };
     const isOverlay = node => node?.hasAttribute?.('data-calcium-scrollbar') || node?.hasAttribute?.('data-calcium-scrollbar-horizontal');
@@ -41,6 +42,12 @@ if (/^(https?:|file:|about:)$/.test(location.protocol)) {
       entries.set(target, entry); document.documentElement.append(host);
       const horizontal=document.createElement('div');horizontal.setAttribute('data-calcium-scrollbar-horizontal','');horizontal.style.cssText='all:initial!important;position:fixed!important;z-index:2147483647!important;height:10px!important;pointer-events:none!important;';
       const hs=horizontal.attachShadow({mode:'closed'}),ht=document.createElement('div'),hb=document.createElement('div'),hc=new CSSStyleSheet();hc.replaceSync('.track{position:absolute;inset:0;pointer-events:auto;touch-action:none}.thumb{position:absolute;bottom:1px;height:1px;border-radius:4px;background:#808080;opacity:.7;transition:height .12s}.track:hover .thumb,.track.drag .thumb{height:4px;opacity:1}');hs.adoptedStyleSheets=[hc];ht.className='track';hb.className='thumb';ht.append(hb);hs.append(ht);document.documentElement.append(horizontal);Object.assign(entry,{horizontal,ht,hb});ht.tabIndex=0;ht.setAttribute('role','scrollbar');ht.setAttribute('aria-label','Scroll');ht.setAttribute('aria-orientation','horizontal');ht.setAttribute('aria-valuemin','0');
+      // Browser drawer scrollbars share the drawer's compositor transform.
+      // Detached fixed overlays otherwise lag native clipping during the slide.
+      if(location.protocol==='file:' && /\/ui\.html$/.test(location.pathname) && ['vtabs','pinnedtabs'].includes(target.id)) {
+        const parent=target.closest('#side');
+          if(parent){entry.localParent=parent;for(const overlay of [host,horizontal]){overlay.style.setProperty('position','absolute','important');overlay.style.setProperty('-webkit-app-region','no-drag','important');parent.append(overlay);}}
+      }
       let hdrag=null;const hscroll=x=>{target.scrollTo({left:Math.max(0,Math.min(entry.hmax,x)),behavior:'instant'});schedule();};ht.addEventListener('pointerdown',event=>{if(event.button!==0)return;event.preventDefault();ht.setPointerCapture(event.pointerId);const offset=event.clientX-entry.left,current=target.scrollLeft/entry.hmax*(entry.width-entry.thumbWidth);if(offset<current||offset>current+entry.thumbWidth)hscroll((offset-entry.thumbWidth/2)/Math.max(1,entry.width-entry.thumbWidth)*entry.hmax);hdrag={x:event.clientX,scroll:target.scrollLeft};ht.classList.add('drag');});ht.addEventListener('pointermove',event=>{if(hdrag)hscroll(hdrag.scroll+(event.clientX-hdrag.x)/Math.max(1,entry.width-entry.thumbWidth)*entry.hmax);});const hstop=()=>{hdrag=null;ht.classList.remove('drag');};ht.addEventListener('pointerup',hstop);ht.addEventListener('lostpointercapture',hstop);ht.addEventListener('keydown',event=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();hscroll(event.key==='Home'?0:event.key==='End'?entry.hmax:target.scrollLeft+(event.key==='ArrowLeft'?-40:40));}});
       const scrollTo = y => { target.scrollTo({top:Math.max(0,Math.min(entry.max,y)),behavior:'instant'}); schedule(); };
       track.addEventListener('pointerdown', e => {
@@ -77,12 +84,23 @@ if (/^(https?:|file:|about:)$/.test(location.protocol)) {
         e.horizontal.style.setProperty('display',horizontalVisible?'block':'none','important');e.horizontal.style.setProperty('left',left+'px','important');e.horizontal.style.setProperty('top',(bottom-10)+'px','important');e.horizontal.style.setProperty('width',visibleWidth+'px','important');e.hb.style.width=e.thumbWidth+'px';e.hb.style.left=(e.hmax>0?Math.max(0,target.scrollLeft)/e.hmax*(visibleWidth-e.thumbWidth):0)+'px';e.ht.setAttribute('aria-valuemax',String(Math.max(0,e.hmax)));e.ht.setAttribute('aria-valuenow',String(target.scrollLeft));
         if(max<=1)continue;
         const top=Math.max(0,r.top),visibleHeight=Math.min(height,innerHeight-top);
-        if(!root&&visibleHeight>0&&covered(target,false,top,Math.min(innerWidth,r.right)-2,visibleHeight))e.host.style.setProperty('display','none','important');
+        if(!root&&!e.localParent&&visibleHeight>0&&covered(target,false,top,Math.min(innerWidth,r.right)-2,visibleHeight))e.host.style.setProperty('display','none','important');
         e.top=top;e.height=visibleHeight;e.max=max;e.thumbHeight=Math.min(visibleHeight,Math.max(24,visibleHeight*height/target.scrollHeight));
         e.host.style.setProperty('top',top+'px','important');e.host.style.setProperty('right',Math.max(0,innerWidth-r.right)+'px','important');e.host.style.setProperty('height',visibleHeight+'px','important');
         e.thumb.style.height=e.thumbHeight+'px';e.thumb.style.top=Math.max(0,target.scrollTop)/max*(visibleHeight-e.thumbHeight)+'px';
         e.track.setAttribute('aria-valuemax',String(Math.round(max)));e.track.setAttribute('aria-valuenow',String(Math.round(target.scrollTop)));
+        if(e.localParent){
+          const parent=e.localParent.getBoundingClientRect();
+          e.host.style.setProperty('top',(r.top-parent.top)+'px','important');
+          e.host.style.setProperty('right',(parent.right-r.right)+'px','important');
+          e.horizontal.style.setProperty('left',(r.left-parent.left)+'px','important');
+          e.horizontal.style.setProperty('top',(r.bottom-parent.top-10)+'px','important');
+        }
       }
+      // Transforms move panels without resizing them or mutating their DOM.
+      // Keep the detached overlays aligned on every painted transition frame.
+      for (const target of transitions.keys()) if (!target.isConnected) transitions.delete(target);
+      if (transitions.size) schedule();
     }
     // Recheck occlusion when a site opens/closes a popup, including keyboard
     // suggestions. Ignore our own geometry writes to avoid a feedback loop.
@@ -94,7 +112,20 @@ if (/^(https?:|file:|about:)$/.test(location.protocol)) {
     document.addEventListener('pointerover',discover,{capture:true,passive:true});document.addEventListener('wheel',discover,{capture:true,passive:true});document.addEventListener('focusin',discover,true);
     window.addEventListener('load',schedule,true);
     observer.observe(document.documentElement);if(document.body)observer.observe(document.body);
-    window.addEventListener('scroll',schedule,{passive:true});window.addEventListener('resize',schedule);document.addEventListener('transitionend',schedule,true);
+    const transition = event => {
+      if (isOverlay(event.target) || ![...entries.keys()].some(target => event.target === target || event.target.contains(target))) return;
+      if (event.type === 'transitionrun') {
+        if (!transitions.has(event.target)) transitions.set(event.target, new Set());
+        transitions.get(event.target).add(event.propertyName);
+      } else {
+        const properties = transitions.get(event.target);
+        properties?.delete(event.propertyName);
+        if (!properties?.size) transitions.delete(event.target);
+      }
+      schedule();
+    };
+    window.addEventListener('scroll',schedule,{passive:true});window.addEventListener('resize',schedule);
+    for (const type of ['transitionrun','transitionend','transitioncancel']) document.addEventListener(type,transition,true);
     update();
   };
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();

@@ -17,11 +17,15 @@ const until=async fn=>{for(let i=0;i<100;i++){if(await fn())return;await pause(5
  w.ui.webContents.debugger.attach('1.3');
  await w.ui.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});
  // Keep cursor dismissal from racing the animation assertions.
+ for(let i=0;i<35;i++)api.newTab('about:blank',true);
+ await until(()=>w.ui.webContents.executeJavaScript('document.querySelector("#vtabs").scrollHeight>document.querySelector("#vtabs").clientHeight'));
  w.sideKeyboardFocus=true;
  wc.focus();const viewport=tab.view.getBounds();api.openSide();w.sideHoldUntil=Date.now()+5000;
  assert(wc.isFocused(),'opening the sidebar preserves native page focus');
  assert.equal(w.sidePageClip.getBounds().x,8,'opening does not cut out the final sidebar width in advance');
  await until(()=>w.sidePageClip.getBounds().x>8);
+ const barFrames=await w.ui.webContents.executeJavaScript(`(async()=>{const samples=[];for(let i=0;i<5;i++){await new Promise(requestAnimationFrame);const panel=document.querySelector('#vtabs'),bar=panel.parentElement.querySelector('[data-calcium-scrollbar="panel"]'),r=panel.getBoundingClientRect();if(r.right>18&&r.right<230)samples.push({visible:bar&&getComputedStyle(bar).display!=='none',delta:bar?Math.abs(bar.getBoundingClientRect().right-r.right):999,parent:bar?.parentElement.id});}return samples})()`);
+ assert(barFrames.length&&barFrames.every(s=>s.visible&&s.delta<2&&s.parent==='side'),JSON.stringify(barFrames));
  await pause(260);
  const openWidth=w.sidePageClip.getBounds().x;
  assert(openWidth>8,JSON.stringify(await w.ui.webContents.executeJavaScript('({classes:document.body.className,right:document.querySelector("#side").getBoundingClientRect().right,stateOpen:state?.sideOpen,frame:sideAnimationFrame})')));
@@ -33,7 +37,10 @@ const until=async fn=>{for(let i=0;i<100;i++){if(await fn())return;await pause(5
  const closingWidth=w.sidePageClip.getBounds().x;
  assert(closingWidth<openWidth&&closingWidth>8,'closing uncovers the page progressively');
  assert(w.sidePageClip.children.includes(tab.view),'page remains interactive during closing');
- await pause(200);assert.equal(w.sidePageClip.children.length,0);assert.deepEqual(tab.view.getBounds(),viewport);
+ api.openSide();assert(!w.sideClosing,'closing animation can reverse immediately');
+ await until(()=>w.ui.webContents.executeJavaScript('document.body.classList.contains("reveal")'));
+ await pause(250);api.closeOverlay(false);
+ await until(()=>!w.sideClosing);assert.equal(w.sidePageClip.children.length,0);assert.deepEqual(tab.view.getBounds(),viewport);
  console.log('PASS: sidebar clipping follows animation, preserves viewport and keeps uncovered page interactive.');
  const other=api.newTab('about:blank');await until(()=>!other.view.webContents.isLoading());
  w.win.focus();other.view.webContents.focus();

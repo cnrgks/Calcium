@@ -50,7 +50,7 @@ jobs:
         run: node tools/run-electron-tests.cjs test-private-window-mode.cjs test-tab-lifecycle.cjs test-scrollbar.cjs test-background-tabs.cjs test-ui-regressions.cjs test-sidebar-animation.cjs test-extension-compat.cjs
       - name: Built-in tab archive regressions
         timeout-minutes: 5
-        run: node tools/run-electron-tests.cjs test-saved-tabs-electron.cjs test-saved-tabs-ordering-electron.cjs
+        run: node tools/run-electron-tests.cjs test-saved-tabs-electron.cjs test-saved-tabs-ordering-electron.cjs test-private-vault.cjs test-hover-media.cjs
       - name: Package
         run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
         env:

@@ -1,0 +1,53 @@
+'use strict';
+const {app,screen}=require('electron'),fs=require('fs'),path=require('path'),Module=require('module'),assert=require('assert'),http=require('http');
+const profile=process.env.CALCIUM_PROFILE;if(!profile)throw Error('Use run-electron-tests');
+process.env.CALCIUM_TEST_MODE='1';process.env.CALCIUM_TEST_DISPLAY='0';app.disableHardwareAcceleration();
+fs.writeFileSync(path.join(profile,'ayarlar.json'),JSON.stringify({firstRunDone:true,language:'tr',savedTabsEnabled:true,pitchBlack:true,theme:'acik'}));
+const entry=path.resolve(__dirname,'..','main.js'),m=new Module(entry,module);m.filename=entry;m.paths=Module._nodeModulePaths(path.dirname(entry));
+m._compile(fs.readFileSync(entry,'utf8')+'\nmodule.exports.test={ready:mainBlockReady,windows:()=>windows,createWindow,newTab,inWin,tabArchive,showSavedTabsPopup,sendTabsToVault,settings,applyTheme,pageData};',entry);
+const pause=ms=>new Promise(r=>setTimeout(r,ms)),until=async fn=>{for(let i=0;i<200;i++){if(await fn())return;await pause(30);}throw Error('Private vault timeout');};
+(async()=>{
+ await app.whenReady();const api=m.exports.test;await api.ready;await until(()=>api.windows()[0]?.tabs.length);const normal=api.windows()[0];
+ const server=http.createServer((_q,r)=>{r.setHeader('Content-Type','text/html');r.end('<title>Vault test</title>');});await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const base='http://127.0.0.1:'+server.address().port;
+ const gid=api.tabArchive().store([{url:base+'/one',title:'One'},{url:base+'/two',title:'Two'},{url:base+'/three',title:'Three'}],'Private test');
+ const vault=api.inWin(normal,()=>api.newTab(require('url').pathToFileURL(path.resolve('saved-tabs.html')).href));
+ await until(()=>vault.view&&!vault.view.webContents.isLoading());const wc=vault.view.webContents;
+ await until(()=>wc.executeJavaScript('!!document.querySelector(".incognito-button")'));
+ assert(await wc.executeJavaScript('document.querySelector(".trash-button").nextElementSibling.classList.contains("incognito-button")'),'incognito follows trash');
+ await wc.executeJavaScript('document.querySelector("#groups .row a").dispatchEvent(new MouseEvent("click",{bubbles:true,ctrlKey:true}));document.querySelector(".incognito-button").click()');
+ await until(()=>api.windows().some(w=>w.incognito&&w.tabs.length===1));let privateWindow=api.windows().find(w=>w.incognito);
+ assert.equal(privateWindow.tabs[0].url,base+'/one');assert(privateWindow.tabs[0].view);
+ await until(()=>privateWindow.ui.webContents.executeJavaScript('typeof state!=="undefined" && !!state'));
+ assert.equal(await privateWindow.ui.webContents.executeJavaScript('state.theme.frame'),'#000000','private frame is pitch black even with a light normal theme');
+ assert.equal(api.inWin(privateWindow,()=>api.pageData().theme.page),'#000000');
+ assert.equal(await privateWindow.ui.webContents.executeJavaScript('document.querySelector("#savedTabs").hidden'),false,'private toolbar has vault');
+ api.settings.pitchBlack=false;api.applyTheme();await until(()=>privateWindow.ui.webContents.executeJavaScript('state.theme.frame==="#202124"'));
+ api.settings.pitchBlack=true;api.applyTheme();await until(()=>privateWindow.ui.webContents.executeJavaScript('state.theme.frame==="#000000"'));
+ // Saving the sole private tab persists it before closing its window.
+ const sourceId=privateWindow.tabs[0].id;api.inWin(privateWindow,()=>api.sendTabsToVault([sourceId]));
+ await until(()=>!api.windows().includes(privateWindow));
+ assert(api.tabArchive().data.groups.some(g=>!g.deleted&&g.tabs.some(t=>t.url===base+'/one')),'private URL is shared with normal vault');
+ const disk=JSON.parse(fs.readFileSync(path.join(profile,'saved-tabs.json'),'utf8'));assert(disk.groups.some(g=>!g.deleted&&g.tabs.some(t=>t.url===base+'/one')),'private save is durable');
+ await until(()=>wc.executeJavaScript('!busy && !!document.querySelector(`[data-group-id="'+gid+'"] .incognito-button`)'));
+ await wc.executeJavaScript('document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));document.querySelector(`[data-group-id="'+gid+'"] .incognito-button`).click()');
+ await until(()=>api.windows().some(w=>w.incognito&&w.tabs.length===2));privateWindow=api.windows().find(w=>w.incognito);
+ assert.deepEqual(privateWindow.tabs.map(t=>t.url),[base+'/two',base+'/three'],'no selection opens remaining whole group');
+ assert(privateWindow.tabs.every(t=>!t.view||t.view.webContents.session===privateWindow.ses),'restored pages use private session');
+ // Embedded popup works in private mode; partial save leaves window open.
+ api.inWin(privateWindow,()=>api.showSavedTabsPopup());await until(()=>privateWindow.savedTabsView?.archiveReady&&privateWindow.savedTabsView.getVisible());
+ const popup=privateWindow.savedTabsView.webContents;
+ const response=await popup.executeJavaScript('savedApi.call("store",{ids:['+privateWindow.tabs[0].id+'],showList:false})');assert(response.ok);assert(api.windows().includes(privateWindow));assert.equal(privateWindow.tabs.length,1);
+ // Even with show-list enabled, moving every remaining tab closes private window.
+ await popup.executeJavaScript('savedApi.call("store",{ids:['+privateWindow.tabs[0].id+'],showList:true})').catch(()=>{});
+ await until(()=>!api.windows().includes(privateWindow));
+ assert(api.tabArchive().data.groups.filter(g=>!g.deleted).flatMap(g=>g.tabs).some(t=>t.url===base+'/three'));
+ await until(()=>wc.executeJavaScript('document.querySelectorAll("#groups .row").length>=3'));
+ const bulk=api.createWindow({incognito:true});api.inWin(bulk,()=>{for(let i=0;i<60;i++)api.newTab(base+'/bulk/'+i,i>0);api.showSavedTabsPopup();});
+ await until(()=>bulk.savedTabsView?.archiveReady&&bulk.savedTabsView.getVisible());
+ const bulkView=bulk.savedTabsView;
+ assert(bulkView.getBounds().height<=Math.floor(screen.getDisplayMatching(bulk.win.getBounds()).workArea.height/3),'popup height capped at third of work area');
+ const layout=await bulkView.webContents.executeJavaScript('(()=>{const list=document.querySelector("#openTabs"),footer=document.querySelector(".capture-footer").getBoundingClientRect(),head=document.querySelector(".selection-head").getBoundingClientRect();list.scrollTop=200;return {scrollable:list.scrollHeight>list.clientHeight,footer:footer.bottom<=innerHeight,head:head.top>=0,count:document.querySelectorAll("#openTabs input").length};})()');
+ assert(layout.scrollable&&layout.footer&&layout.head&&layout.count===60,JSON.stringify(layout));
+ server.close();console.log('PASS: shared private vault, selected/all incognito restore, private popup capture, window closure and pitch-black theme.');app.exit(0);
+})().catch(e=>{console.error(e);app.exit(1)});

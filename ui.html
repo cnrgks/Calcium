@@ -2,8 +2,8 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-M+7boI8dfTY2xYX4c1VORwVqxb6IrPWgD09JnyrvoGw=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-+61I0q0E19x62Lk6uzVImhBpxEniekXKLVgg9kFjdaw='; style-src 'unsafe-inline'; img-src https: http: data: crx: chrome-extension:">
-<script src="i18n.js" integrity="sha256-M+7boI8dfTY2xYX4c1VORwVqxb6IrPWgD09JnyrvoGw="></script><script src="browser-font.js" integrity="sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c="></script>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-oB5a/5/pa04wqam9EmiTSDOqnsYmWuQ9S1/+0BLJZvo=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-WRImAy8TiFrBkNamnMEx4xkMEACmks3qrJzA5l50cdo='; style-src 'unsafe-inline'; img-src https: http: data: crx: chrome-extension:">
+<script src="i18n.js" integrity="sha256-oB5a/5/pa04wqam9EmiTSDOqnsYmWuQ9S1/+0BLJZvo="></script><script src="browser-font.js" integrity="sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c="></script>
 <title>Calcium</title>
 <style>
   :root {
@@ -858,7 +858,7 @@ function render(s) {
     fitPinnedArea();
   }
   $('back').disabled = !s.canBack;
-  $('savedTabs').hidden = !s.savedTabsEnabled || s.incognito;
+  $('savedTabs').hidden = !s.savedTabsEnabled;
   $('fwd').disabled = !s.canForward;
   $('reload').innerHTML = s.loading ? I.stop : I.reload;
   $('reload').title = s.loading ? 'Bu sayfanın yüklenmesini durdur' : 'Yeniden yükle (Ctrl+R)';
@@ -947,7 +947,9 @@ window.addEventListener('mousemove', (e) => {
   }
 
 });
-$('sideRail').addEventListener('pointerenter',()=>{if(state?.vertical&&state.autoHide&&!document.body.classList.contains('reveal'))send('side-reveal');});
+const revealSideFromRail=()=>{if(state?.vertical&&state.autoHide&&!document.body.classList.contains('reveal'))send('side-reveal');};
+$('sideRail').addEventListener('pointerenter',revealSideFromRail);
+$('sideRail').addEventListener('pointermove',revealSideFromRail);
 window.addEventListener('mouseup', () => {
   if (!sizing) return;
   sizing = false;

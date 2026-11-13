@@ -730,6 +730,8 @@
 
   Object.assign(EN, {
   "Sekmeyi uyut": "Sleep tab",
+  "Tümünü gizli pencerede aç": "Open all in an incognito window",
+  "Seçilenleri gizli pencerede aç": "Open selected in an incognito window",
   "Bu siteyi çerez temizliğinden koru": "Protect this site from cookie clearing",
   "Bu sitedeki sekmeleri açık tut.": "Keep tabs from this site awake.",
   "Çerezleri temizlerken bu sitedeki oturumunu koru.": "Keep this site signed in when clearing cookies.",

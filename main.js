@@ -494,11 +494,11 @@ function sendTabToVault(id,now=Date.now()){
  return sendTabsToVault([id],now);
 }
 function sendTabsToVault(ids,now=Date.now()){
- if(!settings.savedTabsEnabled||W.incognito)return;
+ if(!settings.savedTabsEnabled)return;
  const chosen=new Set(ids),selected=tabs.filter(t=>chosen.has(t.id)&&require('./saved-tabs').validUrl(t.url));if(!selected.length)return;
  const store=tabArchive(),destination=quickSavedGroup&&now<quickSavedGroup.expires&&store.data.groups.some(g=>g.id===quickSavedGroup.id&&!g.deleted)?quickSavedGroup.id:undefined;
  const groupId=store.store(selected,'',destination);quickSavedGroup={id:groupId,expires:now+60000};
- if(selected.length===tabs.length)newTab(newtabUrl());
+ if(!W.incognito&&selected.length===tabs.length)newTab(newtabUrl());
  for(const tab of selected)closeTab(tab.id);
 }
 function closeSavedTabsPopup(owner){
@@ -511,7 +511,7 @@ function disposeSavedTabsPopup(owner){
 }
 function raiseSavedTabsPopup(owner){const view=owner?.savedTabsView;if(view&&savedTabPopups.has(view)&&view.archiveReady&&!view.webContents.isDestroyed()&&owner.win&&!owner.win.isDestroyed()&&owner.win.contentView.children.at(-1)!==view)owner.win.contentView.addChildView(view);}
 function prepareSavedTabsPopup(owner){
- if(!settings.savedTabsEnabled||!owner||owner.incognito||owner.savedTabsView||!owner.win||owner.win.isDestroyed())return owner?.savedTabsView;
+ if(!settings.savedTabsEnabled||!owner||owner.savedTabsView||!owner.win||owner.win.isDestroyed())return owner?.savedTabsView;
  const view=owner.savedTabsView=new WebContentsView({webPreferences:{session:owner.ses,preload:path.join(__dirname,'saved-tabs-preload.js'),sandbox:true,contextIsolation:true,nodeIntegration:false}});
  view.hostWindow=owner.win;view.setVisible(false);view.setBackgroundColor(inWin(owner,()=>effectiveTheme().page));view.setBounds({x:0,y:0,width:800,height:400});owner.win.contentView.addChildView(view);
  view.dismiss=()=>closeSavedTabsPopup(owner);view.dispose=()=>disposeSavedTabsPopup(owner);
@@ -519,14 +519,18 @@ function prepareSavedTabsPopup(owner){
  view.webContents.setWindowOpenHandler(()=>({action:'deny'}));view.webContents.on('will-navigate',e=>e.preventDefault());
  view.webContents.loadURL(SAVED_TABS_URL+'?popup=1&width=800&height=400');return view;
 }
+function savedTabsPopupMaxHeight(owner,top){
+ const display=screen.getDisplayMatching(owner.win.getBounds());
+ return Math.max(1,Math.min(Math.floor(display.workArea.height/3),owner.win.getContentBounds().height-top-8));
+}
 function showSavedTabsPopup(anchor){
- if(!settings.savedTabsEnabled||W.incognito)return;
+ if(!settings.savedTabsEnabled)return;
  const owner=W,view=prepareSavedTabsPopup(owner);if(savedTabPopups.has(view)){closeSavedTabsPopup(owner);return;}
  const {width,height}=win.getContentBounds(),zoom=ui.webContents.getZoomFactor();
  const panelWidth=Math.min(800,width-16),top=Math.max(8,Math.min(height-100,Math.round((Number(anchor?.y)||TOOLBAR)*zoom)));
  const left=Math.max(8,Math.min(width-panelWidth-8,Math.round((Number(anchor?.x)||width/zoom)*zoom)+34-panelWidth));
  const count=tabs.filter(t=>!t.pinned&&require('./saved-tabs').validUrl(t.url)).length;
- view.setBounds({x:left,y:top,width:panelWidth,height:Math.min(Math.max(372,152+count*34),height-top-8)});view.setBackgroundColor(effectiveTheme().page);
+ view.setBounds({x:left,y:top,width:panelWidth,height:Math.min(Math.max(200,152+count*34),savedTabsPopupMaxHeight(owner,top))});view.setBackgroundColor(effectiveTheme().page);
  savedTabPopups.set(view,owner);view.pendingOpen=true;
  if(view.archiveReady)view.webContents.send('saved-popup-open');
 }
@@ -536,12 +540,11 @@ ipcMain.handle('saved-tabs',(e,cmd,arg={})=>{
  const owner=popup?savedTabPopups.get(popup):cached||winOfWc(e.sender);
  if(e.senderFrame!==e.sender.mainFrame||baseOf(e.senderFrame.url)!==SAVED_TABS_URL)throw Error('izin yok');
  if(!owner)return {error:'Sekme Kasası kapandı.'};
- if(owner.incognito)throw Error('izin yok');
  if(!settings.savedTabsEnabled)return {error:T('Sekme Kasası kapalı. Ayarlar → Araçlar bölümünden açabilirsiniz.')};
  return inWin(owner,()=>{try{
  const store=tabArchive(),eligible=t=>!t.pinned&&require('./saved-tabs').validUrl(t.url);
  if(cmd==='ready'){const view=owner.savedTabsView;if(view?.webContents===e.sender){view.archiveReady=true;if(view.pendingOpen)view.webContents.send('saved-popup-open');}return {ok:true};}
- if(cmd==='present'){if(popup?.pendingOpen){const bounds=popup.getBounds(),available=owner.win.getContentBounds().height-bounds.y-8;const desired=Number(arg.height);if(Number.isFinite(desired)&&desired>0)popup.setBounds({...bounds,height:Math.max(1,Math.min(Math.max(372,Math.ceil(desired)),available))});popup.pendingOpen=false;raiseSavedTabsPopup(owner);popup.setVisible(true);popup.webContents.focus();}return {ok:true};}
+ if(cmd==='present'){if(popup?.pendingOpen){const bounds=popup.getBounds(),available=savedTabsPopupMaxHeight(owner,bounds.y);const desired=Number(arg.height);if(Number.isFinite(desired)&&desired>0)popup.setBounds({...bounds,height:Math.max(1,Math.min(Math.max(200,Math.ceil(desired)),available))});popup.pendingOpen=false;raiseSavedTabsPopup(owner);popup.setVisible(true);popup.webContents.focus();}return {ok:true};}
  if(cmd==='set-show-list'){if(typeof arg!=='boolean')throw Error('Geçersiz tercih.');settings.savedTabsShowList=arg;saveSettings(true);return {ok:true};}
  if(cmd==='close'){if(popup)setTimeout(()=>closeSavedTabsPopup(owner),0);return {ok:true};}
  if(cmd==='get')return {theme:effectiveTheme(),font:uiFontFamily(settings.uiFont),showList:settings.savedTabsShowList!==false,groups:store.data.groups,open:tabs.filter(eligible).map(t=>({id:t.id,title:t.title,url:t.url})),activeId};
@@ -550,8 +553,9 @@ ipcMain.handle('saved-tabs',(e,cmd,arg={})=>{
   const ids=new Set(Array.isArray(arg.ids)?arg.ids:[]),selected=tabs.filter(t=>ids.has(t.id)&&eligible(t));
   store.store(selected,arg.name,arg.destination);
   const showList=typeof arg.showList==='boolean'?arg.showList:settings.savedTabsShowList!==false;
-  if(showList)openPage(SAVED_TABS_URL);
-  if(tabs.every(t=>selected.includes(t)))newTab(newtabUrl());
+  const closingPrivate=owner.incognito&&tabs.every(t=>selected.includes(t));
+  if(showList&&!closingPrivate)openPage(SAVED_TABS_URL);
+  if(!owner.incognito&&tabs.every(t=>selected.includes(t)))newTab(newtabUrl());
   for(const t of selected)closeTab(t.id);
   if(popup&&showList)setTimeout(()=>closeSavedTabsPopup(owner),100);
   return {ok:true};
@@ -571,8 +575,10 @@ ipcMain.handle('saved-tabs',(e,cmd,arg={})=>{
   const g=store.data.groups.find(g=>g.id===arg.id&&!g.deleted);if(!g)throw Error('Grup bulunamadı.');
   const selectedIds=Array.isArray(arg.tabIds)?new Set(arg.tabIds):null;
   const links=g.tabs.filter(t=>(!selectedIds||selectedIds.has(t.id))&&(!arg.tabId||t.id===arg.tabId)&&require('./saved-tabs').validUrl(t.url));
+  if(!links.length)return {ok:true};
   const opened=[];
-  for(const link of links){const t=newTab(link.url,true);t.title=link.title;opened.push(link.id);}
+  const target=arg.incognito===true?createWindow({incognito:true}):owner;
+  inWin(target,()=>{for(const link of links){const t=newTab(link.url,true);t.title=link.title;opened.push(link.id);}pushState();});
   store.consume(g.id,opened,typeof arg.batch==='string'&&arg.batch.length<=80?e.sender.id+':'+arg.batch:undefined);
   pushState();return {ok:true};
  }
@@ -1174,6 +1180,10 @@ function createView(tab) {
   on('did-start-loading', () => { tab.loading = true; schedulePush(); });
   on('did-stop-loading', () => { tab.loading = false; if (!tab.pendingNavigation) tab.url = wc.getURL() || tab.url; schedulePush(); });
   on('did-start-navigation', (e) => {
+    if (e.isMainFrame && tab.homePlaceholder && !isNewtab(e.url) && e.url !== 'about:blank') {
+      tab.homePlaceholder = false; tab.w.homeTab = null; tabs.push(tab);
+      W.selectedTabIds = [tab.id]; W.tabSelectionAnchor = tab.id;
+    }
     if (e.isMainFrame && !e.isSameDocument) { navigationEpoch.set(wc,(navigationEpoch.get(wc)||0)+1); tab.blocked = 0; tab.favicon = null; tab.iconColor=null; }
   });
   on('did-navigate', (_e, url, code) => { tab.formDirty=false;tab.mediaPermission=false;tab.url = url; if (!code || code < 400) recordVisit(tab, url, wc); pushState(); });
@@ -1287,7 +1297,7 @@ function restoreWindow(data) {
 function openPage(url) {
   if(baseOf(url)===DOWNLOADS_URL){showDownloadsPanel();return;}
   if(baseOf(url)===TASKS_URL){showTaskManager();return;}
-  if (W && W.incognito) {
+  if (W && W.incognito && baseOf(url)!==SAVED_TABS_URL) {
     const n = lastWin(true);
     if (n) { useWin(n); n.win.focus(); } else createWindow();
   }
@@ -1388,9 +1398,14 @@ function newTab(url, background = false, openerId = null, at = -1, requireView =
   return tab;
 }
 
-const getTab = (id) => tabs.find((t) => t.id === id);
+const getTab = (id) => tabs.find((t) => t.id === id) || (W?.homeTab?.id === id ? W.homeTab : undefined);
 const activeTab = () => getTab(activeId);
 const liveTabView = tab => !!tab?.view && !tab.view.webContents.isDestroyed();
+const awakeTab = tab => liveTabView(tab) && !tab.pendingNavigation;
+function showHomePlaceholder() {
+  W.homeTab ||= {id:nextId++,w:W,view:null,url:newtabUrl(),title:'Yeni Sekme',homePlaceholder:true,lastActive:Date.now(),loading:false,blocked:0};
+  activateTab(W.homeTab.id);
+}
 
 function selectedTabIds() {
   const ids = (W?.selectedTabIds || []).filter(id => tabs.some(t => t.id === id));
@@ -1427,7 +1442,7 @@ function activateTab(id, preserveSelection = false) {
   if (!win) return;
   const tab = getTab(id);
   if (!tab || !win) return;
-  if (!preserveSelection) { W.selectedTabIds = [id]; W.tabSelectionAnchor = id; }
+  if (!preserveSelection) { W.selectedTabIds = tab.homePlaceholder ? [] : [id]; W.tabSelectionAnchor = tab.homePlaceholder ? null : id; }
   const prev = activeTab();
   if (prev && prev !== tab) {
     if (htmlFullscreen) leaveFullscreenForChrome();
@@ -1435,6 +1450,7 @@ function activateTab(id, preserveSelection = false) {
     if (prev.view) { try { win.contentView.removeChildView(prev.view); } catch {} }
     if (findOpen) closeFind();
   }
+  if (prev?.homePlaceholder && prev !== tab) { W.homeTab = null; destroyView(prev); }
   activeId = id;
   if (tab.titleRequest) tab.titleRequest.abort();
   tab.lastActive = Date.now();
@@ -1546,7 +1562,7 @@ function revealPinChange() {
 }
 function togglePin(id) {
   const t = getTab(id);
-  if (!t) return;
+  if (!t || t.homePlaceholder || !tabs.includes(t) || (!t.pinned && isNewtab(t.url))) return false;
   t.pinned = !t.pinned;
   if (t.pinned) updateIconColor(t);
   const i = tabs.indexOf(t);
@@ -1554,6 +1570,7 @@ function togglePin(id) {
   const firstFree = tabs.filter((x) => x.pinned).length;
   tabs.splice(firstFree, 0, t);    // pinned: to the end of pinned tabs; unpinned: to the start of unpinned ones
   pushState();
+  return true;
 }
 function toggleMute(id) {
   const t = getTab(id);
@@ -1622,7 +1639,8 @@ function closeTab(id) {
   if (activeId === id) {
     const remaining = (W.selectedTabIds || []).filter(id => tabs.some(t => t.id === id));
     activeId = null;
-    activateTab(remaining[0] ?? tabs[Math.min(i, tabs.length - 1)].id, remaining.length > 0);
+    const next = tabs.find(t => remaining.includes(t.id) && awakeTab(t)) || tabs.slice(i).concat(tabs.slice(0,i).reverse()).find(awakeTab);
+    if (next) activateTab(next.id, remaining.length > 0); else showHomePlaceholder();
   }
   else pushState();
 }
@@ -1631,13 +1649,13 @@ function sleepTabSelection(ids) {
   const chosen = new Set(ids), group = tabs.filter(t => chosen.has(t.id));
   if (!group.some(liveTabView)) return;
   if (chosen.has(activeId)) {
-    const next = tabs.find(t => !chosen.has(t.id));
-    if (next) activateTab(next.id); else newTab(newtabUrl());
+    const next = tabs.find(t => !chosen.has(t.id) && awakeTab(t));
+    if (next) activateTab(next.id); else showHomePlaceholder();
   }
   for (const tab of group) sleepTab(tab.id);
   // Sleeping tabs should not retain the sidebar's selection/keyboard focus.
-  W.selectedTabIds = activeId == null ? [] : [activeId];
-  W.tabSelectionAnchor = activeId;
+  W.selectedTabIds = activeTab()?.homePlaceholder || activeId == null ? [] : [activeId];
+  W.tabSelectionAnchor = W.selectedTabIds[0] ?? null;
   W.sideKeyboardFocus = false;
   W.sideHoldUntil = Date.now() + 250;
   send('menu-closed', {refocus:false,releaseSideFocus:true});
@@ -1649,9 +1667,8 @@ function sleepTab(id) {
   if (!tab || !tab.view) return false;
   useWin(tab.w);
   if (activeId === tab.id) {
-    const next = tabs.find((t) => t !== tab);
-    if (!next) return false;
-    activateTab(next.id);
+    const next = tabs.find((t) => t !== tab && awakeTab(t));
+    if (next) activateTab(next.id); else showHomePlaceholder();
   }
   if (tab.titleRequest) tab.titleRequest.abort();
   if (!tab.pendingNavigation) tab.url = tab.view.webContents.getURL() || tab.url;
@@ -1824,7 +1841,7 @@ function toggleAutoHide() {
 }
 // In auto-hide mode the sidebar opens when the mouse hits the left edge (focus stays on the page)
 function openSide() {
-  if (!win || !ui || !vertical() || !settings.verticalAutoHide || overlayOpen || W.sideClosing) return;
+  if (!win || !ui || !vertical() || !settings.verticalAutoHide || overlayOpen) return;
   clearTimeout(W.sideCloseTimer);
   W.sideClosing = false;
   W.sideVisibleWidth = SIDE_RAIL;
@@ -1880,7 +1897,7 @@ function pushState() {
     activeId,
     selectedTabIds: selectedTabIds(),
     activeWcId: wc ? wc.id : -1,
-    theme: W.incognito ? INCOGNITO_THEME : themeVars(),
+    theme: W.incognito ? incognitoTheme() : themeVars(),
     incognito: !!W.incognito,
     tabAudio: !!settings.tabAudio,
     savedTabsEnabled: !!settings.savedTabsEnabled,
@@ -1968,7 +1985,7 @@ function closeFind() {
 // Suggestions come only from local browsing/search history; private windows never use normal history.
 function omniSuggest(text){return customShortcuts.browsingSuggestions(W.incognito?[]:history,W.incognito?(W.searchHistory||[]):searchHistory,text);}
 function reusableNewTab(){
- return [activeTab(),...tabs].find(tab=>tab&&isNewtab(tab.url));
+ return [activeTab(),...tabs].find(tab=>tab&&!tab.homePlaceholder&&awakeTab(tab)&&isNewtab(tab.url));
 }
 function navigateInput(input,{newTab:makeTab=false,background=false,closePrompt=false,reuseNewtab=false}={}){
  const resolved=customShortcuts.resolveInput(input,{siteCommands:settings.siteCommands,textReplacements:settings.textReplacements,searchUrl:searchUrl()});
@@ -1987,7 +2004,7 @@ function openSearchPrompt(kind = 'newtab', value = '') {
     const tab = reusableNewTab();
     if (tab && tab.id !== activeId) activateTab(tab.id);
   }
-  if (settings.newTabPrompt === false) { if (kind === 'newtab') { if (!isNewtab(activeTab()?.url)) newTab(''); focusUrl(); } return; }
+  if (settings.newTabPrompt === false) { if (kind === 'newtab') { if (activeTab()?.homePlaceholder || !isNewtab(activeTab()?.url)) newTab(''); focusUrl(); } return; }
   if (overlayOpen) closeOverlay(false);
   overlayOpen = true; overlayKind = kind;
   raiseUi(); layout(); ui.webContents.focus();
@@ -2006,7 +2023,7 @@ function openUrl(url, where) {
   if (where === 'tab') newTab(url, true, activeId);
   else {
     const t = activeTab();
-    if (!t) { newTab(url); return; }
+    if (!t || t.homePlaceholder) { newTab(url); return; }
     t.url = toUrl(url);
     if (!t.view) { activateTab(t.id); return; }   // sleeping tab: activateTab creates the view and loads t.url
     go(t.view.webContents, t.url);
@@ -2116,7 +2133,7 @@ function handleShortcut(input, fromUi = false) {
   if (ctrl && (k === 'pagedown' || k === 'pageup')) {
     if (input.shift) { moveActiveTab(k === 'pagedown' ? 1 : -1); return true; }
     const i = tabs.findIndex((t) => t.id === activeId), n = tabs.length;
-    if (n > 1) activateTab(tabs[(i + (k === 'pagedown' ? 1 : n - 1)) % n].id);
+    if (n && (n > 1 || i < 0)) activateTab(tabs[i < 0 ? (k === 'pagedown' ? 0 : n - 1) : (i + (k === 'pagedown' ? 1 : n - 1)) % n].id);
     return true;
   }
   if (ctrl && (k === 'e' || k === 'k')) { focusUrl(true); return true; }
@@ -2135,13 +2152,14 @@ function handleShortcut(input, fromUi = false) {
   if (ctrl && k === 'f') { openFind(); return true; }
   if (ctrl && k === 'p') { withActive((wc) => wc.print()); return true; }
   if (input.shift && k === 'escape') { showTaskManager(); return true; }
-  if (ctrl && k === 'd') { if (settings.bookmarksEnabled === false) { togglePin(activeId); revealPinChange(); } else toggleBookmark(); return true; }
+  if (ctrl && input.shift && !input.alt && k === 'b') { const tab=activeTab(); if(tab&&!tab.homePlaceholder)sleepTabSelection([tab.id]); return true; }
+  if (ctrl && k === 'd') { if (settings.bookmarksEnabled === false) { if(togglePin(activeId))revealPinChange(); } else toggleBookmark(); return true; }
   if ((ctrl && k === 'r') || k === 'f5') { withActive((wc) => (input.shift || ctrl && k === 'f5' ? wc.reloadIgnoringCache() : wc.reload())); return true; }
   if (input.alt && k === 'home') { goHome(); return true; }
   if (k === 'f11') { win.setFullScreen(!win.isFullScreen()); return true; }
   if (ctrl && k === 'tab') {
     const i = tabs.findIndex((t) => t.id === activeId), n = tabs.length;
-    if (n > 1) activateTab(tabs[(i + (input.shift ? n - 1 : 1)) % n].id);
+    if (n && (n > 1 || i < 0)) activateTab(tabs[i < 0 ? (input.shift ? n - 1 : 0) : (i + (input.shift ? n - 1 : 1)) % n].id);
     if (vertical() && settings.verticalAutoHide) { openSide(); W.sideHoldUntil = Date.now() + 1200; }
     return true;
   }
@@ -2870,7 +2888,7 @@ function showTabMenu(arg) {
     { type: 'separator' },
     { label: multiple ? 'Seçili sekmeleri yenile' : 'Yenile', enabled: group.some(x => !!x.view), click: () => group.forEach(x => { if(liveTabView(x)) x.view.webContents.reload(); }) },
     {label:multiple?'Seçili sekmeleri otomatik uyutma':'Bu sekmeyi otomatik uyutma',type:'checkbox',checked:allSleepExcluded,click:()=>setTabSleepExclusion(selected,!allSleepExcluded)},
-    ...(settings.savedTabsEnabled&&!W.incognito&&group.some(x=>require('./saved-tabs').validUrl(x.url))?[{label:multiple?'Seçili sekmeleri kasaya gönder':'Sekmeyi kasaya gönder',click:()=>{try{sendTabsToVault(selected);}catch(error){askPrompt({kind:'perm',title:'Sekme kaydedilemedi',rows:[{icon:'open',text:error.message}],ok:'Tamam',cancel:'Kapat'});}}}]:[]),
+    ...(settings.savedTabsEnabled&&group.some(x=>require('./saved-tabs').validUrl(x.url))?[{label:multiple?'Seçili sekmeleri kasaya gönder':'Sekmeyi kasaya gönder',click:()=>{try{sendTabsToVault(selected);}catch(error){askPrompt({kind:'perm',title:'Sekme kaydedilemedi',rows:[{icon:'open',text:error.message}],ok:'Tamam',cancel:'Kapat'});}}}]:[]),
     { label: multiple ? 'Sekmeleri uyut' : 'Sekmeyi uyut', enabled: group.some(liveTabView), click: () => sleepTabSelection(selected) },
     { label: multiple ? 'Seçili sekmeleri çoğalt' : 'Kopyala', click: () => group.forEach(x => newTab(x.url, false, x.id)) },
     { label: multiple ? (t.pinned ? 'Seçili sekmelerin sabitlemesini kaldır' : 'Seçili sekmeleri sabitle') : (t.pinned ? 'Sabitlemeyi kaldır' : 'Sabitle'), click: () => { const pinned = !t.pinned; group.forEach(x => { if (!!x.pinned !== pinned) togglePin(x.id); }); } },
@@ -2932,7 +2950,7 @@ function showContextMenu(wc, p) {
     if (/^https?:/i.test(wc.getURL())) items.push({ label: 'Okuma modu', accelerator: 'F9', registerAccelerator: false, click: () => toggleReader(wc) });
   }
   const vaultTab=byWcId.get(wc.id);
-  if(settings.savedTabsEnabled&&vaultTab&&!vaultTab.w.incognito&&require('./saved-tabs').validUrl(vaultTab.url)){
+  if(settings.savedTabsEnabled&&vaultTab&&require('./saved-tabs').validUrl(vaultTab.url)){
     items.push({type:'separator'},{label:'Sekmeyi kasaya gönder',click:()=>inWin(vaultTab.w,()=>{try{sendTabToVault(vaultTab.id);}catch(error){askPrompt({kind:'perm',title:'Sekme kaydedilemedi',rows:[{icon:'open',text:error.message}],ok:'Tamam',cancel:'Kapat'});}})});
   }
   if (extensions) {
@@ -3002,6 +3020,7 @@ const currentTheme = () => THEMES[settings.theme] || THEMES.sistem;
 // Pitch black: with the dark theme or a dark system theme, except colored themes
 const PITCH = { frame: '#000000', toolbar: '#000000', card: '#0a0a0a', activeTab: '#0a0a0a', omniHover: '#141414', omni: '#0d0d0d', accent: '#a8c7fa', page: '#000000', menu: '#121212', mode: 'dark' };
 function effectiveTheme() {
+  if(W?.incognito)return incognitoTheme();
   const t = currentTheme();
   const dark = t.mode === 'dark' || (t.mode === 'system' && nativeTheme.shouldUseDarkColors);
   return settings.pitchBlack && dark && !t.frame ? PITCH : t;
@@ -3018,18 +3037,19 @@ function applyTheme() {
   const t = currentTheme();
   nativeTheme.themeSource = t.mode;              // pages' light/dark preference follows this too
   forEachWin(() => { paintFrame(); pushState();if(W.findView)W.findView.webContents.send('page-update',pageData()); });
-  broadcastPages();
+  broadcastPages(); broadcastSavedTabs();
 }
 // Color of the window frame and Windows caption buttons
 function paintFrame() {
   if (!win) return;
-  const c = W && W.incognito ? { frame: INCOGNITO_THEME.frame, toolbar: INCOGNITO_THEME.toolbar, symbol: '#e3e3e3' } : themeColors();
+  const c = W && W.incognito ? { frame: incognitoTheme().frame, toolbar: incognitoTheme().toolbar, symbol: '#e3e3e3' } : themeColors();
   try { win.setBackgroundColor(c.frame); } catch {}
   if (!isMac && win.setTitleBarOverlay) { try { win.setTitleBarOverlay({ color: settings.verticalTabs ? c.toolbar : c.frame, symbolColor: c.symbol, height: settings.verticalTabs ? TOOLBAR : TAB_STRIP }); } catch {} }
 }
 
 // Incognito windows are always dark (like Chrome)
 const INCOGNITO_THEME = { frame: '#202124', toolbar: '#35363a', omni: '#202124', accent: '#8ab4f8', page: '#202124', mode: 'dark' };
+function incognitoTheme() { return settings.pitchBlack ? {...INCOGNITO_THEME,...PITCH} : INCOGNITO_THEME; }
 function themeVars() {
   const t = effectiveTheme();
   return t.frame ? { frame: t.frame, toolbar: t.toolbar, omni: t.omni, accent: t.accent, page: t.page, mode: t.mode, ...(t.menu ? { menu: t.menu } : {}), ...(t.card ? { card: t.card, activeTab: t.activeTab, omniHover: t.omniHover } : {}) } : null;
@@ -3041,7 +3061,7 @@ const pageData = () => ({
   shortcuts: settings.shortcuts.map((s) => ({ title: s.title, url: s.url, icon: s.icon || null })),
   searchUrl: searchUrl(),
   searchName: (SEARCH_ENGINES[settings.searchEngine] || SEARCH_ENGINES.google).name,
-  theme: W && W.incognito ? INCOGNITO_THEME : themeVars(),
+  theme: W && W.incognito ? incognitoTheme() : themeVars(),
   themeKey: settings.theme,
   themes: Object.entries(THEMES).map(([key, t]) => ({ key, name: t.name, mode: t.mode, frame: t.frame || null, toolbar: t.toolbar || null, accent: t.accent || null }))
 });
@@ -3166,7 +3186,7 @@ function settingsData() {
       sitePerms: Object.keys(settings.sitePerms).length, deviceGrants: settings.deviceGrants.length,
     version: app.getVersion(), chrome: process.versions.chrome, electron: process.versions.electron,
     siteCommands:settings.siteCommands,textReplacements:settings.textReplacements,
-    appUpdate:appUpdateData(),resolvedTheme:W?.incognito?INCOGNITO_THEME:themeVars(),
+    appUpdate:appUpdateData(),resolvedTheme:W?.incognito?incognitoTheme():themeVars(),
     widevine: (() => { try { const st = components && components.status(); const w = st && Object.values(st).find((x) => /widevine/i.test(x.title || '')); return w ? w.version : null; } catch { return null; } })()
   };
 }
@@ -3456,7 +3476,7 @@ function createWindow(opts = {}) {
   const from = W;
   windows.push(w);
   useWin(w);
-  const c = incognito ? { frame: INCOGNITO_THEME.frame, toolbar: INCOGNITO_THEME.toolbar, symbol: '#e3e3e3' } : themeColors();
+  const c = incognito ? { frame: incognitoTheme().frame, toolbar: incognitoTheme().toolbar, symbol: '#e3e3e3' } : themeColors();
   // A new window opens slightly below-right of the previous one. For tests CALCIUM_TEST_DISPLAY: on that display, without stealing focus.
   let bounds = { width: 1280, height: 820 };
   const testDisplay = process.env.CALCIUM_TEST_DISPLAY;
@@ -3531,7 +3551,7 @@ function closedWindow(w) {
   if(w.incognito){w.closedTabs.length=0;w.searchHistory=[];}
   closeUpdateNotice(w);destroyFind(w);
   if (W === w) saveCtx();
-  for (const t of w.tabs) {
+  for (const t of [...w.tabs, ...(w.homeTab ? [w.homeTab] : [])]) {
     iconQueue.cancel(t);
     for(let i=titleQueue.length-1;i>=0;i--)if(titleQueue[i]===t)titleQueue.splice(i,1);
     if (t.titleRequest) t.titleRequest.abort();

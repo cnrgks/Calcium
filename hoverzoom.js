@@ -16,6 +16,11 @@
     let u;
     try { u = new URL(src, location.href); } catch { return null; }
     const h = u.hostname;
+    // YouTube channel avatars are size-limited without a file extension.
+    if (/(^|\.)(yt3\.ggpht\.com|yt3\.googleusercontent\.com)$/.test(h) && /=s\d+(?=[-/?#]|$)/.test(u.pathname)) {
+      u.pathname = u.pathname.replace(/=s\d+(?=[-/?#]|$)/, '=s800');
+      return u.href;
+    }
     if (/(^|\.)wikimedia\.org$/.test(h) && u.pathname.includes('/thumb/')) {
       // Thumbnails come from thumb.wikimedia.org or upload.wikimedia.org; the original is always on upload
       return 'https://upload.wikimedia.org' + u.pathname.replace('/thumb/', '/').replace(/\/[^/]+$/, '');
@@ -26,7 +31,7 @@
       return null;
     }
     if (h === 'i.ytimg.com' && /\/(default|mqdefault|hqdefault|sddefault|hq720)\.(jpg|webp)$/.test(u.pathname)) {
-      return u.origin + u.pathname.replace(/\/[^/]+$/, '/hqdefault.jpg');
+      return u.origin + u.pathname.replace(/\/[^/]+$/, '/maxresdefault.jpg');
     }
     if (/(^|\.)media-amazon\.com$|images-amazon\.com$/.test(h) && /\._[^/]*_\./.test(u.pathname)) {
       return u.origin + u.pathname.replace(/\._[^/]*_\./, '.');
@@ -57,6 +62,23 @@
     if (IMG_EXT.test(u.pathname)) return { url: upgrade(u.href) || u.href, sure: true };
     return null;
   }
+  // Descend through wrappers (including open shadow roots) at the cursor only.
+  // Do not select unrelated thumbnails elsewhere in a large container.
+  function imageAt(el, x, y) {
+    const stack = [el];
+    let remaining = 512;
+    while (stack.length && remaining-- > 0) {
+      const node = stack.pop();
+      if (!node || node.nodeType !== 1) continue;
+      const r = node.getBoundingClientRect();
+      const hit = x >= r.left && x < r.right && y >= r.top && y < r.bottom;
+      if (node.tagName === 'IMG' && hit && r.width >= 24 && r.height >= 24 && getComputedStyle(node).visibility !== 'hidden') return node;
+      // Wrappers can have zero-sized boxes or overflow-visible children.
+      const children = node.tagName === 'SLOT' ? node.assignedElements({ flatten: true }) : [];
+      stack.push(...(children.length ? children : (node.shadowRoot || node).children));
+    }
+    return null;
+  }
   // Media candidates to show for an element, best first: { url, video, sure, next }
   // "sure": known to be large. If a candidate fails to load, the next one is tried.
   function pick(el) {
@@ -80,6 +102,38 @@
     }
     for (let i = 0; i < list.length - 1; i++) list[i].next = list[i + 1];
     return list[0] || null;
+  }
+
+  function youtubePlaybackAt(el, x, y) {
+    if (!/(^|\.)youtube\.com$/.test(location.hostname)) return false;
+    const selector='#movie_player,#shorts-player,ytd-player#ytd-player,ytd-reel-video-renderer #player';
+    if (el?.closest?.(selector)) return true;
+    return [...document.querySelectorAll(selector)].some(player=>{
+      const r=player.getBoundingClientRect();
+      return r.width>0&&r.height>0&&x>=r.left&&x<r.right&&y>=r.top&&y<r.bottom;
+    });
+  }
+  // YouTube replaces/covers the image with a video preview on hover. Resolve
+  // the stable watch link instead of following the changing preview subtree.
+  function youtubeThumbnail(el, x, y) {
+    if (!/(^|\.)youtube\.com$/.test(location.hostname)) return null;
+    if (youtubePlaybackAt(el,x,y)) return null;
+    let node = el;
+    for (let depth=0; node && depth<7; depth++, node=node.parentElement) {
+      if(node===document.body||node===document.documentElement)break;
+      const links=node.matches('a[href]')?[node]:node.querySelectorAll('a[href*="/watch?"],a[href*="/shorts/"]');
+      for(const link of links){
+        const r=link.getBoundingClientRect();
+        if(x<r.left||x>=r.right||y<r.top||y>=r.bottom||r.width<80||r.height<45)continue;
+        let url;try{url=new URL(link.href,location.href);}catch{continue;}
+        if(!/(^|\.)youtube\.com$/.test(url.hostname))continue;
+        const id=url.pathname==='/watch'?url.searchParams.get('v'):url.pathname.match(/^\/shorts\/([^/]+)/)?.[1];
+        if(!/^[\w-]{11}$/.test(id||''))continue;
+        const owner=link.closest('ytd-rich-item-renderer,ytd-video-renderer,ytd-compact-video-renderer,ytd-grid-video-renderer,yt-lockup-view-model')||node;
+        return {owner, candidate:{url:'https://i.ytimg.com/vi/'+id+'/maxresdefault.jpg',sure:true,next:{url:'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg',sure:true}}};
+      }
+    }
+    return null;
   }
 
   // ---- Display layer (closed shadow root: site styles don't leak in)
@@ -138,6 +192,7 @@
     const ready = () => {
       if (media !== m) return;
       const nw = m.naturalWidth || m.videoWidth;
+      if (p.next && /^https:\/\/i\.ytimg\.com\/.*\/maxresdefault\.jpg$/.test(p.url) && nw <= 120) { m.onload=null;media=null;show(p.next);return; }
       // Don't bother zooming an image that's already that size
       if (!p.sure && p.small && nw <= p.small.width * 1.25 && (m.naturalHeight || m.videoHeight) <= p.small.height * 1.25) { hide(); return; }
       box.replaceChildren(m); place();
@@ -224,16 +279,26 @@
 
   const onOver = (e) => {
     if (pinned) return;
-    const el = e.target;
+    const source = e.composedPath()[0] || e.target;
+    if(source===host)return;
+    if(youtubePlaybackAt(source,e.clientX,e.clientY)){hide();return;}
+    const youtube = youtubeThumbnail(source,e.clientX,e.clientY);
+    const el = youtube?.owner || source;
     if (el === target || el === host) return;
-    const p = pick(el);
+    const p = youtube?.candidate || pick(imageAt(el, e.clientX, e.clientY)) || pick(el);
     if (!p) { if (target && !(target.contains && target.contains(el))) hide(); return; }
     hide();
     target = el; mx = e.clientX; my = e.clientY;
     timer = setTimeout(() => { timer = 0; if (target === el) show(p); }, DELAY);
   };
-  const onMove = (e) => { mx = e.clientX; my = e.clientY; if (!pinned && media && box.style.display === 'block') place(); };
-  const onOut = (e) => { if (!pinned && target && (!e.relatedTarget || !target.contains(e.relatedTarget))) hide(); };
+  const onMove = (e) => { mx = e.clientX; my = e.clientY; if(!pinned&&target&&youtubePlaybackAt(e.target,mx,my)){hide();return;} if (!pinned && media && box.style.display === 'block') place(); };
+  const onOut = (e) => {
+    if (pinned || !target || (e.relatedTarget && target.contains(e.relatedTarget))) return;
+    // Removing a preview node can report a null relatedTarget even though the
+    // pointer is still over the same card.
+    if (!e.relatedTarget && target.contains(document.elementFromPoint(e.clientX,e.clientY))) return;
+    hide();
+  };
   const typing = (el) => !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
   const onKey = (e) => {
     if (e.key === 'Escape') { if (media || pinned) { hide(); if (pinned) e.stopPropagation(); } return; }
