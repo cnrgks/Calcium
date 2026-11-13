@@ -16,6 +16,12 @@
       StrCpy $INSTDIR $0
     ${EndIf}
   ${EndIf}
+  ; A development Electron runtime is not an application installation directory.
+  ; Old update/registry paths may point here; never overwrite the source runtime.
+  ${If} ${FileExists} "$INSTDIR\..\..\..\tools\dev.js"
+  ${AndIf} ${FileExists} "$INSTDIR\..\..\..\run-dev.bat"
+    StrCpy $INSTDIR "${CALCIUM_DEFAULT_INSTALL_DIR}"
+  ${EndIf}
   Pop $0
 !macroend
 !endif

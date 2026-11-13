@@ -12,7 +12,7 @@ for (const stream of [process.stdout, process.stderr]) {
  *  - Google is the default search; Google cookies/data are cleared on exit
  *  - WebHID / WebUSB / Web Serial / Web Bluetooth: for browser-based device firmware sites
  *  - From Thorium: DoH, DNT+GPC, parallel downloads, HEVC, bookmarks bar, home button,
- *    reload menu (normal / hard / clear cache), full URL display, force dark pages
+ *    reload menu (normal / hard / clear cache), full URL display
  */
 const {
   app, nativeImage, BrowserWindow, BaseWindow, View, WebContentsView, session, ipcMain, Menu, MenuItem, clipboard,
@@ -64,7 +64,6 @@ const SETTINGS_FILE = path.join(app.getPath('userData'), 'ayarlar.json');
 const DEFAULTS = {
   searchEngine: 'google',
   calciumProtection:true,calciumAllowedSites:[],
-  forceDarkPages: false,
   strictIsolation: true,    // true = every site in its own process like Chrome (much more RAM); false = only login/payment/protected sites isolated
   clearGoogleOnExit: false,  // when on, Google cookies/site data are cleared on exit (signs out of Google)
   theme: 'sistem',
@@ -113,7 +112,7 @@ settings.siteCommands=customShortcuts.normalizeRules('site',settings.siteCommand
 settings.updatePromptDismissed=settings.updatePromptDismissed===true;
 if(typeof settings.updatePromptOfferedVersion!=='string'||settings.updatePromptOfferedVersion.length>32)settings.updatePromptOfferedVersion='';
 settings.bookmarksEnabled=false;settings.tabAudio=false;settings.downloadNotify=false;
-settings.restoreSession=true;delete settings.adblockEngine;delete settings.checkUpdates;delete settings.newtabTitle;
+settings.restoreSession=true;delete settings.adblockEngine;delete settings.checkUpdates;delete settings.newtabTitle;delete settings.forceDarkPages;
 if(!['sistem','acik','koyu'].includes(settings.theme))settings.theme=['gece','orman','murdum'].includes(settings.theme)?'koyu':'acik';
 let saveTimer = null;
 function saveSettings(now = false) {
@@ -124,7 +123,7 @@ function saveSettings(now = false) {
 // Application updates are opt-in to download/install; startup only reads release metadata.
 const appUpdates=require('./app-updates').createAppUpdates({
  currentVersion:app.getVersion(),cacheDir:path.join(app.getPath('userData'),'updates'),
- canInstall:app.isPackaged&&process.platform==='win32'&&process.arch==='x64',
+ canInstall:app.isPackaged&&process.platform==='win32'&&process.arch==='x64'&&!/[\\/]node_modules[\\/]electron[\\/]dist[\\/]/i.test(process.execPath),
  readPreferences:()=>settings,savePreferences:patch=>{Object.assign(settings,patch);saveSettings(true);},
  launchInstaller:async(file,digest)=>{
   // Close only after the themed native installer acknowledges readiness.
@@ -367,8 +366,7 @@ if(!/--gc-memory-reducer-start-delay-ms(?:=|\s)/.test(existingJsFlags))cl.append
 ].forEach((s) => cl.appendSwitch(s));
 cl.appendSwitch('enable-features', [
   'ParallelDownloading',            // Thorium: parallel downloads
-  'PlatformHEVCDecoderSupport',     // Thorium: HEVC/H.265 (if hardware supports it)
-  ...(settings.forceDarkPages ? ['WebContentsForceDark'] : [])
+  'PlatformHEVCDecoderSupport'      // Thorium: HEVC/H.265 (if hardware supports it)
 ].join(','));
 cl.appendSwitch('disable-features', [
   'BackForwardCache', 'SpareRendererForSitePerProcess', 'Translate', 'TranslateUI', 'MediaRouter',
@@ -3172,7 +3170,7 @@ function settingsData() {
     uiFont:settings.uiFont,uiFonts:UI_FONTS.map(({key,name})=>({key,name})),
     theme: settings.theme, themes: Object.entries(THEMES).map(([key, t]) => ({ key, name: t.name, mode: t.mode, frame: t.frame || null, accent: t.accent || null })),
     engine: settings.searchEngine, engines: Object.entries(SEARCH_ENGINES).map(([key, x]) => ({ key, name: x.name })),
-    bookmarksBar: hasBookmarks(), fullUrl: true, forceDarkPages: settings.forceDarkPages, strictIsolation: settings.strictIsolation, language: uiLang(),
+    bookmarksBar: hasBookmarks(), fullUrl: true, strictIsolation: settings.strictIsolation, language: uiLang(),
     clearGoogleOnExit: settings.clearGoogleOnExit,
     memorySaver:settings.memorySaver!==false,
     sleepMinutes: settings.sleepMinutes, sleepChoices: SLEEP_CHOICES, downloadNotify: settings.downloadNotify,
@@ -3200,7 +3198,7 @@ function setLanguage(v) {
   }, 150);
 }
 function settingsSet(key, value) {
-  const bool = (k) => { if (typeof value !== 'boolean') return false; setSetting(k, value, k === 'forceDarkPages' || k === 'strictIsolation'); return true; };
+  const bool = (k) => { if (typeof value !== 'boolean') return false; setSetting(k, value, k === 'strictIsolation'); return true; };
   switch (key) {
     case 'savedTabsEnabled':
       if(typeof value!=='boolean')return false;
@@ -3220,7 +3218,7 @@ function settingsSet(key, value) {
     case 'pitchBlack': if (typeof value !== 'boolean') return false; settings.pitchBlack = value; saveSettings(); applyTheme(); return true;
 
     case 'verticalAutoHide': if (typeof value !== 'boolean') return false; if (value !== !!settings.verticalAutoHide) { if (settings.verticalTabs) toggleAutoHide(); else { settings.verticalAutoHide = value; saveSettings(); } } return true;
-    case 'calciumProtection': case 'askDownloadLocation': case 'forceDarkPages': case 'strictIsolation': case 'clearGoogleOnExit': return bool(key);
+    case 'calciumProtection': case 'askDownloadLocation': case 'strictIsolation': case 'clearGoogleOnExit': return bool(key);
   }
   return false;
 }

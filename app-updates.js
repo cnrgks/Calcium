@@ -110,6 +110,7 @@ function createAppUpdates({currentVersion,cacheDir,fetchImpl=fetch,readPreferenc
  return {snapshot,check,install,later,clearNotice,dispose(){disposed=true;controller?.abort();},cleanup:()=>cleanupUpdates(cacheDir)};
 }
 function windowsInstallerArguments(file,{appPath=process.execPath,parentPid=process.pid,token}={}){
+ if(/[\\/]node_modules[\\/]electron[\\/]dist[\\/]/i.test(appPath||''))throw Error('unsupported');
  if(![file,appPath].every(p=>typeof p==='string'&&path.win32.isAbsolute(p)&&p.toLowerCase().endsWith('.exe')&&!/[\r\n\0"]/u.test(p))||!Number.isSafeInteger(parentPid)||parentPid<1||!/^[a-f0-9]{64}$/.test(token||''))throw Error('source');
  // NSIS reads the entire unquoted remainder after /D=, including spaces.
  return ['--updated','--force-run','--calcium-update-parent='+parentPid,'--calcium-update-token='+token,'/D='+path.win32.dirname(appPath)];

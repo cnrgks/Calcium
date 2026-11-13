@@ -50,6 +50,14 @@ if (process.platform === 'win32') {
 
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
+// Electron prioritizes resources/app.asar over the source path argument. A
+// packaged app left in the engine directory would silently run stale code.
+const bundledApp = path.join(path.dirname(electronExe), 'resources', 'app.asar');
+if (fs.existsSync(bundledApp)) {
+  fs.renameSync(bundledApp, bundledApp + '.dev-backup-' + Date.now());
+  console.log('Disabled stale bundled app; starting workspace source.');
+}
+console.log('Calcium dev source:', root);
 const child = spawn(exe, [root, ...process.argv.slice(2)], { stdio: 'inherit', env, windowsHide: false });
 child.on('close', (code) => process.exit(code || 0));
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { if (!child.killed) child.kill(sig); });

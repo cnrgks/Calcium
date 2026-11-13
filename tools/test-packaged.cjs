@@ -15,6 +15,7 @@ async function connect(target){const ws=new WebSocket(target.webSocketDebuggerUr
  await ui(`browserApi.send('navigate','calcium://settings');void 0`);const settings=await connect(await find('settings.html'));for(let i=0;i<100;i++){if(await settings('document.querySelectorAll(".custom-rule-group").length===2'))break;await pause();}
  assert.equal(await settings('document.querySelectorAll(".custom-rule-group").length'),2);assert(await settings('document.body.innerText.includes('+JSON.stringify(version)+')'));assert(await settings('!!document.querySelector("#appUpdateCheck")'));assert.equal(await settings('typeof require'),'undefined');assert(!/Cannot find module|Uncaught Exception|App threw an error/.test(output),output);
  assert(await settings(`!document.querySelector('#kisayollar')&&!document.querySelector('a[href="#kisayollar"]')`));
+ assert(await settings(`!document.body.innerText.includes('Darken websites')&&!document.body.innerText.includes('Web sitelerini koyu göster')`),'website darkening is absent from packaged settings');
  assert(await ui(`!document.body.classList.contains('mac')||document.querySelector('#toolbar').firstElementChild.getBoundingClientRect().left>=86`),'macOS traffic-light space');
  await settings(`pageApi.call('settings-set',{key:'theme',value:'koyu'})`);await settings(`pageApi.call('settings-set',{key:'verticalTabs',value:false})`);
  for(const enabled of [false,true,false,true]){

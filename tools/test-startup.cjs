@@ -50,6 +50,10 @@ m._compile(fs.readFileSync(entry,'utf8')+`\nmodule.exports.test={popupBrowserMen
  for(let i=0;i<100;i++){if(!wc.isLoading()&&await wc.executeJavaScript(`document.querySelectorAll('.themes button').length===3`).catch(()=>false))break;await new Promise(r=>setTimeout(r,100));}
  state.settings.firstRunDone=false;m.exports.test.layout();m.exports.test.pushState();await new Promise(r=>setTimeout(r,100));assert.equal(settingsTab.view.getBounds().x,0,'welcome reserves no sidebar space');assert.equal(await w.ui.webContents.executeJavaScript(`getComputedStyle(document.querySelector('#side')).display`),'none');assert.equal(await w.ui.webContents.executeJavaScript(`getComputedStyle(document.querySelector('#strip')).display`),'none');state.settings.firstRunDone=true;m.exports.test.layout();m.exports.test.pushState();
 
+ assert.equal(await wc.executeJavaScript(`document.body.textContent.includes('Web sitelerini koyu göster')`),false,'removed website darkening setting is absent from rendered settings');
+ assert.equal(m.exports.test.settingsSet('forceDarkPages',true),false,'removed website darkening setting cannot be enabled');
+ assert(!app.commandLine.getSwitchValue('enable-features').includes('WebContentsForceDark'),'website darkening engine flag is absent');
+ if(process.env.CALCIUM_TEST_SETTINGS_REMOVAL==='1'){console.log('PASS: rendered settings omit website darkening; setting API rejects it; Chromium flag is absent.');app.exit(0);return;}
  // Browser-only typography, themed context menus and cookie-delete confirmation.
  assert.equal(state.settings.uiFont,'default');assert.equal(await wc.executeJavaScript('document.querySelectorAll("[data-calcium-ui-font]").length'),0);
  const remote=w.tabs.find(t=>/^http:\/\/calcium-fixture/.test(t.url)&&t.view).view.webContents;
