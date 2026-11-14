@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-0uKtOWrNEEVDaduNOy65UFxA4KBUXzyFlVdxYkb8SdU=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-sl1nXfJIXlijqppK0C9yGVWqxry+vb+HBblox0f8gsQ='; img-src data:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-0uKtOWrNEEVDaduNOy65UFxA4KBUXzyFlVdxYkb8SdU=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-jtqUrf4HGoMU4L0Cf1BfJffJJhhSOHXqZcGTWnRyMy0='; img-src data:">
 <script src="i18n.js" integrity="sha256-0uKtOWrNEEVDaduNOy65UFxA4KBUXzyFlVdxYkb8SdU="></script><script src="browser-font.js" integrity="sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c="></script>
 <title>Ayarlar</title>
 <style>
@@ -319,7 +319,7 @@ function render() {
     ...section('indirmeler','İndirmeler',row('Kayıt konumu',d.downloadsDir,button('Klasörü aç',()=>api.call('open-downloads-folder'))),toggle('askDownloadLocation','İndirirken nereye kaydedileceğini sor','Her indirmede kayıt konumunu seç.')),
     ...section('uzantilar','Uzantılar ve reklam engelleme',
       toggle('calciumProtection','Calcium koruması','Bilinen üçüncü taraf reklam ve izleyicilerini engelle.'),
-      row('Koruma listeleri','Otomatik güncellenir. Sorun yaşayan sitelerde sağ tık menüsünden Calcium korumasını kapatabilirsin.',button('Listeleri güncelle',()=>api.call('update-filters').then(r=>toast(r?.ok?'Güncelleme kontrolü tamamlandı.':'Bazı listeler güncellenemedi; mevcut koruma sürüyor.')))),
+      row('Koruma listeleri',L('Otomatik güncellenir. Calcium koruması yukarıdaki ayardan tüm siteler için açılıp kapatılır.','Updates automatically. Use the setting above to turn Calcium protection on or off for all sites.'),button('Listeleri güncelle',()=>api.call('update-filters').then(r=>toast(r?.ok?'Güncelleme kontrolü tamamlandı.':'Bazı listeler güncellenemedi; mevcut koruma sürüyor.')))),
       row('uBlock Origin',d.uboError?'Başlatılamadı. Tarayıcıyı yeniden başlatın.':!d.ubo?'Yükleniyor…':'Her zaman açık.',button('uBlock ayarları',()=>api.call('ubo-dashboard'))),
       row('Uzantılar','Yüklü uzantıları yönet.',button('Yönet',()=>api.call('open-page','extensions')))),
     ...section('hakkinda','Calcium hakkında',row('Calcium '+d.version,'Chromium '+d.chrome+' · Electron '+d.electron,null),appUpdateRow())

@@ -63,7 +63,7 @@ process.on('unhandledRejection', (e) => {
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'ayarlar.json');
 const DEFAULTS = {
   searchEngine: 'google',
-  calciumProtection:true,calciumAllowedSites:[],
+  calciumProtection:true,
   strictIsolation: true,    // true = every site in its own process like Chrome (much more RAM); false = only login/payment/protected sites isolated
   clearGoogleOnExit: false,  // when on, Google cookies/site data are cleared on exit (signs out of Google)
   theme: 'sistem',
@@ -105,7 +105,8 @@ let settings = { ...DEFAULTS };
 if(!['auto','tr','en'].includes(settings.language))settings.language='auto';
 if(!validUiFont(settings.uiFont))settings.uiFont='default';
 if (!settings.isolationSecurityMigration) { settings.strictIsolation=true;settings.isolationSecurityMigration=true; }
-if(!Array.isArray(settings.calciumAllowedSites))settings.calciumAllowedSites=[];
+// Protection is global; discard legacy per-site exceptions.
+delete settings.calciumAllowedSites;
 if(!Array.isArray(settings.sleepExcludedSites))settings.sleepExcludedSites=[];
 if(!Array.isArray(settings.deviceGrants))settings.deviceGrants=[];
 settings.siteCommands=customShortcuts.normalizeRules('site',settings.siteCommands);settings.textReplacements=customShortcuts.normalizeRules('text',settings.textReplacements);
@@ -667,8 +668,7 @@ const timeout = (ms) => new Promise((r) => setTimeout(r, ms));
 const threatProtection = createThreatProtection({root:__dirname,profile:app.getPath('userData')});
 const calciumProtection=createCalciumProtection({root:__dirname,profile:app.getPath('userData')});
 function calciumSite(url){try{const u=new URL(url);return /^https?:$/.test(u.protocol)?siteOfHost(u.hostname):null;}catch{return null;}}
-function calciumEnabledFor(url){const site=calciumSite(url);return !!site&&settings.calciumProtection!==false&&!settings.calciumAllowedSites.includes(site);}
-function toggleCalciumSite(url){const site=calciumSite(url);if(!site)return;const i=settings.calciumAllowedSites.indexOf(site);if(i>=0)settings.calciumAllowedSites.splice(i,1);else settings.calciumAllowedSites.push(site);saveSettings();notifyPages('settings');}
+function calciumEnabledFor(url){return !!calciumSite(url)&&settings.calciumProtection!==false;}
 
 const blockedNavigations = new Map(), trustedThreatHosts = new WeakMap(), navigationEpoch = new WeakMap();
 function showThreatWarning(wc,url){
@@ -1206,7 +1206,8 @@ function createView(tab) {
         frame.executeJavaScript(`(${install})(css=>{const sheet=new CSSStyleSheet();sheet.replaceSync(css);document.adoptedStyleSheets=[...document.adoptedStyleSheets,sheet];})`).catch(()=>{});
       }
     }
-    if ((tab.volume || 100) === 100) return;
+    if (!isMain && settings.hoverZoom) applyHoverZoom(wc, true, webFrameMain.fromId(pid, rid));
+    if ((tab.volume ?? 100) === 100) return;
     applyVolume(wc, isMain ? null : webFrameMain.fromId(pid, rid), tab.volume);
   });
   on('render-process-gone', () => { tab.title = 'Sayfa çöktü - yenileyin'; tab.loading = false; pushState(); });
@@ -1392,8 +1393,126 @@ function newTab(url, background = false, openerId = null, at = -1, requireView =
     if(hint && hint.url===tab.url && Date.now()-hint.at<2000 && meaningfulTabTitle(hint.title,tab.url)){tab.title=hint.title;opener.linkTitleHint=null;}
     queueTabTitle(tab);
   }
-  if (!background || activeId === null) activateTab(tab.id); else pushState();
+  if (!background || activeId === null) activateTab(tab.id); else {
+    pushState();
+    if (openerId && !requireView) showBackgroundTabNotice();
+  }
   return tab;
+}
+
+function closeBackgroundTabNotice(w) {
+  clearTimeout(w.tabNoticeTimer);
+  w.tabNoticeTimer = null;
+  const view = w.tabNotice;
+  w.tabNotice = null;
+  if (!view) return;
+  try { w.win.contentView.removeChildView(view); } catch {}
+  if (!view.webContents.isDestroyed()) view.webContents.close();
+}
+function dismissBackgroundTabNotice(w) {
+  if (!w?.tabNoticeVisible || w.tabNoticeClosing) return;
+  w.tabNoticeClosing = true;
+  clearTimeout(w.tabNoticeTimer);
+  const view = w.tabNotice, generation = w.tabNoticeGeneration;
+  view.webContents.executeJavaScript(`(async () => {
+    const card = document.querySelector('article');
+    const active = card.getAnimations()[0];
+    // A drawer may already be open when the notice appears. Let its 100ms
+    // entrance become visible before fading it, rather than cancelling at zero.
+    if (active && active.currentTime < 100) {
+      await new Promise(resolve => setTimeout(resolve, 100 - (active.currentTime || 0)));
+      if (!card.getAnimations().includes(active)) return false;
+    }
+    const style = getComputedStyle(card);
+    const opacity = style.opacity, transform = style.transform;
+    for (const animation of card.getAnimations()) animation.cancel();
+    const exit = card.animate([{opacity,transform},{opacity:0,transform}],{duration:100,easing:'linear',fill:'both'});
+    try { await exit.finished; return true; } catch { return false; }
+  })();`).then(finished => {
+    if (!finished || w.tabNotice !== view || w.tabNoticeGeneration !== generation) return;
+    w.tabNoticeVisible = false;
+    view.setVisible(false);
+    if (!w.win.isDestroyed()) {
+      const parent=w.win.contentView;
+      const index=parent.children.filter(child => child !== view).indexOf(w.ui);
+      parent.addChildView(view,Math.max(0,index));
+    }
+  }).catch(() => {
+    if (w.tabNotice === view && w.tabNoticeGeneration === generation) {
+      w.tabNoticeVisible = false;
+      view.setVisible(false);
+    }
+  });
+}
+function layoutBackgroundTabNotice(w) {
+  if (!w?.tabNotice || !w.tabNoticeVisible || w.win.isDestroyed()) return;
+  const {width, height} = w.win.getContentBounds();
+  w.tabNotice.setBounds({x:12,y:Math.max(0,height-72),width:Math.min(w.tabNoticeWidth || 200,Math.max(1,width-12)),height:60});
+  const drawer = w===W ? overlayOpen && ['side','sidedrag','tabdrag'].includes(overlayKind) : w.overlayOpen && ['side','sidedrag','tabdrag'].includes(w.overlayKind);
+  if (drawer || w.sideClosing) {
+    dismissBackgroundTabNotice(w);
+  }
+  // Keep the native view above the drawer until its fade has actually finished.
+  // Moving it below an opaque drawer would conceal every frame of the exit.
+  w.win.contentView.addChildView(w.tabNotice);
+}
+function showBackgroundTabNotice() {
+  const w = W;
+  if (!w?.win || !w.ui || w.win.isDestroyed()) return;
+  clearTimeout(w.tabNoticeTimer);
+  const present = () => {
+    if (!w.tabNotice || w.win.isDestroyed()) return;
+    w.tabNoticeVisible = true;
+    w.tabNoticeClosing = false;
+    w.tabNoticeGeneration = (w.tabNoticeGeneration || 0) + 1;
+    const theme = inWin(w, () => effectiveTheme());
+    const dark = theme.mode === 'dark' || (theme.mode === 'system' && nativeTheme.shouldUseDarkColors);
+    const appearance = {
+      background: theme.menu || theme.card || theme.toolbar || (dark ? '#2d2f31' : '#ffffff'),
+      text: dark ? '#e3e3e3' : '#1f1f1f',
+      border: dark ? '#5f6368' : '#c7c7c7',
+      font: uiFontFamily(settings.uiFont) || '"Segoe UI", system-ui, sans-serif'
+    };
+    w.tabNotice.webContents.executeJavaScript(`(() => {
+      const appearance = ${JSON.stringify(appearance)};
+      const card = document.querySelector('article');
+      card.style.background = appearance.background;
+      card.style.color = appearance.text;
+      card.style.borderColor = appearance.border;
+      card.style.fontFamily = appearance.font;
+      for (const animation of card.getAnimations()) animation.cancel();
+      card.animate([
+        {opacity:0, transform:'translateY(4px)', offset:0},
+        {opacity:1, transform:'translateY(0)', offset:1/12},
+        {opacity:1, transform:'translateY(0)', offset:11/12},
+        {opacity:0, transform:'translateY(4px)', offset:1}
+      ], {duration:1200, easing:'linear', fill:'both'});
+      return Math.ceil(card.getBoundingClientRect().width) + 16;
+    })();`).then(width => {
+      if (!w.tabNotice || w.win.isDestroyed()) return;
+      if (Number.isFinite(width)) w.tabNoticeWidth=width;
+      layoutBackgroundTabNotice(w);
+    }).catch(() => {});
+    w.tabNotice.setVisible(true);
+    w.tabNoticeTimer = setTimeout(() => {
+      w.tabNoticeVisible = false;
+      w.tabNotice?.setVisible(false);
+    }, 1200);
+    layoutBackgroundTabNotice(w);
+  };
+  if (w.tabNotice) { if (!w.tabNoticeLoading) present(); return; }
+  const view = w.tabNotice = new WebContentsView({webPreferences:{session:w.ses,sandbox:true,contextIsolation:true,nodeIntegration:false,spellcheck:false}});
+  view.setVisible(false);
+  view.setBackgroundColor('#00000000');
+  view.webContents.setWindowOpenHandler(() => ({action:'deny'}));
+  view.webContents.on('will-navigate', e => e.preventDefault());
+  w.tabNoticeLoading = true;
+  const html = `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>*{box-sizing:border-box}html,body{margin:0;background:transparent;overflow:hidden}body{padding:8px;width:100%;height:60px;display:flex;align-items:center}article{opacity:0;width:max-content;flex:none;padding:12px 14px;border:1px solid;border-radius:12px;font:500 13px/18px "Segoe UI",system-ui,sans-serif;white-space:nowrap;box-shadow:0 2px 6px #0002}</style><article role="status" aria-live="polite">Yeni sekme açıldı.</article>`;
+  view.webContents.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent(html)).then(() => {
+    if (w.tabNotice !== view) return;
+    w.tabNoticeLoading = false;
+    present();
+  }).catch(() => closeBackgroundTabNotice(w));
 }
 
 const getTab = (id) => tabs.find((t) => t.id === id) || (W?.homeTab?.id === id ? W.homeTab : undefined);
@@ -1437,6 +1556,7 @@ function closeTabSelection(id = activeId) {
   for (const target of ids.filter(target => target !== activeId).concat(ids.includes(activeId) ? [activeId] : [])) closeTab(target);
 }
 function activateTab(id, preserveSelection = false) {
+  dismissBackgroundTabNotice(W);
   if (!win) return;
   const tab = getTab(id);
   if (!tab || !win) return;
@@ -1581,7 +1701,7 @@ function toggleMute(id) {
 // Does what Volume Booster extensions do in Chrome, without tabCapture: volume.js routes the page's
 // video/audio elements through a gain node. Runs in an isolated world in the main frame (site can't interfere),
 // and inside the frame for embedded frames (iframe players). The value is kept per tab, also while asleep.
-const VOLUME_STEPS = [25, 50, 75, 100, 150, 200, 300, 400, 600];   // tab context menu
+const VOLUME_STEPS = [0, 25, 50, 75, 100, 150, 200, 300, 400, 600];   // tab context menu
 const VOLUME_MAX = 600;
 let VOLUME_JS = null;
 function applyVolume(wc, frame, pct) {
@@ -1591,18 +1711,25 @@ function applyVolume(wc, frame, pct) {
   if (frame) { frame.executeJavaScript(code, true).catch(() => {}); return; }
   wc.executeJavaScriptInIsolatedWorld(1013, [{ code }], true).catch(() => {});
   for (const f of wc.mainFrame ? wc.mainFrame.framesInSubtree : []) {
-    if (f !== wc.mainFrame && /^https?:/i.test(f.url)) f.executeJavaScript(code, true).catch(() => {});
+    if (f !== wc.mainFrame && /^(https?:|about:blank|about:srcdoc)/i.test(f.url)) f.executeJavaScript(code, true).catch(() => {});
   }
 }
 // ---------------------------------------------------------------- Image zoom (built-in, Imagus-like)
 // When enabled, hoverzoom.js is injected into every page in an isolated world (1014); site code can't see or break it.
 // When disabled it is removed from open pages too. No extra process, extension or background work.
 let ZOOM_JS = null;
-function applyHoverZoom(wc, on = settings.hoverZoom) {
+function applyHoverZoom(wc, on = settings.hoverZoom, frame = null) {
   if (!wc || wc.isDestroyed() || !/^https?:/i.test(wc.getURL())) return;
-  if (!on) { wc.executeJavaScriptInIsolatedWorld(1014, [{ code: "{ const z = window[Symbol.for('calcium.zoom')]; if (z) z.off(); }" }]).catch(() => {}); return; }
-  if (!ZOOM_JS) ZOOM_JS = localizeSrc(fs.readFileSync(path.join(__dirname, 'hoverzoom.js'), 'utf8'));
-  wc.executeJavaScriptInIsolatedWorld(1014, [{ code: ZOOM_JS }]).catch(() => {});
+  if (on && !ZOOM_JS) ZOOM_JS = localizeSrc(fs.readFileSync(path.join(__dirname, 'hoverzoom.js'), 'utf8'));
+  const code = on ? ZOOM_JS : "{ const z = window[Symbol.for('calcium.zoom')]; if (z) z.off(); }";
+  const install = target => {
+    if (!target || !/^(https?:|about:blank|about:srcdoc)/i.test(target.url || wc.getURL())) return;
+    // WebFrameMain has no isolated-world execution API. No privileged bridge is exposed here.
+    target.executeJavaScript(code).catch(() => {});
+  };
+  if (frame) { install(frame); return; }
+  wc.executeJavaScriptInIsolatedWorld(1014, [{code}]).catch(() => {});
+  for (const child of wc.mainFrame?.framesInSubtree || []) if (child !== wc.mainFrame) install(child);
 }
 function setFeature(key, on) {
   settings[key] = on;
@@ -1738,7 +1865,7 @@ function leaveFullscreenForChrome() {
   layout(); pushState();
 }
 function layout() {
-  return preservePageFocus(layoutViews);
+  return preservePageFocus(() => { layoutViews(); layoutBackgroundTabNotice(W); });
 }
 // Reparenting a native page view clears its keyboard focus. Layout and sidebar
 // stacking must preserve an already focused page without stealing UI focus.
@@ -1807,7 +1934,7 @@ function updateSidePageWidth(value) {
   clip.setBounds({...b,x:left,width:Math.max(0,width-left)});
   t.view.setBounds({...t.view.getBounds(),x:SIDE_RAIL-left});
 }
-function raiseUi() { preservePageFocus(() => { releaseSidePage();win.contentView.addChildView(ui); if (W) W.uiAbove = true;raiseSavedTabsPopup(W); }); }
+function raiseUi() { preservePageFocus(() => { releaseSidePage();win.contentView.addChildView(ui); if (W) W.uiAbove = true;raiseSavedTabsPopup(W);layoutBackgroundTabNotice(W); }); }
 
 // ---------- Vertical tabs
 function setVerticalTabs(on) {
@@ -1890,7 +2017,7 @@ function pushState() {
     tabs: tabs.map((x) => ({
       id: x.id, title: x.title, favicon: x.favicon, loading: x.loading && !!x.view,
       sleepExcluded:tabSleepExcluded(x),
-      iconColor: x.iconColor || null, sleeping: !x.view || !!x.pendingNavigation, audible: x.audible, pinned: !!x.pinned, muted: !!x.muted, volume: x.volume || 100
+      iconColor: x.iconColor || null, sleeping: !x.view || !!x.pendingNavigation, audible: x.audible, pinned: !!x.pinned, muted: !!x.muted, volume: x.volume ?? 100
     })),
     activeId,
     selectedTabIds: selectedTabIds(),
@@ -1908,7 +2035,7 @@ function pushState() {
     extSupport: !!extensions && !W.incognito,
     hiddenExt: settings.hiddenExtensions,
     zoom:wc?Math.round(wc.getZoomFactor()*100):Math.round((t?.zoomFactor||1)*100),
-    volume: t ? (t.volume || 100) : 100,
+    volume: t ? (t.volume ?? 100) : 100,
     canVolume: !!t && /^https?:/i.test(t.url),
     url: t ? displayUrl(t.url) : '',
     loading: t ? t.loading : false,
@@ -2286,7 +2413,7 @@ function menuData() {
   return {
     bookmarksEnabled: settings.bookmarksEnabled !== false,
     zoom: zoomPercent(),
-    volume: (activeTab() && activeTab().volume) || 100,
+    volume: activeTab()?.volume ?? 100,
     volumeMax: VOLUME_MAX,
     fullscreen: !!(win && win.isFullScreen()),
     bookmarked: t ? isBookmarked(t.url) : false,
@@ -2738,7 +2865,7 @@ function showReloadMenu(pos) {
 function showShieldMenu(pos) {
   const t = activeTab();
   popAt([
-    {label:'Bu sitede Calcium koruması',type:'checkbox',checked:calciumEnabledFor(t?.url),enabled:!!calciumSite(t?.url),click:()=>{toggleCalciumSite(t.url);t.view?.webContents.reload();}},
+    {label:'Calcium koruması',type:'checkbox',checked:settings.calciumProtection!==false,enabled:false},
     { label: uboId ? 'uBlock Origin: AÇIK' : 'Reklam engelleyici yükleniyor...', enabled: false },
     { label: `${(t && hostOf(t.url)) || 'Bu sayfa'}: ${t ? t.blocked : 0} reklam/izleyici engellendi`, enabled: false },
     { type: 'separator' },
@@ -2893,8 +3020,8 @@ function showTabMenu(arg) {
     ...(settings.tabAudio ? [{ label: multiple ? (t.muted ? 'Seçili sekmelerin sesini aç' : 'Seçili sekmelerin sesini kapat') : (t.muted ? 'Sitenin sesini aç' : 'Sitenin sesini kapat'), click: () => { const muted = !t.muted; group.forEach(x => { if (!!x.muted !== muted) toggleMute(x.id); }); } }] : []),
     { label: settings.verticalTabs ? 'Yatay sekmelere geç' : 'Dikey sekmelere geç', click: () => setVerticalTabs(!settings.verticalTabs) },
     ...(settings.verticalTabs ? [{ label: 'Kenar çubuğunu otomatik gizle', type: 'checkbox', checked: !!settings.verticalAutoHide, ...hint('Ctrl+S'), click: () => toggleAutoHide() }] : []),
-    ...([{ label: 'Ses seviyesi (%' + (t.volume || 100) + ')', enabled: /^https?:/i.test(t.url), submenu: VOLUME_STEPS.map((v) => ({
-      label: '%' + v + (v === 100 ? ' (normal)' : ''), type: 'radio', checked: (t.volume || 100) === v, click: () => setVolume(t.id, v)
+    ...([{ label: 'Ses seviyesi (%' + (t.volume ?? 100) + ')', enabled: /^https?:/i.test(t.url), submenu: VOLUME_STEPS.map((v) => ({
+      label: '%' + v + (v === 100 ? ' (normal)' : ''), type: 'radio', checked: (t.volume ?? 100) === v, click: () => setVolume(t.id, v)
     })) }]),
     ...(settings.bookmarksEnabled === false ? [] : [{ label: 'Yer işareti koy', enabled: !isNewtab(t.url) && !isBookmarked(t.url), click: () => { settings.bookmarks.push({ url: t.url, title: t.title, favicon: t.favicon }); bookmarksChanged(); } }]),
     { type: 'separator' },
@@ -2957,7 +3084,6 @@ function showContextMenu(wc, p) {
       if (extItems.length) items.push({ type: 'separator' }, ...extItems);
     } catch {}
   }
-  if(calciumSite(wc.getURL()))items.push({type:'separator'},{label:'Bu sitede Calcium koruması',type:'checkbox',checked:calciumEnabledFor(wc.getURL()),click:()=>{toggleCalciumSite(wc.getURL());wc.reload();}});
   items.push({ type: 'separator' }, { label: 'İncele', click: () => wc.inspectElement(p.x, p.y) });
   const bounds=byWcId.get(wc.id)?.view?.getBounds()||{x:0,y:0};
   popupBrowserMenu(items,{x:bounds.x+p.x,y:bounds.y+p.y},wc);
@@ -3547,7 +3673,7 @@ function createWindow(opts = {}) {
 function closedWindow(w) {
   clearTimeout(w.sideCloseTimer);clearInterval(w.sideWatch);
   if(w.incognito){w.closedTabs.length=0;w.searchHistory=[];}
-  closeUpdateNotice(w);destroyFind(w);
+  closeUpdateNotice(w);destroyFind(w);closeBackgroundTabNotice(w);
   if (W === w) saveCtx();
   for (const t of [...w.tabs, ...(w.homeTab ? [w.homeTab] : [])]) {
     iconQueue.cancel(t);

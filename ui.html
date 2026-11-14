@@ -40,9 +40,9 @@
   body:not(.vert) .tab.on { background:var(--toolbar); }
   .tab.on .c1, .tab.on .c2 { position:absolute; bottom:0; width:10px; height:10px; display:block; }
   .tab .c1, .tab .c2 { display:none; }
-  .tab.selected:not(.on)::before { background:var(--sel); }
+  body .tab.selected::before { background:transparent; }
   body .tab.selected { outline:2px solid var(--accent); outline-offset:-3px; }
-  body.vert .tab.selected:not(.on) { background:var(--sel); }
+  body.vert .tab.selected:not(.on) { background:transparent; }
   .tab.on .c1 { left:-10px; background:radial-gradient(circle at 0 0, transparent 10px, var(--toolbar) 10.5px); }
   .tab.on .c2 { right:-10px; background:radial-gradient(circle at 100% 0, transparent 10px, var(--toolbar) 10.5px); }
   .tab .ico { width:16px; height:16px; flex:none; display:flex; align-items:center; justify-content:center; }

@@ -25,6 +25,11 @@
       // Thumbnails come from thumb.wikimedia.org or upload.wikimedia.org; the original is always on upload
       return 'https://upload.wikimedia.org' + u.pathname.replace('/thumb/', '/').replace(/\/[^/]+$/, '');
     }
+    if (/(^|\.)(steamstatic\.com|steamusercontent\.com|steamcommunity\.com|akamaihd\.net)$/.test(h) && (/\/(steam\/apps|store_item_assets|ugc|avatars)\//.test(u.pathname) || h.startsWith('avatars.'))) {
+      u.search = '';
+      u.pathname = u.pathname.replace(/\.resizedimage[^/]*$/i, '').replace(/_(medium|full)(?=\.[^.]+$)/, '_full');
+      return u.href;
+    }
     if (h === 'pbs.twimg.com' && u.pathname.startsWith('/media/')) { u.searchParams.set('name', 'orig'); return u.href; }
     if (h === 'preview.redd.it' || h === 'external-preview.redd.it') {
       if (h === 'preview.redd.it') return 'https://i.redd.it' + u.pathname.replace(/^\/[^/]*-(?=[^/-]+\.\w+$)/, '/');
@@ -46,7 +51,7 @@
     const set = img.getAttribute('srcset') || (img.parentElement && img.parentElement.tagName === 'PICTURE'
       ? [...img.parentElement.querySelectorAll('source[srcset]')].map((x) => x.getAttribute('srcset')).join(',') : '');
     let best = null, bw = 0;
-    for (const part of set.split(/,\s+/)) {
+    for (const part of set.split(/,\s*/)) {
       const [url, d] = part.trim().split(/\s+/);
       const w = d ? parseFloat(d) * (/x$/.test(d) ? 1000 : 1) : 1;
       if (url && w > bw) { bw = w; best = url; }
@@ -84,24 +89,70 @@
   function pick(el) {
     if (!el || el.nodeType !== 1) return null;
     const img = el.tagName === 'IMG' ? el : null;
-    const list = [];
-    let small = null;
-    if (img && img.currentSrc && !/^data:/.test(img.currentSrc)) {
-      small = img.getBoundingClientRect();
-      if (small.width < 24 || small.height < 24) return null;   // icon, emoji etc.
-      const up = upgrade(img.currentSrc);
-      if (up && up !== img.currentSrc) list.push({ url: up, sure: true });
+    const video = el.tagName === 'VIDEO' ? el : null;
+    const list = [], seen = new Set();
+    const small = el.getBoundingClientRect();
+    if (small.width < 24 || small.height < 24) return null;
+    const add = (src, sure = false, moving = false) => {
+      if (!src) return;
+      let url; try { url = new URL(src, location.href); } catch { return; }
+      if (!/^(https?:|blob:|data:)$/.test(url.protocol) || seen.has(url.href)) return;
+      if (/\.gifv$/i.test(url.pathname)) { url.pathname=url.pathname.replace(/\.gifv$/i,'.mp4'); moving=true; }
+      seen.add(url.href);
+      list.push({url:url.href,sure:sure || /\.gif$/i.test(url.pathname),video:moving,small});
+    };
+    const link = el.closest('a[href]');
+    const linked = link && mediaLink(link.href);
+    if (linked) add(linked.url, true, linked.video);
+    // Explicit originals and animated sources precede static thumbnails.
+    for (const name of ['data-original','data-full','data-full-src','data-large','data-gif','data-src']) {
+      const src = el.getAttribute(name);
+      if (src) add(upgrade(src) || src, false, VID_EXT.test(src));
     }
-    const a = el.closest('a[href]');
-    const ml = a && mediaLink(a.href);
-    if (ml && (!img || ml.url !== img.currentSrc)) list.push(ml);
-    if (small) {
-      const ss = bestSrcset(img);
-      if (ss && ss !== img.currentSrc) list.push({ url: ss, sure: false, small });
-      list.push({ url: img.currentSrc, sure: false, small });
+    if (img) {
+      const src = img.currentSrc || img.src;
+      const up = src && upgrade(src);
+      if (up && up !== src) add(up,true);
+      try { add(bestSrcset(img)); } catch {}
+      add(src, /\.gif(?:[?#]|$)/i.test(src || ''));
+    } else if (video) {
+      // Only looping/muted animation previews; leave normal players alone.
+      if (video.loop && video.muted && !video.controls) add(video.currentSrc || video.src, true, true);
+    } else {
+      const bg = getComputedStyle(el).backgroundImage;
+      for (const match of bg.matchAll(/url\(["']?(.*?)["']?\)/g)) add(upgrade(match[1]) || match[1]);
     }
-    for (let i = 0; i < list.length - 1; i++) list[i].next = list[i + 1];
+    for (let i=0;i<list.length-1;i++) list[i].next=list[i+1];
     return list[0] || null;
+  }
+
+  function resolveAt(source, x, y) {
+    const visited = new Set();
+    const hits = document.elementsFromPoint(x,y).slice(0,16);
+    const test = el => {
+      if (!el || el === host || visited.has(el) || el.nodeType !== 1) return null;
+      visited.add(el);
+      const r=el.getBoundingClientRect();
+      if (x<r.left || x>=r.right || y<r.top || y>=r.bottom || getComputedStyle(el).visibility==='hidden') return null;
+      if (el.shadowRoot) {
+        for (const child of el.shadowRoot.elementsFromPoint?.(x,y) || []) {
+          const found=test(child); if(found) return found;
+        }
+      }
+      const candidate=pick(el);
+      return candidate ? {owner:el,candidate} : null;
+    };
+    for (const hit of [source,...hits]) {
+      const found=test(hit); if(found) return found;
+      // Do not look through an unrelated modal at background content.
+      if (hit.closest?.('dialog[open],[aria-modal="true"]')) return null;
+    }
+    for(let node=source?.parentElement,depth=0;node && depth<4;node=node.parentElement,depth++) {
+      if(node===document.body || node===document.documentElement) break;
+      const image=imageAt(node,x,y);
+      const found=test(image); if(found) return found;
+    }
+    return null;
   }
 
   function youtubePlaybackAt(el, x, y) {
@@ -156,7 +207,7 @@
   </style><div class="bd"></div><div class="box"></div><div class="spin"></div><div class="pct"></div>`;
   const box = root.querySelector('.box'), spin = root.querySelector('.spin'), bd = root.querySelector('.bd'), pct = root.querySelector('.pct');
 
-  let target = null, timer = 0, media = null, mx = 0, my = 0, active = false;
+  let target = null, timer = 0, media = null, mx = 0, my = 0, active = false, frame = 0, sourceKey = null, lastResolve = 0;
   // Pinned (Z) view: scale and on-screen position of the image's top-left corner
   let pinned = false, wantPin = false, sc = 1, fit = 1, bx = 0, by = 0, drag = null, pctTimer = 0;
 
@@ -179,6 +230,8 @@
   function hide() {
     if (pinned) unpinUi();
     wantPin = false;
+    sourceKey = null;
+    cancelAnimationFrame(frame); frame = 0;
     clearTimeout(timer); timer = 0; target = null;
     if (media) { media.onload = media.onerror = media.onloadedmetadata = null; if (media.pause) media.pause(); media.removeAttribute('src'); media = null; }
     box.replaceChildren(); box.style.display = 'none'; spin.style.display = 'none'; host.style.display = 'none';
@@ -194,7 +247,10 @@
       const nw = m.naturalWidth || m.videoWidth;
       if (p.next && /^https:\/\/i\.ytimg\.com\/.*\/maxresdefault\.jpg$/.test(p.url) && nw <= 120) { m.onload=null;media=null;show(p.next);return; }
       // Don't bother zooming an image that's already that size
-      if (!p.sure && p.small && nw <= p.small.width * 1.25 && (m.naturalHeight || m.videoHeight) <= p.small.height * 1.25) { hide(); return; }
+      if (!p.sure && p.small && nw <= p.small.width * 1.25 && (m.naturalHeight || m.videoHeight) <= p.small.height * 1.25) {
+        if (p.next) { m.onload=null; media=null; show(p.next); } else hide();
+        return;
+      }
       box.replaceChildren(m); place();
       if (wantPin) pin();
     };
@@ -282,21 +338,41 @@
     const source = e.composedPath()[0] || e.target;
     if(source===host)return;
     if(youtubePlaybackAt(source,e.clientX,e.clientY)){hide();return;}
-    const youtube = youtubeThumbnail(source,e.clientX,e.clientY);
-    const el = youtube?.owner || source;
-    if (el === target || el === host) return;
-    const p = youtube?.candidate || pick(imageAt(el, e.clientX, e.clientY)) || pick(el);
-    if (!p) { if (target && !(target.contains && target.contains(el))) hide(); return; }
+    const resolved = youtubeThumbnail(source,e.clientX,e.clientY) || resolveAt(source,e.clientX,e.clientY);
+    const el = resolved?.owner;
+    const p = resolved?.candidate;
+    if (!p) { if (target && !(target.contains && target.contains(source))) hide(); return; }
+    if (sourceKey === p.url) { target=el; return; }
     hide();
+    sourceKey=p.url;
     target = el; mx = e.clientX; my = e.clientY;
-    timer = setTimeout(() => { timer = 0; if (target === el) show(p); }, DELAY);
+    timer = setTimeout(() => { timer = 0; if (sourceKey === p.url) show(p); }, DELAY);
   };
-  const onMove = (e) => { mx = e.clientX; my = e.clientY; if(!pinned&&target&&youtubePlaybackAt(e.target,mx,my)){hide();return;} if (!pinned && media && box.style.display === 'block') place(); };
+  const onMove = (e) => {
+    mx=e.clientX; my=e.clientY;
+    if (frame || pinned) return;
+    const source=e.composedPath()[0] || e.target;
+    frame=requestAnimationFrame(now => {
+      frame=0;
+      if(youtubePlaybackAt(source,mx,my)){hide();return;}
+      const bounds=target?.getBoundingClientRect();
+      if (!bounds || mx<bounds.left || mx>=bounds.right || my<bounds.top || my>=bounds.bottom) {
+        if (now-lastResolve<75) return;
+        lastResolve=now;
+        onOver({composedPath:()=>[source],target:source,clientX:mx,clientY:my});
+      }
+      if(target && media && box.style.display==='block') place();
+    });
+  };
   const onOut = (e) => {
     if (pinned || !target || (e.relatedTarget && target.contains(e.relatedTarget))) return;
     // Removing a preview node can report a null relatedTarget even though the
     // pointer is still over the same card.
     if (!e.relatedTarget && target.contains(document.elementFromPoint(e.clientX,e.clientY))) return;
+    if (e.relatedTarget) {
+      const next=resolveAt(e.relatedTarget,e.clientX,e.clientY);
+      if(next?.candidate.url===sourceKey){target=next.owner;return;}
+    }
     hide();
   };
   const typing = (el) => !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
