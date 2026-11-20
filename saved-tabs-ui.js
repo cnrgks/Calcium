@@ -4,11 +4,19 @@ document.body.classList.toggle('popup',popup);$('openList').hidden=!popup;
 let data={groups:[],open:[]},filter='all',busy=false,lastSelection=null,preferenceLoaded=false,popupReady=false;
 const trashBatch=crypto.randomUUID();
 const archiveSelections=new Map();
+function selectedArchiveGroups(){
+ return data.groups.filter(group=>!group.deleted).flatMap(group=>{
+  const selected=archiveSelections.get(group.id)?.selected;
+  const tabIds=group.tabs.filter(tab=>selected?.has(tab.id)).map(tab=>tab.id);
+  return tabIds.length?[{id:group.id,tabIds}]:[];
+ });
+}
 function selectArchiveTab(group,tab,event,checkbox=false){let state=archiveSelections.get(group.id);if(!state){state={selected:new Set(),anchor:null};archiveSelections.set(group.id,state);}const ids=group.tabs.map(t=>t.id),index=ids.indexOf(tab.id),anchor=state.anchor?ids.indexOf(state.anchor):0;
  if(event.shiftKey){if(!event.ctrlKey&&!event.metaKey)state.selected.clear();for(let i=Math.min(Math.max(0,anchor),index);i<=Math.max(Math.max(0,anchor),index);i++)state.selected.add(ids[i]);}
  else if(event.ctrlKey||event.metaKey||checkbox){if(state.selected.has(tab.id))state.selected.delete(tab.id);else state.selected.add(tab.id);state.anchor=tab.id;}
  else{state.selected=new Set([tab.id]);state.anchor=tab.id;}
  updateArchiveSelection(group.id);
+ $('openSelected').hidden=selectedArchiveGroups().length<2;
 }
 function updateArchiveSelection(id){const state=archiveSelections.get(id),card=[...document.querySelectorAll('#groups .card')].find(n=>n.dataset.groupId===id);if(!card)return;card.classList.toggle('selection-mode',!!state);for(const row of card.querySelectorAll('[data-tab-id]')){const selected=!!state?.selected.has(row.dataset.tabId);row.classList.toggle('selected',selected);const box=row.querySelector('.archive-select');if(box){box.hidden=!state;box.checked=selected;}}const open=card.querySelector('.group-open');if(open){open.textContent=state?'Seçilenleri aç':'Tümünü geri aç';open.disabled=!!state&&!state.selected.size;}const privateOpen=card.querySelector('.incognito-button');if(privateOpen){privateOpen.disabled=!!state&&!state.selected.size;privateOpen.title=state?'Seçilenleri gizli pencerede aç':'Tümünü gizli pencerede aç';privateOpen.setAttribute('aria-label',privateOpen.title);}}
 
@@ -43,6 +51,7 @@ function render(){
   card.append(head);for(const t of items){const row=el('div',undefined,'row'),link=el('a',t.title||t.url);row.dataset.groupId=g.id;row.dataset.tabId=t.id;row.dataset.deleted=String(!!g.deleted);link.href=t.url;link.title=t.url;link.onclick=e=>{e.preventDefault();if(!g.deleted){if(e.ctrlKey||e.metaKey||e.shiftKey||archiveSelections.has(g.id))selectArchiveTab(g,t,e);else run(()=>call('restore',{id:g.id,tabId:t.id,batch:trashBatch}));}};if(!g.deleted){const box=el('input',undefined,'archive-select');box.type='checkbox';box.hidden=!archiveSelections.has(g.id);box.setAttribute('aria-label',t.title+' seç');box.onclick=e=>{e.stopPropagation();selectArchiveTab(g,t,e,true);};row.append(box);row.oncontextmenu=e=>archiveMenu(e,'Çöp kutusuna gönder',()=>run(()=>call('trash-tab',{id:g.id,tabId:t.id,batch:trashBatch})));row.onclick=e=>{if(e.target!==link&&e.target!==box&&(e.ctrlKey||e.metaKey||e.shiftKey)){e.preventDefault();selectArchiveTab(g,t,e);}};}row.append(link,el('span',new URL(t.url).hostname,'domain'));if(g.deleted){const recover=button('Geri al',()=>run(()=>call('recover-tab',{id:g.id,tabId:t.id})));recover.className='recover-tab';row.append(recover);}card.append(row);}$('groups').append(card);
  }
  for(const [id,state] of archiveSelections){const group=live.find(g=>g.id===id);if(!group){archiveSelections.delete(id);continue;}state.selected=new Set([...state.selected].filter(t=>group.tabs.some(tab=>tab.id===t)));updateArchiveSelection(id);}
+ $('openSelected').hidden=selectedArchiveGroups().length<2;
  wireArchiveInteractions();
  if(!$('groups').children.length)$('groups').append(el('div',q?'Aramayla eşleşen sekme yok.':filter==='trash'?'Çöp kutusu boş.':'Henüz kayıtlı sekme yok. Araç çubuğundaki Sekme Kasası düğmesiyle başlayın.','empty'));
 }
@@ -51,6 +60,8 @@ $('selectAll').onchange=()=>{document.querySelectorAll('#openTabs input').forEac
 $('showList').onchange=()=>call('set-show-list',$('showList').checked).catch(e=>{$('error').textContent=e.message;});
 $('store').onclick=()=>run(()=>call('store',{ids:[...document.querySelectorAll('#openTabs input:checked')].map(n=>Number(n.value))}));
 $('search').oninput=render;
+const openSelected=button('Seçilenleri aç',()=>run(()=>call('restore-selected',{items:selectedArchiveGroups(),batch:trashBatch})));
+openSelected.id='openSelected';openSelected.hidden=true;$('export').before(openSelected);
 $('export').onclick=()=>archiveTransfer('export');
 $('import').onclick=()=>archiveTransfer('import');$('file').onchange=()=>run(async()=>{const f=$('file').files[0];if(!f)return;if(f.size>16*1024*1024)throw Error('Dosya çok büyük.');const text=await f.text();if(f.name.toLowerCase().endsWith('.json'))await call('import',JSON.parse(text));else await call('import-text',text);$('file').value='';});
 if(popup&&savedApi.onOpen)savedApi.onOpen(async()=>{try{lastSelection=null;preferenceLoaded=false;$('openTabs').replaceChildren();await refresh();await call('present',{height:Math.ceil(document.querySelector('header').offsetHeight+$('capture').querySelector('.card').scrollHeight+document.querySelector('.capture-footer').offsetHeight+44)});}catch(e){$('error').textContent=e.message;}});
@@ -59,4 +70,15 @@ if(savedApi.onUpdate)savedApi.onUpdate(()=>{if(updateQueued)return;updateQueued=
 window.addEventListener('focus',()=>{if(!popup&&!busy)run(()=>Promise.resolve());});
 document.addEventListener('pointerdown',e=>{if(popup&&!$('surface').contains(e.target))call('close').catch(()=>{});});
 document.addEventListener('keydown',e=>{if(!popup&&e.key==='Escape'&&!document.querySelector('dialog[open]')&&!archiveDrag){for(const id of [...archiveSelections.keys()]){archiveSelections.delete(id);updateArchiveSelection(id);}}if(popup&&e.key==='Escape'){call('close').catch(()=>{});return;}if(e.key==='/'&&!['INPUT','TEXTAREA'].includes(document.activeElement.tagName)){e.preventDefault();$('search').focus();}});
+document.addEventListener('keydown',e=>{
+ if(e.key==='Escape')$('openSelected').hidden=selectedArchiveGroups().length<2;
+ if(e.key.toLowerCase()!=='i'||(!e.ctrlKey&&!e.metaKey)||e.shiftKey||e.altKey||e.target.closest?.('textarea,input:not([type=checkbox]),[contenteditable],dialog'))return;
+ if(popup){for(const box of document.querySelectorAll('#openTabs input'))box.checked=!box.checked;lastSelection=null;updateSelection();}
+ else{
+  if(!archiveSelections.size)return;
+  for(const group of data.groups){const state=archiveSelections.get(group.id);if(state&&!group.deleted){state.selected=new Set(group.tabs.filter(tab=>!state.selected.has(tab.id)).map(tab=>tab.id));state.anchor=null;updateArchiveSelection(group.id);}}
+  $('openSelected').hidden=selectedArchiveGroups().length<2;
+ }
+ e.preventDefault();
+});
 run(()=>Promise.resolve());

@@ -13,5 +13,14 @@ try{
  const batchStore=new SavedTabs(path.join(dir,'batch.json')),one=batchStore.store([{url:'https://a.example'}]),two=batchStore.store([{url:'https://b.example'}]);for(const group of [...batchStore.data.groups])batchStore.consume(group.id,group.tabs.map(t=>t.id),'visit');assert.equal(batchStore.data.groups.length,1);assert.equal(batchStore.data.groups[0].tabs.length,2);const group=batchStore.data.groups[0];batchStore.recoverTab(group.id,group.tabs[0].id);assert.equal(batchStore.data.groups.find(g=>g.deleted).tabs.length,1);assert.equal(batchStore.data.groups.find(g=>!g.deleted).tabs.length,1);
  const moving=new SavedTabs(path.join(dir,'move.json')),ga=moving.store([{url:'https://a.example'},{url:'https://b.example'}],'A'),gb=moving.store([{url:'https://c.example'}],'B');moving.moveGroup(ga,gb);assert.deepEqual(moving.data.groups.map(g=>g.id),[ga,gb]);const ids=moving.data.groups[0].tabs.map(t=>t.id);moving.moveTab(ga,ids[1],ga,ids[0]);assert.equal(moving.data.groups[0].tabs[0].id,ids[1]);moving.moveTab(ga,ids[1],gb,null);assert.equal(moving.data.groups[1].tabs.length,2);const snapshot=JSON.stringify(moving.data);assert.throws(()=>moving.moveTab(ga,ids[0],'missing',null));assert.equal(JSON.stringify(moving.data),snapshot);moving.edit(gb,'trash');moving.emptyTrash();assert.deepEqual(moving.data.groups.map(g=>g.id),[ga]);assert.equal(new SavedTabs(moving.file).data.groups[0].id,ga);
  const mergeId=moving.store([{url:'https://merge.example'}],'Merge');const originalCount=moving.data.groups.find(g=>g.id===ga).tabs.length;moving.mergeGroups(mergeId,ga);assert(!moving.data.groups.some(g=>g.id===mergeId));assert.equal(moving.data.groups.find(g=>g.id===ga).tabs.length,originalCount+1);assert.equal(new SavedTabs(moving.file).data.groups.find(g=>g.id===ga).tabs.length,originalCount+1);
+ const extra=moving.store([{url:'https://extra.example'}],'Extra');
+ const extraTab=moving.data.groups.find(g=>g.id===extra).tabs[0].id;
+ const multi=[{id:ga,tabId:ids[0]},{id:extra,tabId:extraTab}];
+ const batchSnapshot=JSON.stringify(moving.data);
+ assert.throws(()=>moving.moveTabs([...multi,{id:extra,tabId:'missing'}],null));
+ assert.equal(JSON.stringify(moving.data),batchSnapshot);
+ const grouped=moving.moveTabs(multi,null);
+ assert.deepEqual(moving.data.groups.find(g=>g.id===grouped).tabs.map(t=>t.id),[ids[0],extraTab]);
+ assert(!moving.data.groups.some(g=>g.id===extra));
  console.log('PASS: archive persistence, text round trip, trash recovery, durable reordering and cross-group moves, invalid move rollback and empty trash.');
 }finally{fs.rmSync(dir,{recursive:true,force:true});}

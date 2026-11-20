@@ -24,7 +24,15 @@ function resolveInput(input,{siteCommands=[],textReplacements=[],searchUrl}={}){
  const text=String(input||'').trim();const exact=/^#([^\s#]+)$/u.exec(text);
  if(exact){const rule=textReplacements.find(r=>r.trigger===exact[1].normalize('NFC').toLowerCase());if(rule)return {kind:'text',value:rule.value};}
  const bang=/^!([^\s!]+)(?:\s+([\s\S]*))?$/u.exec(text);
- if(bang){const rule=siteCommands.find(r=>r.trigger===bang[1].normalize('NFC').toLowerCase());if(rule){const query=(bang[2]||'').trim();return {kind:query&&rule.searchUrl?'search':'url',url:query&&rule.searchUrl?rule.searchUrl.replace('{query}',encodeURIComponent(query)):rule.url,query:query&&rule.searchUrl?text:null};}}
+ if(bang){
+  const name=bang[1].normalize('NFC').toLowerCase();
+  const rule=siteCommands.find(r=>r.trigger===name);
+  if(rule){
+   const query=(bang[2]||'').trim();
+   const searching=!!(query&&rule.searchUrl);
+   return {kind:searching?'search':'url',url:searching?rule.searchUrl.replace('{query}',encodeURIComponent(query)):rule.url,query:searching?text:null};
+  }
+ }
  const url=/^(?:https?|file|about|data|view-source|chrome-extension|calcium|mondium|blob):/i.test(text)||/^localhost(?::\d+)?(?:\/|$)/i.test(text)||!/[\s]/.test(text)&&/^[^\s/]+\.[a-z]{2,}(?::\d+)?(?:\/.*)?$/i.test(text)||/^\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?(?:\/|$)/.test(text);
  return url?{kind:'url',url:text}:{kind:'search',url:searchUrl+encodeURIComponent(text),query:text};
 }

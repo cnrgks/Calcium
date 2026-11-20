@@ -10,6 +10,19 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms)),until=async fn=>{for(let i=0;i<
 (async()=>{
  await app.whenReady();const api=m.exports.test;await api.ready;const w=await until(()=>api.windows()[0]?.tabs.length&&api.extensions()&&api.windows()[0]);
  let survivor=api.newTab('about:blank',false,null,-1,true);
+ const historyFiles=['first','second','third'].map(title=>{
+  const file=path.join(profile,title+'.html');fs.writeFileSync(file,'<title>'+title+'</title>');
+  return require('node:url').pathToFileURL(file).href;
+ });
+ const original=api.newTab(historyFiles[0]),historyContents=original.view.webContents;
+ await until(()=>historyContents.getURL()===historyFiles[0]&&!historyContents.isLoading());
+ await historyContents.loadURL(historyFiles[1]);await historyContents.loadURL(historyFiles[2]);
+ historyContents.navigationHistory.goBack();await until(()=>historyContents.getURL()===historyFiles[1]&&!historyContents.isLoading());
+ api.closeTab(original.id);api.handleShortcut({key:'t',control:true,shift:true,type:'keyDown'});
+ const reopened=api.activeTab(),restoredContents=reopened.view.webContents;
+ await until(()=>restoredContents.getURL()===historyFiles[1]&&!restoredContents.isLoading());
+ assert(restoredContents.navigationHistory.canGoBack()&&restoredContents.navigationHistory.canGoForward(),'reopening restores both directions from the active history index');
+ api.closeTab(reopened.id);
  const victim=api.newTab('about:blank',false,null,-1,true),dead=victim.view.webContents;
  api.openSide();api.closeOverlay(false);dead.close();
  await pause(300);assert(dead.isDestroyed());assert(!w.tabs.includes(victim),'native close removes stale logical tab');assert.equal(victim.view,null);api.layout();assert(w.tabs.some(t=>t.view&&!t.view.webContents.isDestroyed()),'a live tab remains');

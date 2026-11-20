@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-0uKtOWrNEEVDaduNOy65UFxA4KBUXzyFlVdxYkb8SdU=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-WRImAy8TiFrBkNamnMEx4xkMEACmks3qrJzA5l50cdo='; style-src 'unsafe-inline'; img-src https: http: data: crx: chrome-extension:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-0uKtOWrNEEVDaduNOy65UFxA4KBUXzyFlVdxYkb8SdU=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-ornTdgN93g088qlqqleQUSyY3OTDw8CZN9ZI3wucypI='; style-src 'unsafe-inline'; img-src https: http: data: crx: chrome-extension:">
 <script src="i18n.js" integrity="sha256-0uKtOWrNEEVDaduNOy65UFxA4KBUXzyFlVdxYkb8SdU="></script><script src="browser-font.js" integrity="sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c="></script>
 <title>Calcium</title>
 <style>
@@ -91,7 +91,7 @@
     z-index:60; border-radius:0; }
   body.vert.autohide.reveal #side { transform:none; }
   #sidehead { flex:none; display:flex; align-items:center; gap:2px; padding:8px 6px 6px; }
-  #snew { flex:1; min-width:0; height:34px; border-radius:8px; display:flex; align-items:center; gap:10px; padding:0 10px; color:var(--text); white-space:nowrap; overflow:hidden; }
+  #snew { flex:none; width:100%; min-width:0; height:34px; border-radius:8px; display:flex; align-items:center; gap:10px; padding:0 10px; color:var(--text); white-space:nowrap; overflow:hidden; }
   #snew svg { width:18px; height:18px; flex:none; color:var(--dim); }
   #snew:hover { background:var(--tab-hover); }
   body.vert #side #incog { margin:0 0 0 2px; }
@@ -101,7 +101,15 @@
   body.vert #side .tab, body.vert #snew, body.vert #grip, body.vert #side #incog { -webkit-app-region:no-drag; }
   #sidetitle { flex:1; }
   #sidespace { flex:1; min-height:8px; }
-  #sidefoot { flex:none; padding:4px 6px 8px; display:flex; }
+  #sidefoot { flex:none; padding:4px 6px 8px; display:flex; flex-direction:column; gap:2px; }
+  #stabsearch { -webkit-app-region:no-drag; height:32px; width:100%; display:flex; align-items:center; gap:10px; padding:0 10px; border-radius:8px; white-space:nowrap; overflow:hidden; color:var(--text); }
+  #stabsearch:hover { background:var(--tab-hover); }
+  #stabsearch svg { width:18px; height:18px; flex:none; fill:currentColor; color:var(--dim); }
+  body.slim #stabsearch { justify-content:center; padding:0; }
+  body.slim #stabsearch span { display:none; }
+  #tabSearchDismiss { position:absolute; inset:var(--top,46px) 0 0 var(--sw); z-index:12; }
+  #tabSearchPanel { position:absolute; z-index:13; left:min(calc(var(--sw) + 8px),max(8px,100% - 248px)); bottom:42px; width:min(240px,calc(100% - 16px)); background:var(--menu); box-shadow:var(--shadow); padding:7px; border-radius:8px; }
+  #tabSearchQuery { width:100%; border:0; outline:none; border-radius:5px; padding:8px; background:var(--omni); color:var(--text); font:inherit; }
   #pinnedtabs { display:none; }
   body.vert #pinnedtabs:not(:empty) { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:2px 8px 12px; max-height:45%; min-height:0; overflow-y:auto; overflow-x:hidden; scrollbar-width:none; overscroll-behavior:contain; flex:0 0 auto; align-content:start; -webkit-app-region:no-drag; }
   body.vert #pinnedtabs .tab { width:100%; min-width:0; height:48px; padding:0; justify-content:center; border-radius:8px; background:var(--active-tab,var(--omni)); }
@@ -289,14 +297,6 @@
   .mi .tb:hover { background:var(--hover); }
   .sep { height:1px; background:var(--border); margin:8px 0; opacity:.7; }
   .hd { padding:6px 16px 4px; font-size:12px; color:var(--dim); }
-  .zoom { cursor:default; }
-  .zoom:hover { background:none; }
-  .zoom .zc { display:flex; align-items:center; gap:2px; }
-  .zoom .zb { width:32px; height:28px; border-radius:6px; display:flex; align-items:center; justify-content:center; color:var(--text); }
-  .zoom .zb:hover { background:var(--hover); }
-  .zoom .zb svg { width:18px; height:18px; }
-  .zoom .zv { min-width:48px; text-align:center; font-variant-numeric:tabular-nums; }
-  .zoom .zs { width:1px; height:20px; background:var(--border); margin:0 6px; }
   /* Like Chrome's permission bubble: title + x, rows, divider, two outlined buttons on the right */
   .bubble { position:absolute; width:420px; max-width:calc(100vw - 16px); background:var(--menu); color:var(--text); border-radius:12px;
     box-shadow:0 2px 6px rgba(0,0,0,.18), 0 10px 28px rgba(0,0,0,.28); font:14px "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
@@ -341,7 +341,7 @@
   #find .btn { width:28px; height:28px; }
   #find .btn svg { width:18px; height:18px; }
 .tab:focus-visible,.mi:focus-visible,.dr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
- #zoomPct{height:20px;min-width:34px;border:0;border-radius:4px;padding:0 5px;margin-right:5px;background:var(--hover);color:var(--text);font-size:11px;flex:none}#zoomPct:hover{background:var(--press)}.awake-badge{position:absolute;right:3px;top:1px;font:10px/13px "Segoe UI Emoji","Apple Color Emoji",sans-serif;pointer-events:none}.site-control-row{display:flex;gap:16px;align-items:center;padding:10px 0}.site-control-row>div{flex:1}.site-control-detail{font-size:12px;color:var(--dim);line-height:1.5;margin-top:4px}.site-switch{flex:none;width:34px;height:20px;border:0;border-radius:12px;padding:3px;background:var(--border)}.site-switch::after{content:'';display:block;width:14px;height:14px;border-radius:50%;background:var(--text);transition:transform .12s}.site-switch[aria-checked=true]{background:var(--accent)}.site-switch[aria-checked=true]::after{transform:translateX(14px);background:var(--toolbar)}.site-switch:disabled{opacity:.4}.site-switch:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+ .awake-badge{position:absolute;right:3px;top:1px;font:10px/13px "Segoe UI Emoji","Apple Color Emoji",sans-serif;pointer-events:none}.site-control-row{display:flex;gap:16px;align-items:center;padding:10px 0}.site-control-row>div{flex:1}.site-control-detail{font-size:12px;color:var(--dim);line-height:1.5;margin-top:4px}.site-switch{flex:none;width:34px;height:20px;border:0;border-radius:12px;padding:3px;background:var(--border)}.site-switch::after{content:'';display:block;width:14px;height:14px;border-radius:50%;background:var(--text);transition:transform .12s}.site-switch[aria-checked=true]{background:var(--accent)}.site-switch[aria-checked=true]::after{transform:translateX(14px);background:var(--toolbar)}.site-switch:disabled{opacity:.4}.site-switch:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 </style>
 </head>
 <body>
@@ -359,7 +359,6 @@
       <div class="lead" id="lead" role="button" tabindex="0" aria-label="Site ayarları"></div>
       <input id="url" spellcheck="false" autocomplete="off" placeholder="Arama yapın veya URL yazın">
       <button id="star" title="Bu sayfaya yer işareti koy (Ctrl+D)" hidden></button>
-      <button id="zoomPct" title="Yakınlaştırmayı %100’e sıfırla" hidden></button>
       <button id="vol" title="Ses yükseltme" hidden></button>
     </div>
     <button class="btn" id="savedTabs" title="Sekme Kasası" hidden><svg viewBox="0 0 24 24"><path d="M4 3h16v4H4zm1 6h14v12H5zm4 3v2h6v-2z"/></svg></button>
@@ -390,10 +389,11 @@
     <div id="pinnedSeparator" role="separator"></div>
     <div id="vtabs" role="tablist" aria-orientation="vertical" aria-multiselectable="true"></div>
     <div id="sidespace" title="Pencereyi taşımak için sürükleyin"></div>
-    <div id="sidefoot"><button id="snew" title="Yeni sekme (Ctrl+T)"><svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg><span>Yeni sekme</span></button></div>
+    <div id="sidefoot"><button id="stabsearch" title="Sekme arama"><svg viewBox="0 0 24 24"><path d="M10 3a7 7 0 1 0 4.9 12l4.6 4.5 1.4-1.4-4.5-4.6A7 7 0 0 0 10 3zm0 2a5 5 0 1 1 0 10 5 5 0 0 1 0-10z"/></svg><span>Sekme arama</span></button><button id="snew" title="Yeni sekme (Ctrl+T)"><svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg><span>Yeni sekme</span></button></div>
     <div id="grip" title="Genişliği ayarlamak için sürükleyin"></div>
   </div>
 
+<div id="tabSearchDismiss" hidden></div><form id="tabSearchPanel" role="search" hidden><input type="search" id="tabSearchQuery" placeholder="Sekme arama" aria-label="Sekme arama" autocomplete="off"></form>
 <div id="newtabPrompt" role="dialog" aria-modal="true" hidden><form><div class="newtab-row"><span id="newtabSearchIcon"></span><input id="newtabQuery" autocomplete="off" spellcheck="false" aria-label="Arama yapın veya URL yazın" role="combobox" aria-autocomplete="list" aria-controls="newtabResults" aria-expanded="false"></div><div id="newtabResults" role="listbox"></div></form></div>
 <div id="sug" hidden></div>
 <div id="pop" hidden></div>
@@ -425,6 +425,9 @@ let state = null, editing = false, drag = null;
 
 // ---------- Toolbar
 $('back').onclick = () => send('back');
+$('back').onauxclick = (event) => {
+  if (event.button === 1 && state?.incognito) { event.preventDefault(); send('back-private'); }
+};
 // Site info: "protect this site from clearing" and site data
 $('lead').onclick = (e) => { if (state && /^https?:/i.test(state.url || '') || /^[^:]+\.[a-z]/i.test(state && state.url || '')) send('site-menu', posOf(e.currentTarget)); };
 $('fwd').onclick = () => send('forward');
@@ -432,7 +435,6 @@ $('reload').onclick = () => send(state && state.loading ? 'stop' : 'reload');
 $('newtab').onclick = () => send('new-tab');
 $('reload').oncontextmenu = (e) => { e.preventDefault(); send('reload-menu', posOf(e.currentTarget)); };
 $('lead').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('lead').click();}};
-$('zoomPct').onclick=()=>send('zoom-reset');
 $('star').onclick = () => send('bookmark-toggle');
 const posOf = (el) => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.bottom + 2 }; };
 $('savedTabs').onclick = e => send('saved-tabs',posOf(e.currentTarget));
@@ -442,6 +444,8 @@ $('dl').onclick = (e) => send('downloads', posOf(e.currentTarget));
 // Previously, typing fast in a new tab reset/selected the address bar once the page loaded and focus returned,
 // so Enter "did nothing" on an empty box. It resets only on Esc, navigation, or tab/page change.
 let dirty = false, dirtyKey = '';
+let privateAddressReady = false;
+let privatePromptOpening = false;
 const pageKey = () => (state ? state.activeId + '|' + state.url : '');
 function openAddressPrompt() {
   if (!state?.newTabPrompt || restoringOverlayFocus) return false;
@@ -454,6 +458,7 @@ url.addEventListener('mousedown', (e) => {
   if (e.button === 0 && state?.newTabPrompt) { e.preventDefault(); openAddressPrompt(); }
 });
 url.addEventListener('focus', () => {
+  if (privateAddressReady) return;
   if (openAddressPrompt()) return;
   editing = true; omni.classList.add('focus');
   if (dirty && dirtyKey === pageKey()) { renderLead(); return; }
@@ -465,7 +470,12 @@ url.addEventListener('focus', () => {
 url.addEventListener('copy', (e) => {
   if (!dirty && state && url.value===prettyUrl(state.url) && url.selectionStart===0 && url.selectionEnd===url.value.length) { e.preventDefault();e.clipboardData.setData('text/plain',state.url); }
 });
-url.addEventListener('blur', () => { editing = false; omni.classList.remove('focus'); hideSug(); renderOmni(); });
+url.addEventListener('blur', () => { privateAddressReady=false; editing = false; omni.classList.remove('focus'); hideSug(); renderOmni(); });
+browserApi.onPrivateAddressReady(() => {
+  privateAddressReady=true;
+  url.value='';
+  url.focus({preventScroll:true});
+});
 
 // ---------- Address bar suggestions from local browsing and search history
 const sug = $('sug');
@@ -537,6 +547,13 @@ function selectSug(i, fill) {
   if (fill) url.value = sugSel === 0 ? typed : sugRows[sugSel].value || prettyUrl(sugRows[sugSel].url);
 }
 url.addEventListener('input', (e) => {
+  if(privatePromptOpening)return;
+  if(privateAddressReady){
+    privateAddressReady=false;
+    if(state?.newTabPrompt&&url.value){privatePromptOpening=true;send('private-address-input',url.value);return;}
+    editing=true;
+    omni.classList.add('focus');
+  }
   typed = url.value;
   dirty = true; dirtyKey = pageKey();
   lastWasDelete = /^delete/.test(e.inputType || '');
@@ -630,7 +647,7 @@ function tabEl(t, active, existing) {
   d.className = 'tab' + (active ? ' on' : '') + (t.sleeping ? ' sleep' : '') + (t.pinned ? ' pin' : '');
   d.dataset.id = t.id;
   const selected=state?.selectedTabIds?.includes(t.id) ?? active;
-  d.classList.toggle('selected',selected && state.selectedTabIds?.length>1);
+  d.classList.toggle('selected',selected && !!state.tabSelectionMode);
   d.tabIndex=active?0:-1;d.setAttribute('role','tab');d.setAttribute('aria-selected',String(selected));d.setAttribute('aria-label',t.title||'Yeni Sekme');
   d.onkeydown=e=>{
     if(e.target!==d||e.ctrlKey||e.metaKey||e.altKey)return;
@@ -678,6 +695,7 @@ function tabEl(t, active, existing) {
     if (e.button === 1) { e.preventDefault(); send('close-tab', t.id); return; }
     if (e.button !== 0) return;
     e.preventDefault();
+    if(!$('tabSearchPanel').hidden){send('select-tab',{id:t.id});return;}
     if(e.ctrlKey||e.metaKey||e.shiftKey){send('select-tab',{id:t.id,toggle:e.ctrlKey||e.metaKey,range:e.shiftKey});return;}
     drag = { id: t.id, el: d, startX: e.clientX, startY: e.clientY, moved: false };
   };
@@ -686,7 +704,6 @@ function tabEl(t, active, existing) {
   return d;
 }
 
-let lastZoomWheel=0;window.addEventListener('wheel',event=>{if(!event.isTrusted||!event.ctrlKey||!event.deltaY)return;event.preventDefault();const now=performance.now();if(now-lastZoomWheel<80)return;lastZoomWheel=now;send('zoom-wheel',event.deltaY<0?1:-1);},{capture:true,passive:false});
 // Reorder tabs by dragging
 window.addEventListener('mousemove', (e) => {
   if (!drag) return;
@@ -791,7 +808,7 @@ window.addEventListener('blur', () => {
 function reconcileTabs(container, items, state) {
   const old=new Map([...container.children].map(el=>[Number(el.dataset.id),el]));
   items.forEach((tab,index)=>{
-    let el=old.get(tab.id);const key=JSON.stringify(tab)+'|'+(tab.id===state.activeId)+'|'+state.tabAudio+'|'+state.selectedTabIds?.includes(tab.id)+'|'+(state.selectedTabIds?.length>1);
+    let el=old.get(tab.id);const key=JSON.stringify(tab)+'|'+(tab.id===state.activeId)+'|'+state.tabAudio+'|'+state.selectedTabIds?.includes(tab.id)+'|'+state.tabSelectionMode;
     if(!el||el.dataset.renderKey!==key){el=tabEl(tab,tab.id===state.activeId,el);el.dataset.renderKey=key;}
     if(container.children[index]!==el)container.insertBefore(el,container.children[index]||null);old.delete(tab.id);
   });
@@ -847,11 +864,14 @@ function render(s) {
   document.body.classList.toggle('find', !!s.findOpen);
   renderSide(s);
   // Tab strip is redrawn only if tabs actually changed (no needless DOM work or image loads)
-  const tKey = s.activeId + '|' + JSON.stringify(s.tabs) + '|' + JSON.stringify(s.selectedTabIds);
+  const fold = text => text.toLowerCase().normalize('NFKD').replace(/\p{M}/gu,'').replace(/ı/g,'i');
+  const query = s.vertical && !$('tabSearchPanel').hidden ? fold($('tabSearchQuery').value.trim()) : '';
+  const visibleTabs = query ? s.tabs.filter(t => fold(t.title+' '+t.url).includes(query)) : s.tabs;
+  const tKey = s.activeId + '|' + JSON.stringify(visibleTabs) + '|' + JSON.stringify(s.selectedTabIds)+'|'+s.tabSelectionMode;
   if (tKey !== tabsKey) {
     tabsKey = tKey;
-    reconcileTabs($('pinnedtabs'),s.vertical?s.tabs.filter(t=>t.pinned):[],s);
-    reconcileTabs(tabsEl,s.tabs.filter(t=>!s.vertical||!t.pinned),s);
+    reconcileTabs($('pinnedtabs'),s.vertical?visibleTabs.filter(t=>t.pinned):[],s);
+    reconcileTabs(tabsEl,visibleTabs.filter(t=>!s.vertical||!t.pinned),s);
     if (s.vertical) { const on = tabsEl.querySelector('.tab.on'); const list = $('vtabs'); if (on && list) { const y = on.getBoundingClientRect().top - list.getBoundingClientRect().top + list.scrollTop; if (y < list.scrollTop) list.scrollTop = y; else if (y + on.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = y + on.offsetHeight - list.clientHeight; } }
     if (drag) { const el = document.querySelector(`.tab[data-id="${drag.id}"]`); if (el) drag.el = el; }
     fitTabs();
@@ -871,7 +891,6 @@ function render(s) {
   renderBookmarks(s);
   $('ext').hidden = !s.extSupport;
   // Volume button is always visible; dimmed on non-web tabs (new tab, settings...)
-  $('zoomPct').hidden=!s.zoom||s.zoom===100;$('zoomPct').textContent=window.LANG==='en'?(s.zoom||100)+'%':'%'+(s.zoom||100);
   const vol = $('vol');
   vol.hidden = false;
   vol.disabled = !s.canVolume;
@@ -928,6 +947,23 @@ function setSideWidth(w) {
   fitPinnedArea();
 }
 $('snew').onclick = () => send('new-tab');
+$('stabsearch').onclick = () => send($('tabSearchPanel').hidden ? 'tab-search-open' : 'tab-search-close');
+$('tabSearchDismiss').onclick = () => send('tab-search-close');
+$('tabSearchQuery').oninput = () => { if(state)render(state); };
+$('tabSearchPanel').onsubmit = event => {
+  event.preventDefault();
+  const match = $('side').querySelector('.tab[data-id]');
+  if(match)send('select-tab',{id:Number(match.dataset.id)});
+};
+window.browserApi.onTabSearchOpen(() => {
+  $('tabSearchPanel').hidden=$('tabSearchDismiss').hidden=false;
+  $('tabSearchQuery').focus();
+});
+window.browserApi.onTabSearchClose(() => {
+  $('tabSearchPanel').hidden=$('tabSearchDismiss').hidden=true;
+  $('tabSearchQuery').value='';
+  if(state)render(state);
+});
 // Width handle: UI is raised while dragging (so events arrive even with the mouse over the page)
 let sizing = false, sizeRaf = 0, sizeW = 0;
 $('grip').onmousedown = (e) => {
@@ -1072,10 +1108,8 @@ const MI = {
   info: P('M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z'),
   exit: P('M10.09 15.59L11.5 17l5-5-5-5-1.41 1.41L12.67 11H3v2h9.67l-2.58 2.59zM19 3H5c-1.11 0-2 .9-2 2v4h2V5h14v14H5v-4H3v4c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z'),
   full: P('M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z'),
-  minus: P('M19 13H5v-2h14v2z'),
   window: P('M19 4H5c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.89-2-2-2zm0 14H5V8h14v10z'),
   incognito: P('M17.5 12c-1.7 0-3.13 1.15-3.56 2.71a3.47 3.47 0 00-3.88 0A3.7 3.7 0 006.5 12 3.5 3.5 0 1010 15.5c0-.07 0-.14-.01-.21a2.07 2.07 0 014.02 0c-.01.07-.01.14-.01.21A3.5 3.5 0 1017.5 12zm-11 5.5a2 2 0 110-4 2 2 0 010 4zm11 0a2 2 0 110-4 2 2 0 010 4zM22 10.5H2V12h20v-1.5zm-6.47-7.87c-.22-.49-.78-.75-1.31-.58L12 2.79l-2.23-.74-.05-.01c-.53-.15-1.09.13-1.29.64L6 9h12l-2.44-6.32-.03-.05z'),
-  plus: P('M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z'),
   chev: P('M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z'),
   check: P('M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'),
   mem: P('M15 9H9v6h6V9zm-2 4h-2v-2h2v2zm8-2V9h-2V7c0-1.1-.9-2-2-2h-2V3h-2v2h-2V3H9v2H7c-1.1 0-2 .9-2 2v2H3v2h2v2H3v2h2v2c0 1.1.9 2 2 2h2v2h2v-2h2v2h2v-2h2c1.1 0 2-.9 2-2v-2h2v-2h-2v-2h2zm-4 6H7V7h10v10z'),
@@ -1156,7 +1190,7 @@ function menuModel(d, kind) {
     { icon: MI.download, label: 'İndirilenler', accel: 'Ctrl+J', act: 'downloads' },
     { icon: MI.puzzle, label: 'Uzantılar', sub: exts },
     { sep: true },
-    { zoom: true },
+    { icon: MI.full, label: 'Tam ekran', accel: 'F11', act: 'fullscreen' },
     { sep: true },
     { icon: MI.tools, label: 'Diğer araçlar', sub: () => [
       { icon: MI.mem, label: 'Görev yöneticisi (RAM kullanımı)', accel: 'Shift+Esc', act: 'task-manager' },
@@ -1200,7 +1234,6 @@ function buildPanel(items, isSub) {
     if (it.sep) { const s = document.createElement('div'); s.className = 'sep'; panel.appendChild(s); continue; }
     if (it.header) { const h = document.createElement('div'); h.className = 'hd'; h.textContent = it.header; panel.appendChild(h); continue; }
     if (it.empty) { const e = document.createElement('div'); e.className = 'empty'; e.textContent = it.empty; panel.appendChild(e); continue; }
-    if (it.zoom) { panel.appendChild(zoomRow()); continue; }
     const row = document.createElement('div');
     row.className = 'mi' + (it.dis ? ' dis' : '');
     row.tabIndex=it.dis?-1:0;row.setAttribute('role',it.checked===undefined?'menuitem':'menuitemcheckbox');if(it.checked!==undefined)row.setAttribute('aria-checked',String(it.checked));
@@ -1230,23 +1263,6 @@ function buildPanel(items, isSub) {
   return panel;
 }
 
-function zoomRow() {
-  const d = menu.data;
-  const row = document.createElement('div'); row.className = 'mi zoom';
-  const ic = document.createElement('span'); ic.className = 'ic'; ic.innerHTML = MI.find;
-  const lb = document.createElement('span'); lb.className = 'lb'; lb.textContent = 'Yakınlaştır';
-  const zc = document.createElement('span'); zc.className = 'zc';
-  const btn = (svg, title, fn) => { const b = document.createElement('button'); b.className = 'zb'; b.innerHTML = svg; b.title = title; b.onclick = fn; return b; };
-  const v = document.createElement('span'); v.className = 'zv'; v.textContent = d.zoom + '%'; v.title = 'Sıfırla (Ctrl+0)';
-  v.onclick = () => menuAct('zoom-reset', null, true);
-  const s = document.createElement('span'); s.className = 'zs';
-  zc.append(btn(MI.minus, 'Küçült (Ctrl+-)', () => menuAct('zoom-out', null, true)), v,
-    btn(MI.plus, 'Büyüt (Ctrl++)', () => menuAct('zoom-in', null, true)), s,
-    btn(MI.full, 'Tam ekran (F11)', () => menuAct('fullscreen')));
-  row.append(ic, lb, zc);
-  row.onmouseenter = () => { clearTimeout(subTimer); subTimer = setTimeout(closeSub, 200); };
-  return row;
-}
 
 // ---------- Volume bubble (from the address bar button; this tab only, 0% - 600%)
 function volumePanel(d) {
@@ -1431,13 +1447,20 @@ browserApi.onNewTabResults((r) => {
   const input=$('newtabQuery');if(r.inline&&!promptWasDelete&&input.selectionStart===promptTyped.length&&input.selectionEnd===promptTyped.length){input.value=r.inline;input.setSelectionRange(promptTyped.length,r.inline.length);}
 });
 browserApi.onNewTabPrompt((d) => {
+  const value=d.fromTyping&&privatePromptOpening ? url.value||d.value : d.value;
+  privatePromptOpening=false;
   promptRows=[];promptSelected=0;promptTyped='';$('newtabResults').replaceChildren();$('newtabQuery').setAttribute('aria-expanded','false');$('newtabQuery').removeAttribute('aria-activedescendant');
-  $('newtabPrompt').hidden = false; $('newtabQuery').value = promptTyped = typeof d.value === 'string' ? d.value : '';
+  $('newtabPrompt').hidden = false; $('newtabQuery').value = promptTyped = typeof value === 'string' ? value : '';
   dirty = false; url.blur();
   $('newtabQuery').placeholder = (d.searchName || 'Google') + ' ile arama yapın veya adres yazın';
   $('newtabSearchIcon').innerHTML = I.search;
   // Focus synchronously: a deferred frame can select over fast typing or run after dismissal.
-  $('newtabQuery').focus(); $('newtabQuery').select();
+  const query=$('newtabQuery');
+  query.focus();
+  if(d.fromTyping){
+    query.setSelectionRange(query.value.length,query.value.length);
+    query.dispatchEvent(new Event('input'));
+  }else query.select();
 });
 $('newtabPrompt').querySelector('form').onsubmit = (e) => { e.preventDefault(); submitPrompt(); };
 $('newtabPrompt').onmousedown = (e) => { if (e.target === $('newtabPrompt')) send('newtab-cancel'); };
@@ -1453,6 +1476,7 @@ browserApi.onMenuClosed((d) => {
 browserApi.onOpenMenu(() => $('menu').click());
 browserApi.onFindStep((forward) => { if (findq.value) send('find', { text: findq.value, next: true, forward }); else { findq.focus(); } });
 window.addEventListener('keydown', (e) => {
+  if(e.key==='Escape'&&!$('tabSearchPanel').hidden){e.preventDefault();send('tab-search-close');return;}
   if(e.defaultPrevented)return;
   if(trapOverlayTab(e))return;
   if(e.key==='Escape'&&!$('newtabPrompt').hidden&&pop.hidden){e.preventDefault();send('newtab-cancel');return;}

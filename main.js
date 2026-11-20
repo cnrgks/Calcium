@@ -80,6 +80,7 @@ const DEFAULTS = {
   disabledExtensions: [],    // disabled extensions {id, path}: files kept, not loaded (no RAM)
   hiddenExtensions: [],      // extension IDs whose toolbar icon is hidden
   hoverZoom: true,           // built-in image hover zoom (Imagus-like), on by default
+  hoverZoomBackgrounds: false,
   savedTabsShowList: true,
   savedTabsEnabled: false,   // optional built-in tab archive
   tabAudio: false,            // speaker icon on tabs + click to mute (both gone when off)
@@ -278,10 +279,6 @@ ipcMain.handle('calcium-text-shortcuts',e=>{
 ipcMain.handle('calcium-text-value',(e,trigger)=>{
  const tab=byWcId.get(e.sender.id);if(!tab||e.sender.session!==tab.w.ses||e.senderFrame!==e.sender.mainFrame||!/^https?:/i.test(e.senderFrame?.url||'')||typeof trigger!=='string'||trigger.length>32)return null;
  return settings.textReplacements.find(r=>r.trigger===trigger)?.value??null;
-});
-ipcMain.on('calcium-zoom-wheel',(event,direction)=>{
- const tab=byWcId.get(event.sender.id);if(!tab||event.senderFrame!==event.sender.mainFrame||![1,-1].includes(direction))return;
- setPageZoom(event.sender,direction);
 });
 function broadcastTextShortcuts(){for(const t of allTabs())if(t.view&&!t.view.webContents.isDestroyed())t.view.webContents.send('calcium-text-shortcuts-changed',settings.textReplacements.map(r=>r.trigger));}
 
@@ -565,21 +562,31 @@ ipcMain.handle('saved-tabs',(e,cmd,arg={})=>{
  if(cmd==='merge-groups'){store.mergeGroups(arg.id,arg.targetId);return {ok:true};}
  if(cmd==='move-group'){store.moveGroup(arg.id,arg.beforeId);return {ok:true};}
  if(cmd==='move-tab'){store.moveTab(arg.id,arg.tabId,arg.targetId,arg.beforeId);return {ok:true};}
+ if(cmd==='move-tabs'){store.moveTabs(arg.items,arg.targetId,arg.beforeId);return {ok:true};}
  if(cmd==='export-text')return {text:require('./saved-tabs').exportText(store.data)};
  if(cmd==='import-text'){store.import(require('./saved-tabs').parseText(arg));return {ok:true};}
  if(cmd==='recover-tab'){store.recoverTab(arg.id,arg.tabId);return {ok:true};}
  if(cmd==='import'){store.import(arg);return {ok:true};}
  if(cmd==='edit'){store.edit(arg.id,arg.action,arg.value);return {ok:true};}
- if(cmd==='restore'){
-  const g=store.data.groups.find(g=>g.id===arg.id&&!g.deleted);if(!g)throw Error('Grup bulunamadı.');
-  const selectedIds=Array.isArray(arg.tabIds)?new Set(arg.tabIds):null;
-  const links=g.tabs.filter(t=>(!selectedIds||selectedIds.has(t.id))&&(!arg.tabId||t.id===arg.tabId)&&require('./saved-tabs').validUrl(t.url));
-  if(!links.length)return {ok:true};
-  const opened=[];
+ if(cmd==='restore'||cmd==='restore-selected'){
+  const selections=cmd==='restore'?[arg]:arg.items;
+  if(!Array.isArray(selections)||!selections.length)throw Error('Grup bulunamadı.');
+  const groups=new Map(store.data.groups.filter(g=>!g.deleted).map(g=>[g.id,g]));
+  const links=new Map();
+  for(const selection of selections){
+   const group=groups.get(selection.id);
+   if(!group)throw Error('Grup bulunamadı.');
+   const ids=Array.isArray(selection.tabIds)?new Set(selection.tabIds):null;
+   if(cmd==='restore-selected'&&!ids)throw Error('Sekme bulunamadı.');
+   links.set(group.id,group.tabs.filter(t=>(!ids||ids.has(t.id))&&(!selection.tabId||t.id===selection.tabId)&&require('./saved-tabs').validUrl(t.url)));
+  }
+  if(![...links.values()].some(group=>group.length))return {ok:true};
+  if(arg.incognito===true)leaveFullscreenForChrome();
   const target=arg.incognito===true?createWindow({incognito:true}):owner;
-  inWin(target,()=>{for(const link of links){const t=newTab(link.url,true);t.title=link.title;opened.push(link.id);}pushState();});
-  store.consume(g.id,opened,typeof arg.batch==='string'&&arg.batch.length<=80?e.sender.id+':'+arg.batch:undefined);
-  pushState();return {ok:true};
+  inWin(target,()=>{for(const group of links.values())for(const link of group){const t=newTab(link.url,true);t.title=link.title;}pushState();});
+  const batch=typeof arg.batch==='string'&&arg.batch.length<=80?e.sender.id+':'+arg.batch:undefined;
+ store.consumeGroups([...links].map(([id,group])=>({id,tabIds:group.map(link=>link.id)})),batch);
+  return {ok:true};
  }
  return {error:'Geçersiz işlem.'};
  }catch(error){return {error:error.message};}});
@@ -677,7 +684,7 @@ function showThreatWarning(wc,url){
  navigationEpoch.set(wc,(navigationEpoch.get(wc)||0)+1);
  blockedNavigations.set(wc.id,url);wc.loadURL(SECURITY_URL).catch(()=>{});return true;
 }
-async function go(wc, url) {
+async function go(wc, url, savedNavigation) {
   if(calciumEnabledFor(url))url=cleanTrackingUrl(url);
   const epoch=(navigationEpoch.get(wc)||0)+1;navigationEpoch.set(wc,epoch);
   if(showThreatWarning(wc,url))return;
@@ -687,6 +694,12 @@ async function go(wc, url) {
   }
   if (wc.isDestroyed() || navigationEpoch.get(wc)!==epoch) return;
   const p = prepareUrl(wc, url);
+  if (savedNavigation?.entries[savedNavigation.index]?.url === p.url) {
+    try {
+      wc.navigationHistory.restore(savedNavigation).catch(() => {});
+      return;
+    } catch {}
+  }
   wc.loadURL(p.url, { userAgent: p.ua }).catch(() => {});
 }
 
@@ -719,8 +732,6 @@ const PERM_TEXT = {
   notifications: { icon: 'bell', text: 'Bildirim göstermek' },
   'display-capture': { icon: 'screen', text: 'Ekranınızı görmek' },
   openExternal: { icon: 'open', text: 'Bilgisayarınızdaki bir uygulamayı açmak' },
-  'storage-access': { icon: 'globe', text: 'Bu sitede üçüncü taraf çerezlerini kullanmak' },
-  'top-level-storage-access': { icon: 'globe', text: 'Bu sitede üçüncü taraf çerezlerini kullanmak' },
   media: { icon: 'camera', text: 'Kameranızı kullanmak' }
 };
 function mediaText(details) {
@@ -840,7 +851,7 @@ function setupSession(ses = mainSes, incognito = false) {
   // ---- Site permissions (like Chrome: the decision is remembered)
   const alwaysAllow = new Set([
     'fullscreen', 'clipboard-sanitized-write', 'pointerLock', 'keyboardLock',
-    // Needed by video players: DRM (EME), cookie access for embedded players, audio output selection
+    // Needed by video players: DRM (EME), persistent storage, audio output selection
     'mediaKeySystem', 'speaker-selection', 'persistent-storage'
   ]);
   const deviceKinds = new Set(['hid', 'usb', 'serial', 'bluetooth']);
@@ -850,15 +861,15 @@ function setupSession(ses = mainSes, incognito = false) {
   const known = (key) => (key in perms ? perms[key] : key in settings.sitePerms && settings.sitePerms[key] === false ? false : undefined);
   ses.setPermissionRequestHandler((wc, permission, cb, details) => {
     if (alwaysAllow.has(permission) || deviceKinds.has(permission)) return cb(true);
+    if (permission==='storage-access'||permission==='top-level-storage-access') return cb(false);
     if (!Object.hasOwn(PERM_TEXT,permission)) return cb(false);
-    if (permission==='openExternal'||permission==='storage-access'||permission==='top-level-storage-access') {
-      const origin=normalizedOrigin(details?.requestingUrl||wc?.getURL()),top=normalizedOrigin(wc?.getURL());
-      const scheme=permission==='openExternal'?externalScheme(details?.externalURL):null;
-      // Electron does not identify the delegated target in top-level storage requests.
-      if(!origin||!top||(permission==='openExternal'&&!scheme)||permission==='top-level-storage-access')return cb(false);
+    if (permission==='openExternal') {
+      const origin=normalizedOrigin(details?.requestingUrl||wc?.getURL());
+      const scheme=externalScheme(details?.externalURL);
+      if(!origin||!normalizedOrigin(wc?.getURL())||!scheme)return cb(false);
       const owner=winOfWc(wc);if(!owner)return cb(false);useWin(owner);
       const documentURL=wc.getURL();
-      const text=permission==='openExternal'?T('Harici uygulama açılacak:')+' '+scheme+':':T('Üçüncü taraf çerez erişimi:')+' '+origin+' → '+top;
+      const text=T('Harici uygulama açılacak:')+' '+scheme+':';
       askPrompt({host:hostOf(origin),title:T('Bu isteğe yalnızca bu kez izin verilsin mi?'),rows:[{icon:'globe',text}],ok:'İzin ver',cancel:'Engelle',kind:'perm'}).then(r=>cb(r==='ok'&&!wc.isDestroyed()&&wc.getURL()===documentURL),()=>cb(false));
       return;
     }
@@ -1100,6 +1111,7 @@ function toUrl(input) {
 
 function protectPopup(child,owner){
  const wc=child.webContents;
+ wc.setZoomMode('disabled');
  attachLoginFix(wc);
  const blocked=url=>threatProtection.isBlocked(url)&&!trustedThreatHosts.get(owner)?.has(hostOf(url));
  wc.setWindowOpenHandler(({url})=>{
@@ -1195,7 +1207,11 @@ function createView(tab) {
   on('did-fail-load', (_e, code, _desc, _url, isMain) => {
     if (isMain && code !== -3) { tab.title = 'Sayfa açılamadı'; pushState(); }
   });
-  on('audio-state-changed', (e) => { tab.audible = e.audible; schedulePush(); });
+  on('audio-state-changed', (e) => {
+    if (tab.audible && !e.audible) tab.lastActive = Date.now();
+    tab.audible = e.audible;
+    schedulePush();
+  });
   on('dom-ready', () => { if (settings.hoverZoom) applyHoverZoom(wc); });
   // While volume boost is on, apply it to newly loaded pages and embedded players too
   on('did-frame-finish-load', (_e, isMain, pid, rid) => {
@@ -1211,8 +1227,20 @@ function createView(tab) {
     applyVolume(wc, isMain ? null : webFrameMain.fromId(pid, rid), tab.volume);
   });
   on('render-process-gone', () => { tab.title = 'Sayfa çöktü - yenileyin'; tab.loading = false; pushState(); });
-  wc.setZoomMode('isolated');wc.setZoomFactor(tab.zoomFactor||1);
-  on('zoom-changed',(event,direction)=>{event.preventDefault();setPageZoom(wc,direction==='in'?1:-1);});
+  wc.setZoomFactor(1);
+  wc.setZoomMode('disabled');
+  on('before-mouse-event', (_event, input) => {
+    if(input.button!=='right')return;
+    if(input.type==='mouseDown')tab.rightPointerDown=true;
+    if(input.type==='mouseUp'&&tab.rightPointerDown){
+      tab.rightPointerDown=false;
+      const owner=tab.w;
+      W.sideHoldUntil=Math.max(W.sideHoldUntil||0,Date.now()+40);
+      if(tab.id===activeId&&!overlayOpen&&!W.sideClosing&&W.sidePageClip?.children.includes(tab.view)){
+        setTimeout(()=>{if(!owner.win.isDestroyed())inWin(owner,layout);},32);
+      }
+    }
+  });
   on('before-input-event', (e, input) => { if (handleShortcut(input)) e.preventDefault(); });
   on('context-menu', (_e, p) => {if(pageKind(wc.getURL())==='saved-tabs'&&!p.isEditable)return;showContextMenu(wc,p);});
   on('found-in-page', (_e, r) => {send('found', { active: r.activeMatchOrdinal, total: r.matches });if(tab.w.findView)tab.w.findView.webContents.send('page-update',{found:{active:r.activeMatchOrdinal,total:r.matches}});});
@@ -1375,10 +1403,10 @@ async function readTabTitle(tab) {
   }
 }
 
-function newTab(url, background = false, openerId = null, at = -1, requireView = false) {
+function newTab(url, background = false, openerId = null, at = -1, requireView = false, savedNavigation = null) {
   const tab = {
     id: nextId++, w: W, view: null, url: toUrl(url), title: 'Yeni Sekme', favicon: null,
-    loading: false, lastActive: Date.now(), blocked: 0, audible: false, pinned: false, muted: false
+    loading: false, lastActive: Date.now(), blocked: 0, audible: false, pinned: false, muted: false, savedNavigation
   };
   const openerIdx = openerId ? tabs.findIndex((t) => t.id === openerId) : -1;
   if (at >= 0) tabs.splice(Math.min(at, tabs.length), 0, tab);
@@ -1525,44 +1553,62 @@ function showHomePlaceholder() {
 }
 
 function selectedTabIds() {
-  const ids = (W?.selectedTabIds || []).filter(id => tabs.some(t => t.id === id));
-  return ids.length ? ids : tabs.some(t => t.id === activeId) ? [activeId] : [];
+  if (W?.selectedTabIds) return W.selectedTabIds.filter(id => tabs.some(t => t.id === id));
+  return tabs.some(t => t.id === activeId) ? [activeId] : [];
+}
+function clearTabSelection() {
+  const tab = activeTab();
+  const id = tab && !tab.homePlaceholder ? tab.id : null;
+  const selected = selectedTabIds();
+  const changed = W.tabSelectionMode || (id == null ? selected.length !== 0 : selected.length !== 1 || selected[0] !== id);
+  W.tabSelectionMode = false;
+  W.tabSelectionAnchor = id;
+  W.selectedTabIds = id == null ? [] : [id];
+  return changed;
+}
+function invertTabSelection() {
+  const selected = new Set(selectedTabIds());
+  const inverted = tabs.filter(t => !selected.has(t.id));
+  W.tabSelectionMode = true;
+  W.selectedTabIds = inverted.map(t => t.id);
+  W.tabSelectionAnchor = inverted[0]?.id ?? null;
+  pushState();
 }
 function selectTab(arg) {
   const tab = getTab(arg?.id);
   if (!tab) return;
   const selected = selectedTabIds();
+  if (arg.range || arg.toggle) W.tabSelectionMode = true;
   if (arg.range) {
     const anchor = tabs.findIndex(t => t.id === (W.tabSelectionAnchor ?? activeId));
     const end = tabs.indexOf(tab), start = anchor < 0 ? end : anchor;
     const range = tabs.slice(Math.min(start,end),Math.max(start,end)+1).map(t => t.id);
     W.selectedTabIds = arg.toggle ? [...new Set([...selected,...range])] : range;
-    activateTab(tab.id, true);
+    pushState();
   } else if (arg.toggle) {
     W.tabSelectionAnchor = tab.id;
-    if (selected.includes(tab.id) && selected.length > 1) {
-      W.selectedTabIds = selected.filter(id => id !== tab.id);
-      if (activeId === tab.id) activateTab(W.selectedTabIds.at(-1), true); else pushState();
-    } else {
-      W.selectedTabIds = [...new Set([...selected,tab.id])];
-      activateTab(tab.id, true);
-    }
+    W.selectedTabIds = selected.includes(tab.id) ? selected.filter(id => id !== tab.id) : [...selected,tab.id];
+    pushState();
   } else activateTab(tab.id);
 }
-function closeTabSelection(id = activeId) {
+function closeTabSelection(id, sleepPinned = true) {
   const selected = selectedTabIds();
-  const ids = selected.includes(id) ? selected : [id];
+  const ids = id === undefined ? (selected.length ? selected : [activeId]) : selected.includes(id) ? selected : [id];
   // Close the active tab last so intermediate activation cannot alter the batch.
-  for (const target of ids.filter(target => target !== activeId).concat(ids.includes(activeId) ? [activeId] : [])) closeTab(target);
+  for (const target of ids.filter(target => target !== activeId).concat(ids.includes(activeId) ? [activeId] : [])) {
+    if (sleepPinned && getTab(target)?.pinned) sleepTab(target);
+    else closeTab(target);
+  }
 }
 function activateTab(id, preserveSelection = false) {
   dismissBackgroundTabNotice(W);
   if (!win) return;
   const tab = getTab(id);
   if (!tab || !win) return;
-  if (!preserveSelection) { W.selectedTabIds = tab.homePlaceholder ? [] : [id]; W.tabSelectionAnchor = tab.homePlaceholder ? null : id; }
+  if (!preserveSelection) { W.tabSelectionMode = false; W.selectedTabIds = tab.homePlaceholder ? [] : [id]; W.tabSelectionAnchor = tab.homePlaceholder ? null : id; }
   const prev = activeTab();
   if (prev && prev !== tab) {
+    prev.rightPointerDown = false;
     if (htmlFullscreen) leaveFullscreenForChrome();
     prev.lastActive = Date.now();
     if (prev.view) { try { win.contentView.removeChildView(prev.view); } catch {} }
@@ -1572,7 +1618,12 @@ function activateTab(id, preserveSelection = false) {
   activeId = id;
   if (tab.titleRequest) tab.titleRequest.abort();
   tab.lastActive = Date.now();
-  if (!tab.view) { createView(tab); go(tab.view.webContents, tab.url); }
+  if (!tab.view) {
+    createView(tab);
+    const savedNavigation = tab.savedNavigation;
+    tab.savedNavigation = null;
+    go(tab.view.webContents, tab.url, savedNavigation);
+  }
   else if (tab.pendingNavigation) { tab.pendingNavigation = false; go(tab.view.webContents, tab.url); }
   const keepSide = overlayOpen && overlayKind === 'side';
   if (overlayOpen && !keepSide) closeOverlay();
@@ -1599,20 +1650,26 @@ function destroyView(tab) {
   try{if(!wc.isDestroyed()){if(typeof wc.close==='function')wc.close();else wc.destroy();}}catch{}
 }
 
-// Closed tabs (reopened with Ctrl+Shift+T). Only the URL is kept, so memory cost is negligible.
+// Closed tabs retain their in-memory navigation stack for Ctrl+Shift+T.
 let closedTabs = [];
+function captureNavigation(tab) {
+  if (!liveTabView(tab) || tab.pendingNavigation) return tab.savedNavigation;
+  const navigation = tab.view.webContents.navigationHistory;
+  if (!navigation || navigation.length() < 2) return null;
+  return {entries:navigation.getAllEntries(), index:navigation.getActiveIndex()};
+}
 function rememberClosed(tab, index) {
   let u = tab.url;
   try { if (tab.view && !tab.pendingNavigation && !tab.view.webContents.isDestroyed()) u = tab.view.webContents.getURL() || u; } catch {}
   const k = pageKind(u);
   if (!u || k === 'newtab' || k === 'welcome') return;
-  closedTabs.unshift({ url: k ? displayUrl(u) : u, title: tab.title || u, favicon: tab.favicon || null, index, pinned: !!tab.pinned });
+  closedTabs.unshift({ url: k ? displayUrl(u) : u, title: tab.title || u, favicon: tab.favicon || null, index, pinned: !!tab.pinned, navigation:captureNavigation(tab) });
   if (closedTabs.length > 25) closedTabs.length = 25;
 }
 function reopenClosed(n = 0) {
   const c = closedTabs.splice(n, 1)[0];
   if (!c) return;
-  const t = newTab(c.url, false, null, c.index);
+  const t = newTab(c.url, false, null, c.index, false, c.navigation);
   if (c.pinned) { t.pinned = true; orderPinned(); pushState(); }
 }
 const iconColors = new Map(), iconQueue=createWorkQueue({concurrency:3,capacity:128});
@@ -1721,7 +1778,9 @@ let ZOOM_JS = null;
 function applyHoverZoom(wc, on = settings.hoverZoom, frame = null) {
   if (!wc || wc.isDestroyed() || !/^https?:/i.test(wc.getURL())) return;
   if (on && !ZOOM_JS) ZOOM_JS = localizeSrc(fs.readFileSync(path.join(__dirname, 'hoverzoom.js'), 'utf8'));
-  const code = on ? ZOOM_JS : "{ const z = window[Symbol.for('calcium.zoom')]; if (z) z.off(); }";
+  const code = on
+    ? ZOOM_JS + "\nwindow[Symbol.for('calcium.zoom')]?.setBackgrounds("+ (settings.hoverZoomBackgrounds === true) +");"
+    : "{ const z = window[Symbol.for('calcium.zoom')]; if (z) z.off(); }";
   const install = target => {
     if (!target || !/^(https?:|about:blank|about:srcdoc)/i.test(target.url || wc.getURL())) return;
     // WebFrameMain has no isolated-world execution API. No privileged bridge is exposed here.
@@ -1732,10 +1791,50 @@ function applyHoverZoom(wc, on = settings.hoverZoom, frame = null) {
   for (const child of wc.mainFrame?.framesInSubtree || []) if (child !== wc.mainFrame) install(child);
 }
 function setFeature(key, on) {
+  const changed=settings[key]!==on;
   settings[key] = on;
   saveSettings();
-  if (key === 'hoverZoom') for (const t of allTabs()) if (t.view) applyHoverZoom(t.view.webContents, on);
+  if (key === 'hoverZoom'||key === 'hoverZoomBackgrounds') for (const t of allTabs()) if (t.view) applyHoverZoom(t.view.webContents);
   forEachWin(() => pushState());
+  if(key==='hoverZoom'&&changed)showHoverZoomNotice(W,on);
+}
+function closeHoverZoomNotice(owner){
+  clearTimeout(owner.hoverZoomNoticeTimer);
+  const view=owner.hoverZoomNotice;
+  owner.hoverZoomNotice=null;
+  if(!view)return;
+  if(!owner.win.isDestroyed())owner.win.contentView.removeChildView(view);
+  if(!view.webContents.isDestroyed())view.webContents.close();
+}
+function layoutHoverZoomNotice(owner){
+  const view=owner?.hoverZoomNotice;
+  if(!view?.ready||owner.win.isDestroyed())return;
+  const {width}=owner.win.getContentBounds();
+  const top=owner.win.isFullScreen()?16:(vertical()?TOOLBAR:uiHeight())+12;
+  view.setBounds({x:Math.max(0,width-164),y:top,width:148,height:148});
+  owner.win.contentView.addChildView(view);
+}
+function showHoverZoomNotice(owner,on){
+  if(!owner?.win||owner.win.isDestroyed())return;
+  closeHoverZoomNotice(owner);
+  const {toolbar,accent,mode}=owner.incognito?incognitoTheme():themeVars();
+  const dark=mode==='dark'||mode==='system'&&nativeTheme.shouldUseDarkColors;
+  const color=on?accent:dark?'#a8abaf':'#5f6368';
+  const view=owner.hoverZoomNotice=new WebContentsView({webPreferences:{session:owner.ses,sandbox:true,contextIsolation:true,nodeIntegration:false}});
+  view.setBackgroundColor('#00000000');
+  view.webContents.setWindowOpenHandler(()=>({action:'deny'}));
+  view.webContents.on('will-navigate',event=>event.preventDefault());
+  const title=uiLang()==='en'?'Image preview':'Fotoğraf önizleme';
+  const state=on?'ON':'OFF';
+  const html=`<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>
+  body{margin:0;font:13px "Segoe UI",sans-serif;color:${dark?'#e3e3e3':'#1f1f1f'}} article{height:144px;box-sizing:border-box;display:grid;align-content:center;justify-items:center;gap:10px;background:${toolbar};border:1px solid ${color};border-radius:16px}svg{width:40px;height:40px;fill:none;stroke:${color};stroke-width:1.7}strong{color:${color};font-size:15px}
+  </style><article role="status"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="9" r="1.5"/><path d="m4 17 5-4 3 2 4-4 5 5"/></svg><span>${title}</span><strong>${state}</strong></article>`;
+  view.webContents.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent(html)).then(()=>{
+    if(owner.hoverZoomNotice!==view||owner.win.isDestroyed())return;
+    view.ready=true;
+    inWin(owner,()=>layoutHoverZoomNotice(owner));
+    owner.hoverZoomNoticeTimer=setTimeout(()=>closeHoverZoomNotice(owner),1250);
+  }).catch(()=>{if(owner.hoverZoomNotice===view)closeHoverZoomNotice(owner);});
 }
 function setVolume(id, pct) {
   const t = getTab(id);
@@ -1756,6 +1855,7 @@ function moveActiveTab(dir) {
 function closeTab(id) {
   const i = tabs.findIndex((t) => t.id === id);
   if (i < 0) return;
+  if (activeId === id && htmlFullscreen) leaveFullscreenForChrome();
   rememberClosed(tabs[i], i);
   const [tab] = tabs.splice(i, 1);
   if (tab.titleRequest) tab.titleRequest.abort();
@@ -1780,6 +1880,7 @@ function sleepTabSelection(ids) {
   for (const tab of group) sleepTab(tab.id);
   // Sleeping tabs should not retain the sidebar's selection/keyboard focus.
   W.selectedTabIds = activeTab()?.homePlaceholder || activeId == null ? [] : [activeId];
+  W.tabSelectionMode = false;
   W.tabSelectionAnchor = W.selectedTabIds[0] ?? null;
   W.sideKeyboardFocus = false;
   W.sideHoldUntil = Date.now() + 250;
@@ -1797,6 +1898,7 @@ function sleepTab(id) {
   }
   if (tab.titleRequest) tab.titleRequest.abort();
   if (!tab.pendingNavigation) tab.url = tab.view.webContents.getURL() || tab.url;
+  tab.savedNavigation = captureNavigation(tab);
   destroyView(tab); tab.pendingNavigation = false; tab.loading = false; tab.audible = false;
   pushState(); return true;
 }
@@ -1824,13 +1926,14 @@ function sleepIdleTabs(force = false, memory) {
   const list=allTabs().map(t=>{
     const wc=t.view?.webContents;
     let captured=false;try{captured=!!wc?.isBeingCaptured();}catch{}
-    return {tab:t,live:!!wc,active:t.id===(t.w===W?activeId:t.w.activeId),pending:t.pendingNavigation,loading:t.loading,audible:t.audible,
+    const audible=wc?.isCurrentlyAudible?.()??t.audible;
+    return {tab:t,live:!!wc,active:t.id===(t.w===W?activeId:t.w.activeId),pending:t.pendingNavigation,loading:t.loading,audible,
       lastActive:t.lastActive,protected:!!(t.formDirty||t.mediaPermission||captured||tabSleepExcluded(t)||downloads.some(d=>d.tabId===t.id&&d.state==='progressing'))};
   });
   const plan=chooseSleepTabs(list,{timeoutMs:settings.sleepMinutes*60000,pressure,force:force===true});
   const changed=new Set();
   for(const {tab:t} of plan){
-    inWin(t.w,()=>{if(!t.view)return;const u=t.view.webContents.getURL();if(u)t.url=u;destroyView(t);t.pendingNavigation=false;t.loading=false;t.audible=false;changed.add(t.w);});
+    inWin(t.w,()=>{if(!t.view)return;const u=t.view.webContents.getURL();if(u)t.url=u;t.savedNavigation=captureNavigation(t);destroyView(t);t.pendingNavigation=false;t.loading=false;t.audible=false;changed.add(t.w);});
   }
   for(const w of changed)inWin(w,()=>pushState());
 }
@@ -1865,7 +1968,7 @@ function leaveFullscreenForChrome() {
   layout(); pushState();
 }
 function layout() {
-  return preservePageFocus(() => { layoutViews(); layoutBackgroundTabNotice(W); });
+  return preservePageFocus(() => { layoutViews(); layoutBackgroundTabNotice(W); layoutHoverZoomNotice(W); });
 }
 // Reparenting a native page view clears its keyboard focus. Layout and sidebar
 // stacking must preserve an already focused page without stealing UI focus.
@@ -1877,6 +1980,8 @@ function preservePageFocus(change) {
 }
 function layoutViews() {
   if (!win || win.isDestroyed() || !ui || ui.webContents.isDestroyed()) return;
+  const active = activeTab();
+  if(active?.rightPointerDown && W.sidePageClip?.children.includes(active.view))return;
   releaseSidePage();
   const fullscreen=htmlFullscreen||win.isFullScreen();ui.setVisible(!fullscreen);
   if(fullscreen&&W?.updateNotice)W.updateNotice.setVisible(false);
@@ -1934,7 +2039,7 @@ function updateSidePageWidth(value) {
   clip.setBounds({...b,x:left,width:Math.max(0,width-left)});
   t.view.setBounds({...t.view.getBounds(),x:SIDE_RAIL-left});
 }
-function raiseUi() { preservePageFocus(() => { releaseSidePage();win.contentView.addChildView(ui); if (W) W.uiAbove = true;raiseSavedTabsPopup(W);layoutBackgroundTabNotice(W); }); }
+function raiseUi() { preservePageFocus(() => { releaseSidePage();win.contentView.addChildView(ui); if (W) W.uiAbove = true;raiseSavedTabsPopup(W); }); }
 
 // ---------- Vertical tabs
 function setVerticalTabs(on) {
@@ -1959,7 +2064,7 @@ function toggleAutoHide() {
   settings.verticalAutoHide = !settings.verticalAutoHide;
   saveSettings();
   forEachWin(() => {
-    if (overlayKind === 'side') { overlayOpen = false; overlayKind = null; send('side-reveal', false); }
+    if (overlayKind === 'side') { clearTabSelection(); overlayOpen = false; overlayKind = null; send('side-reveal', false); }
     animateSideLayout();
   });
   notifyPages('settings');
@@ -1967,6 +2072,7 @@ function toggleAutoHide() {
 // In auto-hide mode the sidebar opens when the mouse hits the left edge (focus stays on the page)
 function openSide() {
   if (!win || !ui || !vertical() || !settings.verticalAutoHide || overlayOpen) return;
+  if(activeTab()?.rightPointerDown)return;
   clearTimeout(W.sideCloseTimer);
   W.sideClosing = false;
   W.sideVisibleWidth = SIDE_RAIL;
@@ -1982,13 +2088,13 @@ function openSide() {
     if (!windows.includes(w) || w.win.isDestroyed()) { clearInterval(w.sideWatch); return; }
     inWin(w, () => {
       if (!overlayOpen || overlayKind !== 'side') { clearInterval(w.sideWatch); return; }
-      if (w.tabDragging || w.sideKeyboardFocus) return;
+      if (w.tabDragging || w.sideKeyboardFocus || activeTab()?.rightPointerDown) return;
       const p = screen.getCursorScreenPoint(), b = win.getContentBounds();
       const x = p.x - b.x, y = p.y - b.y;
       const top = TOOLBAR + (hasBookmarks() ? BOOKMARKS : 0);
       const inside = x >= 0 && x <= sideWidth(b.width) + 8 && y >= top && y < b.height;
-      if (inside) w.sideHoldUntil = Date.now() + 250;
-      else if (Date.now() >= w.sideHoldUntil) closeOverlay(false);
+      if (inside) w.sideHoldUntil = Math.max(w.sideHoldUntil,Date.now()+250);
+      else if (Date.now() >= w.sideHoldUntil) closeOverlay(w.win.isFocused()&&w.ui.webContents.isFocused());
     });
   }, 50);
 }
@@ -2015,12 +2121,13 @@ function pushState() {
   send('state', {
     onboarding:!settings.firstRunDone,
     tabs: tabs.map((x) => ({
-      id: x.id, title: x.title, favicon: x.favicon, loading: x.loading && !!x.view,
+      id: x.id, title: x.title, url:displayUrl(x.url), favicon: x.favicon, loading: x.loading && !!x.view,
       sleepExcluded:tabSleepExcluded(x),
       iconColor: x.iconColor || null, sleeping: !x.view || !!x.pendingNavigation, audible: x.audible, pinned: !!x.pinned, muted: !!x.muted, volume: x.volume ?? 100
     })),
     activeId,
     selectedTabIds: selectedTabIds(),
+    tabSelectionMode: !!W.tabSelectionMode,
     activeWcId: wc ? wc.id : -1,
     theme: W.incognito ? incognitoTheme() : themeVars(),
     incognito: !!W.incognito,
@@ -2029,12 +2136,11 @@ function pushState() {
     newTabPrompt: settings.newTabPrompt !== false,
     textReplacements:settings.textReplacements,
     vertical: vertical(), autoHide: !!settings.verticalAutoHide, sideWidth: sideWidth(win.getContentBounds().width), sideMin: SIDE_MIN,
-    sideOpen: overlayOpen && (overlayKind === 'side' || overlayKind === 'sidedrag'), sideEdge: SIDE_RAIL,
+    sideOpen: overlayOpen && (overlayKind === 'side' || overlayKind === 'sidedrag' || overlayKind === 'tabsearch'), sideEdge: SIDE_RAIL,
     ubo: !!uboId && !W.incognito,
     windows: windows.length,
     extSupport: !!extensions && !W.incognito,
     hiddenExt: settings.hiddenExtensions,
-    zoom:wc?Math.round(wc.getZoomFactor()*100):Math.round((t?.zoomFactor||1)*100),
     volume: t ? (t.volume ?? 100) : 100,
     canVolume: !!t && /^https?:/i.test(t.url),
     url: t ? displayUrl(t.url) : '',
@@ -2060,12 +2166,6 @@ const withActive = (fn) => { const t = activeTab(); if (t && t.view) fn(t.view.w
 const goBack = () => withActive((wc) => (wc.navigationHistory ? wc.navigationHistory.goBack() : wc.goBack()));
 const goForward = () => withActive((wc) => (wc.navigationHistory ? wc.navigationHistory.goForward() : wc.goForward()));
 const goHome = () => withActive((wc, t) => { t.url = newtabUrl(); go(wc, t.url); });
-function setPageZoom(wc,direction){
- const tab=byWcId.get(wc.id);if(!tab||wc.isDestroyed())return;
- const current=Math.round(wc.getZoomFactor()*100),next=direction===0?100:Math.max(25,Math.min(500,Math.round(current/10)*10+(direction>0?10:-10)));
- wc.setZoomFactor(next/100);tab.zoomFactor=next/100;inWin(tab.w,()=>schedulePush());
-}
-const zoom=direction=>withActive(wc=>setPageZoom(wc,direction));
 
 function focusUrl(search = false) {
   leaveFullscreenForChrome();
@@ -2080,7 +2180,7 @@ async function openFileDialog() {
   if (!r.canceled && r.filePaths[0]) newTab(pathToFileURL(r.filePaths[0]).href, false, activeId);
 }
 function layoutFind(w){
- if(!w?.findView)return;
+ if(!w?.findView || !w.findReady)return;
  const {width,height}=w.win.getContentBounds(),top=inWin(w,()=>vertical()?TOOLBAR+(hasBookmarks()?BOOKMARKS:0):uiHeight());
  w.findView.setBounds({x:Math.max(0,width-466),y:top+6,width:Math.min(460,width),height:Math.min(44,Math.max(0,height-top-6))});
  w.findView.setVisible(!(w===W?htmlFullscreen:w.htmlFullscreen)&&!w.win.isFullScreen());
@@ -2090,15 +2190,15 @@ function openFind() {
  findOpen=true;const w=W;
  if(!w.findView){
   const view=w.findView=new WebContentsView({webPreferences:{session:w.ses,preload:path.join(__dirname,'page-preload.js'),sandbox:true,contextIsolation:true,nodeIntegration:false,spellcheck:false}});
+  view.setVisible(false);
   view.setBackgroundColor('#00000000');
   view.webContents.setWindowOpenHandler(()=>({action:'deny'}));view.webContents.on('will-navigate',e=>e.preventDefault());
   view.webContents.on('before-input-event',(e,input)=>inWin(w,()=>{if(handleShortcut(input,true))e.preventDefault();}));
-  view.webContents.once('did-finish-load',()=>{if(w.findView===view){view.webContents.focus();view.webContents.send('page-update',{focus:true});}});
-  view.webContents.loadURL(FIND_URL);
- }else{w.findView.webContents.focus();w.findView.webContents.send('page-update',{focus:true});}
+  view.webContents.loadURL(FIND_URL).catch(()=>{if(w.findView===view)inWin(w,closeFind);});
+ }else if(w.findReady){w.findView.webContents.focus();w.findView.webContents.send('page-update',{focus:true});}
  layout();pushState();
 }
-function destroyFind(w){const view=w.findView;if(!view)return;w.findView=null;try{w.win.contentView.removeChildView(view);view.webContents.close();}catch{}}
+function destroyFind(w){const view=w.findView;if(!view)return;w.findView=null;w.findReady=false;try{w.win.contentView.removeChildView(view);view.webContents.close();}catch{}}
 
 function closeFind() {
   findOpen = false;destroyFind(W);
@@ -2120,7 +2220,7 @@ function navigateInput(input,{newTab:makeTab=false,background=false,closePrompt=
  if(resolved.query)recordSearch(resolved.query);
  if(makeTab)newTab(resolved.url,background,activeId);else openUrl(resolved.url);
 }
-function openSearchPrompt(kind = 'newtab', value = '') {
+function openSearchPrompt(kind = 'newtab', value = '', fromTyping = false) {
   if (!win || !ui || overlayKind === 'prompt') return;
   leaveFullscreenForChrome();
   // Refocusing an already open prompt must not clear an in-progress query.
@@ -2133,7 +2233,7 @@ function openSearchPrompt(kind = 'newtab', value = '') {
   if (overlayOpen) closeOverlay(false);
   overlayOpen = true; overlayKind = kind;
   raiseUi(); layout(); ui.webContents.focus();
-  send('newtab-prompt', { kind, value, searchName: (SEARCH_ENGINES[settings.searchEngine] || SEARCH_ENGINES.google).name });
+  send('newtab-prompt', { kind, value, fromTyping, searchName: (SEARCH_ENGINES[settings.searchEngine] || SEARCH_ENGINES.google).name });
 }
 function openOmni() {
   if (!win || !ui || (overlayOpen && overlayKind === 'omni')) return;
@@ -2163,10 +2263,12 @@ ipcMain.on('ui', (e, cmd, arg) => {
   switch (cmd) {
     case 'navigate': if(typeof arg==='string'&&arg.trim())navigateInput(arg); break;
     case 'back': goBack(); break;
+    case 'back-private': if(W.incognito)withActive(wc=>{
+      const nav=wc.navigationHistory;
+      if(nav.canGoBack())newTab(nav.getEntryAtIndex(nav.getActiveIndex()-1).url,true,activeId);
+    }); break;
     case 'forward': goForward(); break;
     case 'reload': withActive((wc) => wc.reload()); break;
-    case 'zoom-wheel': if(arg===1||arg===-1)zoom(arg); break;
-    case 'zoom-reset': zoom(0);break;
     case 'site-setting': updateSiteControl(arg);break;
     case 'saved-tabs': showSavedTabsPopup(arg); break;
     case 'site-dependencies': confirmSiteDependencies(arg);break;
@@ -2175,8 +2277,15 @@ ipcMain.on('ui', (e, cmd, arg) => {
     case 'home': goHome(); break;
     case 'new-tab': openSearchPrompt(); break;
     case 'address-focus': if (overlayKind !== 'newtab') openSearchPrompt('address', typeof arg === 'string' ? arg : displayUrl(activeTab()?.url || '')); break;
+    case 'private-address-input': if (W.incognito&&typeof arg==='string'&&arg)openSearchPrompt('address',arg,true); break;
     case 'prompt-answer': answerPrompt(arg); break;
     case 'side-reveal': openSide(); break;
+    case 'tab-search-open':
+      if(!vertical()||overlayOpen&&overlayKind!=='side')break;
+      overlayOpen=true;overlayKind='tabsearch';clearInterval(W.sideWatch);
+      layout();ui.webContents.focus();send('tab-search-open');pushState();
+      break;
+    case 'tab-search-close': if(overlayKind==='tabsearch')closeOverlay(); break;
     case 'side-animation-width': updateSidePageWidth(arg); break;
     case 'side-focus': W.sideKeyboardFocus=arg===true; if(W.sideKeyboardFocus)openSide();else W.sideHoldUntil=Date.now()+250; break;
     case 'side-hide': break; // Native cursor tracking owns sidebar dismissal.
@@ -2244,11 +2353,15 @@ function handleShortcut(input, fromUi = false) {
   if (input.type && input.type !== 'keyDown') return false;
   const ctrl = isMac ? input.meta : input.control;
   const k = (input.key || '').toLowerCase();
+  if (input.shift && k === 'escape') { showTaskManager(); return true; }
+  const clearedSelection = k === 'escape' && vertical() && W.tabSelectionMode;
+  if (clearedSelection) { clearTabSelection(); pushState(); }
   // The UI owns nested menus, suggestions and focus restoration before dismissal.
   if (k === 'escape' && overlayOpen && fromUi && overlayKind !== 'side') return false;
   if (k === 'escape' && htmlFullscreen) { withActive((wc) => wc.executeJavaScript('document.exitFullscreen && document.exitFullscreen()').catch(() => {})); return true; }
-  if (k === 'escape' && overlayOpen) { closeOverlay(); return true; }
+  if (k === 'escape' && overlayOpen && overlayKind !== 'side') { closeOverlay(); return true; }
   if (k === 'escape' && findOpen) { closeFind(); return true; }
+  if (k === 'escape' && (clearedSelection || overlayKind === 'side')) return true;
   if (ctrl && input.shift && k === 't') { reopenClosed(); return true; }
   if (ctrl && input.shift && k === 'n') { newWindow(true); return true; }               // new incognito window
   if (ctrl && k === 'n') { newWindow(false); return true; }                              // new window
@@ -2275,14 +2388,15 @@ function handleShortcut(input, fromUi = false) {
   if (k === 'escape' && !input.shift && !ctrl) { const t = activeTab(); if (t && t.loading && t.view) t.view.webContents.stop(); return false; }
   if ((ctrl && k === 'l') || (input.alt && k === 'd') || k === 'f6') { focusUrl(); return true; }
   if (ctrl && k === 'f') { openFind(); return true; }
+  if (ctrl && !input.shift && !input.alt && k === 'i' && (W.sideKeyboardFocus || W.tabSelectionMode)) { invertTabSelection(); return true; }
+  if (ctrl && input.shift && !input.alt && k === 'z') { setFeature('hoverZoom', !settings.hoverZoom); return true; }
   if (ctrl && k === 'p') { withActive((wc) => wc.print()); return true; }
-  if (input.shift && k === 'escape') { showTaskManager(); return true; }
   if (ctrl && input.shift && !input.alt && k === 'b') { const tab=activeTab(); if(tab&&!tab.homePlaceholder)sleepTabSelection([tab.id]); return true; }
   if (ctrl && k === 'd') { if (settings.bookmarksEnabled === false) { if(togglePin(activeId))revealPinChange(); } else toggleBookmark(); return true; }
   if ((ctrl && k === 'r') || k === 'f5') { withActive((wc) => (input.shift || ctrl && k === 'f5' ? wc.reloadIgnoringCache() : wc.reload())); return true; }
   if (input.alt && k === 'home') { goHome(); return true; }
   if (k === 'f11') { win.setFullScreen(!win.isFullScreen()); return true; }
-  if (ctrl && k === 'tab') {
+  if (ctrl && (k === 'tab'||input.code==='Tab')) {
     const i = tabs.findIndex((t) => t.id === activeId), n = tabs.length;
     if (n && (n > 1 || i < 0)) activateTab(tabs[i < 0 ? (input.shift ? n - 1 : 0) : (i + (input.shift ? n - 1 : 1)) % n].id);
     if (vertical() && settings.verticalAutoHide) { openSide(); W.sideHoldUntil = Date.now() + 1200; }
@@ -2290,9 +2404,6 @@ function handleShortcut(input, fromUi = false) {
   }
   if (input.alt && k === 'arrowleft') { goBack(); return true; }
   if (input.alt && k === 'arrowright') { goForward(); return true; }
-  if (ctrl && (k === '+' || k === '=')) { zoom(0.5); return true; }
-  if (ctrl && k === '-') { zoom(-0.5); return true; }
-  if (ctrl && k === '0') { zoom(0); return true; }
   if (k === 'f12' || (ctrl && input.shift && k === 'i')) { withActive((wc) => wc.toggleDevTools()); return true; }
   if (ctrl && !input.shift && k === 'j') { openPage(DOWNLOADS_URL); return true; }
   if (ctrl && !input.shift && k === 'h') { openPage(HISTORY_URL); return true; }
@@ -2361,6 +2472,7 @@ function setSetting(key, value, needsRestart) {
 // ---------------------------------------------------------------- Chrome-style menu (drawn in the UI layer, no extra process)
 function openOverlay(arg) {
   if (!win || !ui || overlayKind === 'prompt') return;
+  if (overlayKind === 'tabsearch') closeOverlay(false);
   if (chooser) finishChooser(null);
   overlayOpen = true;
   overlayKind = 'menu';
@@ -2376,8 +2488,13 @@ function closeOverlay(refocus = true, resumeContext = false) {
   const resumeSearch=resumeContext?W?.contextMenu?.resumeSearch:null;
   if(W){W.contextMenu=null;W.siteDependencies=null;}
   overlayKind = null;
+  if(kind==='tabsearch'){
+    send('tab-search-close');
+    if(vertical()&&settings.verticalAutoHide)openSide();
+  }
   if (kind === 'chooser' && chooser) finishChooser(null);   // clicked outside: cancel
   if (kind === 'side') {
+    const selectionChanged = clearTabSelection();
     W.sideKeyboardFocus=false;
     // The revealed sidebar slides back left as it came; the UI stays on top until the animation ends
     send('side-reveal', false);
@@ -2388,6 +2505,7 @@ function closeOverlay(refocus = true, resumeContext = false) {
     clearTimeout(w.sideCloseTimer);
     w.sideCloseTimer = setTimeout(() => { if (windows.includes(w) && !w.win.isDestroyed()) inWin(w, () => { w.sideClosing = false; layout(); }); }, 220);
     if(refocus)withActive(wc=>wc.focus());
+    if(selectionChanged)pushState();
     return;
   }
   if(resumeSearch){overlayOpen=true;overlayKind=resumeSearch;raiseUi();}
@@ -2402,17 +2520,11 @@ function closeOverlay(refocus = true, resumeContext = false) {
   if (refocus && kind !== 'omni') withActive((wc) => wc.focus());
 }
 
-function zoomPercent() {
-  let z = 100;
-  withActive((wc) => { z = Math.round(Math.pow(1.2, wc.getZoomLevel()) * 100); });
-  return z;
-}
 
 function menuData() {
   const t = activeTab();
   return {
     bookmarksEnabled: settings.bookmarksEnabled !== false,
-    zoom: zoomPercent(),
     volume: activeTab()?.volume ?? 100,
     volumeMax: VOLUME_MAX,
     fullscreen: !!(win && win.isFullScreen()),
@@ -2451,9 +2563,6 @@ function menuAction(id, arg) {
     case 'bookmark-toggle': toggleBookmark(); break;
     case 'bookmarks-import': if (settings.bookmarksEnabled === false) break; openSettingsAt('yer-isaretleri'); break;
     case 'bookmark-open': { if (settings.bookmarksEnabled === false) break; const b = settings.bookmarks[arg]; if (b) openUrl(b.url); break; }
-    case 'zoom-in': zoom(0.5); refresh(); break;
-    case 'zoom-out': zoom(-0.5); refresh(); break;
-    case 'zoom-reset': zoom(0); refresh(); break;
     case 'vol-set': { const t = activeTab(); if (t) setVolume(t.id, arg); break; }
     case 'extensions-page': openPage(EXTENSIONS_URL); break;
     case 'ext-hide': if (arg && typeof arg.id === 'string') setExtensionHidden(arg.id, !!arg.hidden); refresh(); break;
@@ -2983,22 +3092,52 @@ function showDownloadsMenu(){return showDownloadsPanel();}
 function showDownloadsPanel(){return showInternalPanel(DOWNLOADS_URL,'İndirilenler',downloadPanels,740,580);}
 function showInternalPanel(url,title,panels,preferredWidth,preferredHeight){
  const owner=W;if(!owner||owner.win.isDestroyed())return;
- const existing=panels.get(owner);if(existing&&!existing.isDestroyed()){existing.show();existing.focus();return existing;}
+ const existing=panels.get(owner);
+ const other=(panels===taskPanels?downloadPanels:taskPanels).get(owner);
+ if(existing&&!existing.isDestroyed()){
+  if(owner.pendingInternalPanel===other&&other&&!other.isDestroyed()){owner.pendingInternalPanel=null;other.close();}
+  if(owner.pendingInternalPanel!==existing){existing.show();existing.focus();}
+  return existing;
+ }
  const bounds=owner.win.getBounds(),work=screen.getDisplayMatching(bounds).workArea;
  const width=Math.min(preferredWidth,work.width-32),height=Math.min(preferredHeight,work.height-48);
  const x=Math.max(work.x,Math.min(work.x+work.width-width,Math.round(bounds.x+(bounds.width-width)/2)));
  const y=Math.max(work.y,Math.min(work.y+work.height-height,Math.round(bounds.y+(bounds.height-height)/2)));
- const panel=new BrowserWindow({parent:owner.win,modal:true,skipTaskbar:true,show:false,frame:false,width,height,x,y,minWidth:360,minHeight:300,title:T(title),icon:path.join(__dirname,'icon.png'),backgroundColor:effectiveTheme().page,autoHideMenuBar:true,webPreferences:{session:owner.ses,preload:path.join(__dirname,'page-preload.js'),sandbox:true,contextIsolation:true,nodeIntegration:false}});
+ const panel=new BrowserWindow({parent:owner.win,skipTaskbar:true,show:false,frame:false,width,height,x,y,minWidth:360,minHeight:300,title:T(title),icon:path.join(__dirname,'icon.png'),backgroundColor:effectiveTheme().page,autoHideMenuBar:true,webPreferences:{session:owner.ses,preload:path.join(__dirname,'page-preload.js'),sandbox:true,contextIsolation:true,nodeIntegration:false}});
  panels.set(owner,panel);
+ owner.pendingInternalPanel=panel;
+ panel.webContents.setZoomMode('disabled');
  const navigate=url=>{if(/^https?:/i.test(url))inWin(owner,()=>newTab(url));panel.close();};
  panel.webContents.setWindowOpenHandler(({url})=>{navigate(url);return {action:'deny'};});
  const pageUrl=baseOf(url);
  panel.webContents.on('will-navigate',(e,url)=>{if(baseOf(url)!==pageUrl){e.preventDefault();navigate(url);}});
- // Enable and focus the owner before Windows destroys the modal HWND. Otherwise
- // Windows can briefly activate the previously focused external application.
- const restoreOwner=()=>{if(!quitting&&owner.win&&!owner.win.isDestroyed()&&owner.win.isVisible()){owner.win.setEnabled(true);owner.win.moveTop();owner.win.focus();}};
- panel.on('close',restoreOwner);
- panel.once('ready-to-show',()=>panel.show());panel.on('closed',()=>{panels.delete(owner);restoreOwner();});panel.loadURL(url+'?popup=1');return panel;
+ panel.webContents.on('before-input-event',(event,input)=>{
+  if(input.type!=='keyDown')return;
+  if(input.shift&&input.key==='Escape'){event.preventDefault();inWin(owner,showTaskManager);}
+  if((isMac?input.meta:input.control)&&!input.shift&&input.key.toLowerCase()==='j'){event.preventDefault();inWin(owner,showDownloadsPanel);}
+ });
+ panel.on('blur',()=>{
+  if(panel.replacedByPanel||panel.isDestroyed())return;
+  const pending=owner.pendingInternalPanel;
+  if(pending&&pending!==panel&&!pending.isDestroyed())pending.close();
+  panel.close();
+ });
+ panel.on('close',()=>{
+  if(!panel.replacedByPanel&&panel.isFocused()&&!quitting&&!owner.win.isDestroyed()&&owner.win.isVisible())owner.win.focus();
+ });
+ panel.once('ready-to-show',()=>{
+  if(owner.pendingInternalPanel!==panel)return;
+  owner.pendingInternalPanel=null;
+  if(other&&!other.isDestroyed())other.replacedByPanel=true;
+  panel.show();
+  if(other&&!other.isDestroyed())other.close();
+ });
+ panel.on('closed',()=>{
+  if(panels.get(owner)===panel)panels.delete(owner);
+  if(owner.pendingInternalPanel===panel)owner.pendingInternalPanel=null;
+ });
+ panel.loadURL(url+'?popup=1').catch(()=>{if(!panel.isDestroyed())panel.close();});
+ return panel;
 }
 
 function showTabMenu(arg) {
@@ -3014,7 +3153,11 @@ function showTabMenu(arg) {
     { label: multiple ? 'Seçili sekmeleri yenile' : 'Yenile', enabled: group.some(x => !!x.view), click: () => group.forEach(x => { if(liveTabView(x)) x.view.webContents.reload(); }) },
     {label:multiple?'Seçili sekmeleri otomatik uyutma':'Bu sekmeyi otomatik uyutma',type:'checkbox',checked:allSleepExcluded,click:()=>setTabSleepExclusion(selected,!allSleepExcluded)},
     ...(settings.savedTabsEnabled&&group.some(x=>require('./saved-tabs').validUrl(x.url))?[{label:multiple?'Seçili sekmeleri kasaya gönder':'Sekmeyi kasaya gönder',click:()=>{try{sendTabsToVault(selected);}catch(error){askPrompt({kind:'perm',title:'Sekme kaydedilemedi',rows:[{icon:'open',text:error.message}],ok:'Tamam',cancel:'Kapat'});}}}]:[]),
-    { label: multiple ? 'Sekmeleri uyut' : 'Sekmeyi uyut', enabled: group.some(liveTabView), click: () => sleepTabSelection(selected) },
+    { label: multiple ? (uiLang() === 'en' ? 'Put selected tabs to sleep' : 'Seçili sekmeleri uyut') : 'Sekmeyi uyut', enabled: group.some(liveTabView), click: () => sleepTabSelection(selected) },
+    { label: T('Bu sekme hariç tüm sekmeleri uyut'), enabled: tabs.some(tab=>tab!==t&&liveTabView(tab)), click: () => {
+      if(activeId!==t.id)activateTab(t.id);
+      sleepTabSelection(tabs.filter(tab=>tab!==t).map(tab=>tab.id));
+    } },
     { label: multiple ? 'Seçili sekmeleri çoğalt' : 'Kopyala', click: () => group.forEach(x => newTab(x.url, false, x.id)) },
     { label: multiple ? (t.pinned ? 'Seçili sekmelerin sabitlemesini kaldır' : 'Seçili sekmeleri sabitle') : (t.pinned ? 'Sabitlemeyi kaldır' : 'Sabitle'), click: () => { const pinned = !t.pinned; group.forEach(x => { if (!!x.pinned !== pinned) togglePin(x.id); }); } },
     ...(settings.tabAudio ? [{ label: multiple ? (t.muted ? 'Seçili sekmelerin sesini aç' : 'Seçili sekmelerin sesini kapat') : (t.muted ? 'Sitenin sesini aç' : 'Sitenin sesini kapat'), click: () => { const muted = !t.muted; group.forEach(x => { if (!!x.muted !== muted) toggleMute(x.id); }); } }] : []),
@@ -3025,7 +3168,7 @@ function showTabMenu(arg) {
     })) }]),
     ...(settings.bookmarksEnabled === false ? [] : [{ label: 'Yer işareti koy', enabled: !isNewtab(t.url) && !isBookmarked(t.url), click: () => { settings.bookmarks.push({ url: t.url, title: t.title, favicon: t.favicon }); bookmarksChanged(); } }]),
     { type: 'separator' },
-    { label: multiple ? T('Seçili sekmeleri kapat') + ' (' + group.length + ')' : 'Kapat', click: () => closeTabSelection(t.id) },
+    { label: multiple ? T('Seçili sekmeleri kapat') + ' (' + group.length + ')' : 'Kapat', click: () => closeTabSelection(t.id, false) },
     { label: 'Diğer sekmeleri kapat', enabled: tabs.length > group.length, click: () => tabs.filter((x) => !selected.includes(x.id)).map((x) => x.id).forEach(closeTab) },
     { label: 'Sağdaki sekmeleri kapat', enabled: idx < tabs.length - 1, click: () => tabs.slice(idx + 1).map((x) => x.id).forEach(closeTab) },
     { type: 'separator' },
@@ -3302,7 +3445,7 @@ function settingsData() {
     sleepMinutes: settings.sleepMinutes, sleepChoices: SLEEP_CHOICES, downloadNotify: settings.downloadNotify,
     downloadsDir: app.getPath('downloads'),
     extSupport: !!extensions, webStore: !!CWS, extCount: listExtensions().length,
-    hoverZoom: settings.hoverZoom, savedTabsEnabled: !!settings.savedTabsEnabled, tabAudio: settings.tabAudio, sleepTabs: settings.sleepTabs,
+    hoverZoom: settings.hoverZoom, hoverZoomBackgrounds:settings.hoverZoomBackgrounds, savedTabsEnabled: !!settings.savedTabsEnabled, tabAudio: settings.tabAudio, sleepTabs: settings.sleepTabs,
     verticalTabs: settings.verticalTabs, verticalAutoHide: settings.verticalAutoHide, sideEdge: 60,
     pitchBlack: settings.pitchBlack, darkActive: effectiveTheme().mode === 'dark' || (effectiveTheme().mode === 'system' && nativeTheme.shouldUseDarkColors),
     uboError:uboErrors.get(mainSes)||null,
@@ -3334,7 +3477,7 @@ function settingsSet(key, value) {
     case 'theme': if (!THEMES[value]) return false; settings.theme = value; saveSettings(); applyTheme(); return true;
     case 'engine': case 'searchEngine': if (!SEARCH_ENGINES[value]) return false; setSetting('searchEngine', value); broadcastPages(); return true;
     case 'sleepMinutes': if (!SLEEP_CHOICES.includes(value)) return false; setSetting('sleepMinutes', value); return true;
-    case 'hoverZoom': if (typeof value !== 'boolean') return false; setFeature(key, value); return true;
+    case 'hoverZoom': case 'hoverZoomBackgrounds': if (typeof value !== 'boolean') return false; setFeature(key, value); return true;
     case 'bookmarksEnabled': case 'tabAudio': case 'downloadNotify': return false;
     case 'newTabPrompt': return bool(key);
     case 'sleepTabs': case 'memorySaver': return bool(key);
@@ -3358,6 +3501,17 @@ ipcMain.handle('page', async (e, cmd, arg) => {
   if(kind==='find'){
    if(!ow||ow.findView?.webContents!==e.sender||e.senderFrame!==e.sender.mainFrame)throw Error('izin yok');
    if(cmd==='get')return pageData();
+   if(cmd==='find-ready'){
+    if(!ow.findReady){
+     ow.findReady=true;
+     layoutFind(ow);
+     if(ow.findView.getVisible()){
+      e.sender.focus();
+      e.sender.send('page-update',{focus:true});
+     }
+    }
+    return {ok:true};
+   }
    if(cmd==='find-close'){closeFind();return {ok:true};}
    if(cmd==='find'&&arg&&typeof arg.text==='string'&&arg.text.length<=2048){withActive(wc=>arg.text?wc.findInPage(arg.text,{forward:arg.forward!==false,findNext:!!arg.next}):wc.stopFindInPage('clearSelection'));return {ok:true};}
    return null;
@@ -3640,7 +3794,15 @@ function createWindow(opts = {}) {
     if (ctrl && !input.shift && ['c', 'v', 'x', 'a', 'z', 'y'].includes(k)) return;
     if (handleShortcut(input, true)) e.preventDefault();
   });
-  uw.setZoomMode('manual');uw.on('zoom-changed',(event,direction)=>{event.preventDefault();inWin(w,()=>zoom(direction==='in'?1:-1));});
+  uw.setZoomMode('disabled');
+  uw.on('before-mouse-event',(_event,input)=>{
+    if(input.type==='mouseUp'&&input.button==='right')inWin(w,()=>{
+      const tab=activeTab();
+      if(!tab?.rightPointerDown)return;
+      tab.rightPointerDown=false;
+      layout();
+    });
+  });
   uw.on('context-menu',(_e,p)=>{if(p.isEditable||p.selectionText)inWin(w,()=>showContextMenu(uw,p));});
   uw.on('did-finish-load', () => { useWin(w); pushState(); });
   uw.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -3655,7 +3817,7 @@ function createWindow(opts = {}) {
     if (cmd === 'browser-forward') goForward();
   });
   on('focus', () => { w.focusedAt = Date.now(); });
-  on('blur', () => { if (overlayOpen && overlayKind !== 'chooser' && overlayKind !== 'prompt') closeOverlay(); });
+  on('blur', () => { const tab=activeTab();if(tab)tab.rightPointerDown=false;if (overlayOpen && overlayKind !== 'chooser' && overlayKind !== 'prompt') closeOverlay(false); });
   on('swipe', (_e, dir) => { if (dir === 'left') goBack(); if (dir === 'right') goForward(); });
   // Save the session while the last normal window closes (it is then removed from the list)
   for(const event of ['move','resize','maximize','unmaximize','enter-full-screen','leave-full-screen'])on(event,()=>rememberWindowPlacement(w));
@@ -3673,7 +3835,7 @@ function createWindow(opts = {}) {
 function closedWindow(w) {
   clearTimeout(w.sideCloseTimer);clearInterval(w.sideWatch);
   if(w.incognito){w.closedTabs.length=0;w.searchHistory=[];}
-  closeUpdateNotice(w);destroyFind(w);closeBackgroundTabNotice(w);
+  closeUpdateNotice(w);destroyFind(w);closeBackgroundTabNotice(w);closeHoverZoomNotice(w);
   if (W === w) saveCtx();
   for (const t of [...w.tabs, ...(w.homeTab ? [w.homeTab] : [])]) {
     iconQueue.cancel(t);
@@ -3702,8 +3864,20 @@ function closedWindow(w) {
 
 // New window (Ctrl+N) and new incognito window (Ctrl+Shift+N): open with the new tab page
 function newWindow(incognito) {
-  createWindow({ incognito });
+  leaveFullscreenForChrome();
+  const owner=createWindow({ incognito });
   newTab('');
+  if(incognito){
+    const chrome=owner.ui.webContents;
+    chrome.once('did-finish-load',()=>{
+      inWin(owner,()=>{
+        if(owner.win.isFocused()&&isNewtab(activeTab()?.url)){
+          chrome.focus();
+          send('private-address-ready');
+        }
+      });
+    });
+  }
 }
 
 // Extension background pages: electron-chrome-extensions adds a 'destroyed' listener per listened event

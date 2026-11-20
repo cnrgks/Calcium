@@ -1,12 +1,5 @@
 'use strict';
 const { contextBridge, ipcRenderer, webFrame } = require('electron');
-// Keep Ctrl+wheel consistent inside WebContentsView, including scrollable panels.
-let lastZoomWheel=0;
-window.addEventListener('wheel',event=>{
- if(!event.isTrusted||!event.ctrlKey||!event.deltaY)return;
- event.preventDefault();const now=performance.now();if(now-lastZoomWheel<80)return;lastZoomWheel=now;
- ipcRenderer.send('calcium-zoom-wheel',event.deltaY<0?1:-1);
-},{capture:true,passive:false});
 
 // Run in the main world BEFORE the page's own scripts
 function inMainWorld(fn) {
@@ -33,7 +26,44 @@ if (location.protocol === 'file:' && ipcRenderer.sendSync('calcium-internal-page
 // Preserve edited forms when automatic tab sleeping runs. Never transmit field values.
 if(/^https?:$/.test(location.protocol)){
  let reported=false;
- window.addEventListener('input',e=>{if(!reported&&e.isTrusted){reported=true;ipcRenderer.send('calcium-form-dirty');}},{capture:true,passive:true});
+ window.addEventListener('input',e=>{
+  if(reported||!e.isTrusted)return;
+  const field=e.composedPath()[0];
+  const editable=field?.isContentEditable||field?.matches?.('textarea,input:not([type]),input:is([type=text],[type=search],[type=email],[type=password],[type=url],[type=tel],[type=number]),form select,form input:not([type=range]):not([type=button])');
+  if(!editable)return;
+  reported=true;
+  ipcRenderer.send('calcium-form-dirty');
+ },{capture:true,passive:true});
+}
+
+// YouTube can reset the size button when it rebuilds the watch page.
+if (process.isMainFrame && location.protocol === 'https:' && ['youtube.com','www.youtube.com'].includes(location.hostname)) {
+ const preference='calcium.youtube.theater';
+ const player=()=>document.querySelector('ytd-watch-flexy:not([hidden])');
+ const sizeButton=layout=>layout?.querySelector('#movie_player .ytp-size-button');
+ let restoreTimer;
+ function restoreTheater(attempts=10){
+  clearTimeout(restoreTimer);
+  if(location.pathname!=='/watch')return;
+  let saved;
+  try{saved=localStorage.getItem(preference);}catch{return;}
+  if(saved!=='on'&&saved!=='off')return;
+  const layout=player(),button=sizeButton(layout);
+  if(!button){
+   if(attempts>0)restoreTimer=setTimeout(()=>restoreTheater(attempts-1),250);
+   return;
+  }
+  if(!document.fullscreenElement&&!layout.hasAttribute('fullscreen')&&layout.hasAttribute('theater')!==(saved==='on'))button.click();
+ }
+ document.addEventListener('click',event=>{
+  if(!event.isTrusted||location.pathname!=='/watch')return;
+  const layout=player(),button=sizeButton(layout);
+  if(!button||!event.composedPath().includes(button)||document.fullscreenElement)return;
+  clearTimeout(restoreTimer);
+  try{localStorage.setItem(preference,layout.hasAttribute('theater')?'off':'on');}catch{}
+ },true);
+ document.addEventListener('DOMContentLoaded',()=>restoreTheater(),{once:true});
+ window.addEventListener('yt-navigate-finish',()=>restoreTheater());
 }
 
 // User-configured text expansion stays in its own isolated world and ignores secret/login fields.

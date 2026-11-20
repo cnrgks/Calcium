@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-0uKtOWrNEEVDaduNOy65UFxA4KBUXzyFlVdxYkb8SdU=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-jtqUrf4HGoMU4L0Cf1BfJffJJhhSOHXqZcGTWnRyMy0='; img-src data:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-0uKtOWrNEEVDaduNOy65UFxA4KBUXzyFlVdxYkb8SdU=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-rDOEMvEXiMlSmMpSZZbasV29ULx+DONiJvqvZRxcv9U='; img-src data:">
 <script src="i18n.js" integrity="sha256-0uKtOWrNEEVDaduNOy65UFxA4KBUXzyFlVdxYkb8SdU="></script><script src="browser-font.js" integrity="sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c="></script>
 <title>Ayarlar</title>
 <style>
@@ -251,7 +251,7 @@ function customInputSection(){
   for(const rule of rules){const row=el('div','custom-rule'),text=el('div');text.append(el('code',null,prefix+rule.trigger),el('p','ds',kind==='site'?rule.url:rule.value));const controls=el('div','custom-rule-actions');controls.append(button('Düzenle',()=>edit(rule)),button('Sil',()=>api.call('shortcut-remove',{kind,trigger:rule.trigger}).then(load)));row.append(text,controls);list.append(row);}
   if(!rules.length)list.append(el('p','ds','Henüz kısayol eklenmedi.'));
   const add=el('div','custom-rule-actions');add.append(button('Kısayol ekle',()=>edit(null)));
-  if(kind==='site')for(const [name,keyName,site,search]of [['YouTube','y','https://www.youtube.com/','https://www.youtube.com/results?search_query={query}'],['Wikipedia','w','https://'+(window.LANG==='en'?'en':'tr')+'.wikipedia.org/','https://'+(window.LANG==='en'?'en':'tr')+'.wikipedia.org/w/index.php?search={query}']])add.append(button(name+' '+L('örneği','example'),()=>{edit(null);key.value='!'+keyName;url.value=site;searchUrl.value=search;}));
+  if(kind==='site')for(const [name,keyName,site,search]of [['YouTube','y','https://www.youtube.com/','https://www.youtube.com/results?search_query={query}'],['Google AI','ai','https://www.google.com/ai','https://www.google.com/search?udm=50&q={query}'],['Wikipedia','w','https://'+(window.LANG==='en'?'en':'tr')+'.wikipedia.org/','https://'+(window.LANG==='en'?'en':'tr')+'.wikipedia.org/w/index.php?search={query}']])add.append(button(name+' '+L('örneği','example'),()=>{edit(null);key.value='!'+keyName;url.value=site;searchUrl.value=search;}));
   form.onsubmit=async event=>{event.preventDefault();save.disabled=true;try{const result=await api.call('shortcut-save',{kind,original,trigger:key.value,...(kind==='site'?{url:url.value,searchUrl:searchUrl.value}:{value:value.value})});if(result.error)message.textContent=result.error;else await load();}catch{message.textContent=L('Kısayol kaydedilemedi.','Could not save the shortcut.');}finally{save.disabled=false;}};
   box.append(list,add,form);card.append(box);
  }
@@ -314,7 +314,7 @@ function render() {
         row('Site izinleri','Kamera, mikrofon, konum ve bildirim izinleri.',button('Sıfırla',()=>api.call('site-perms').then(()=>{toast('Site izinleri sıfırlandı');load()}))),
         row('Cihaz izinleri','USB, Bluetooth ve diğer cihazlar.',button('Göster',()=>api.call('device-grants'))))),
     ...siteSection(),
-    ...section('araclar','Araçlar',row('Ses yükseltme','Her sekmenin sesini ayrı ayarla. En fazla %600.',null),toggle('hoverZoom','Resim büyütme','Resmin üzerine gel. Z ile sabitle, S ile indir.'),toggle('savedTabsEnabled','Sekme Kasası','Sekmeleri gruplar halinde kaydet ve kapat. Araç çubuğundaki düğmeden geri aç.')),
+    ...section('araclar','Araçlar',row('Ses yükseltme','Her sekmenin sesini ayrı ayarla. En fazla %600.',null),toggle('hoverZoom','Resim büyütme','Resmin üzerine gel. Z ile sabitle, S ile indir.'),toggle('hoverZoomBackgrounds','Arka plan resimlerini büyüt','Sayfaların arka plan görsellerinde de önizleme aç.'),toggle('savedTabsEnabled','Sekme Kasası','Sekmeleri gruplar halinde kaydet ve kapat. Araç çubuğundaki düğmeden geri aç.')),
     ...customInputSection(),
     ...section('indirmeler','İndirmeler',row('Kayıt konumu',d.downloadsDir,button('Klasörü aç',()=>api.call('open-downloads-folder'))),toggle('askDownloadLocation','İndirirken nereye kaydedileceğini sor','Her indirmede kayıt konumunu seç.')),
     ...section('uzantilar','Uzantılar ve reklam engelleme',

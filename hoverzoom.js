@@ -10,6 +10,7 @@
   const IMG_EXT = /\.(jpe?g|png|gif|webp|avif|bmp|svg)(?:[?#]|$)/i;
   const VID_EXT = /\.(mp4|webm|gifv)(?:[?#]|$)/i;
   const DELAY = 220, PAD = 12;
+  let useBackgrounds = true;
 
   // Large image URL from a thumbnail (common sites); null if unknown
   function upgrade(src) {
@@ -118,7 +119,7 @@
     } else if (video) {
       // Only looping/muted animation previews; leave normal players alone.
       if (video.loop && video.muted && !video.controls) add(video.currentSrc || video.src, true, true);
-    } else {
+    } else if (useBackgrounds) {
       const bg = getComputedStyle(el).backgroundImage;
       for (const match of bg.matchAll(/url\(["']?(.*?)["']?\)/g)) add(upgrade(match[1]) || match[1]);
     }
@@ -335,6 +336,7 @@
 
   const onOver = (e) => {
     if (pinned) return;
+    if (e.ctrlKey) { hide(); return; }
     const source = e.composedPath()[0] || e.target;
     if(source===host)return;
     if(youtubePlaybackAt(source,e.clientX,e.clientY)){hide();return;}
@@ -349,6 +351,7 @@
     timer = setTimeout(() => { timer = 0; if (sourceKey === p.url) show(p); }, DELAY);
   };
   const onMove = (e) => {
+    if (e.ctrlKey && !pinned) { hide(); return; }
     mx=e.clientX; my=e.clientY;
     if (frame || pinned) return;
     const source=e.composedPath()[0] || e.target;
@@ -383,7 +386,7 @@
       if (!e.repeat && typeof window.calciumZoomDownload === 'function') window.calciumZoomDownload(media.currentSrc || media.src);
       return;
     }
-    if (e.key === 'Control' && !pinned) { hide(); return; }
+    if (e.key === 'Control') { hide(); return; }
     if ((e.key === 'z' || e.key === 'Z') && !e.ctrlKey && !e.altKey && !e.metaKey && !typing(e.target)) {
       if (pinned) { hide(); e.preventDefault(); e.stopPropagation(); return; }
       if (media || timer) { pin(); e.preventDefault(); e.stopPropagation(); }
@@ -397,6 +400,7 @@
   const keyOpts = { capture: true, passive: false };
 
   const api = {
+    setBackgrounds(on) { if (useBackgrounds !== on) { useBackgrounds = on; hide(); } },
     on() { if (active) return; active = true; for (const [n, f] of events) document.addEventListener(n, f, opts); window.addEventListener('keydown', onKey, keyOpts); window.addEventListener('blur', onBlur); },
     off() { if (!active) return; active = false; for (const [n, f] of events) document.removeEventListener(n, f, opts); window.removeEventListener('keydown', onKey, keyOpts); window.removeEventListener('blur', onBlur); pinned && unpinUi(); hide(); host.remove(); }
   };

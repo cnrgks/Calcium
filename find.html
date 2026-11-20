@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="tr"><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-0uKtOWrNEEVDaduNOy65UFxA4KBUXzyFlVdxYkb8SdU=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-2mAU/6f5fOjyL57lf/4KtNBs0nBqGDFe6kLA3OgebbI='">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-0uKtOWrNEEVDaduNOy65UFxA4KBUXzyFlVdxYkb8SdU=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-AsrMOFc2sn4QIFcZe63ma2BWK+d2YvozvzdxxeS+SmY='">
 <script src="i18n.js" integrity="sha256-0uKtOWrNEEVDaduNOy65UFxA4KBUXzyFlVdxYkb8SdU="></script><script src="browser-font.js" integrity="sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c="></script><title>Sayfada bul</title>
 <style>
 :root{color-scheme:light dark;--bg:#fff;--field:#edf2fa;--text:#1f1f1f;--dim:#5f6368;--hover:rgba(128,128,128,.14)}
@@ -18,5 +18,5 @@ function find(next=false,forward=true){if(!input.value)count.textContent='';retu
 function theme(data){const t=data.theme,s=document.documentElement.style;for(const n of ['--bg','--field'])s.removeProperty(n);if(t){s.setProperty('--bg',t.toolbar||t.page);s.setProperty('--field',t.omni||t.page);}}
 input.oninput=()=>find();document.getElementById('previous').onclick=()=>find(true,false);document.getElementById('next').onclick=()=>find(true,true);document.getElementById('close').onclick=()=>api.call('find-close');
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();api.call('find-close');}else if(e.key==='Enter'){e.preventDefault();find(true,!e.shiftKey);}});
-if(api){api.get().then(theme);api.onUpdate(data=>{if('theme'in data)theme(data);if(data.focus){input.focus();input.select();}if('step'in data)find(true,data.step);if(data.found)count.textContent=input.value?data.found.active+'/'+data.found.total:'';});input.focus();}
+if(api){api.onUpdate(data=>{if('theme'in data)theme(data);if(data.focus){input.focus();input.select();}if('step'in data)find(true,data.step);if(data.found)count.textContent=input.value?data.found.active+'/'+data.found.total:'';});api.get().then(data=>{theme(data);return api.call('find-ready');});}
 </script></body></html>

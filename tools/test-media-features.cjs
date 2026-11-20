@@ -42,6 +42,6 @@ console.log('PASS: overlay siblings, bounded ancestors, GIF, CSS background, laz
  const blank={url:'about:srcdoc',executeJavaScript:code=>{sent.push(['blank',code]);return Promise.resolve();}};
  const wc={isDestroyed:()=>false,getURL:()=> 'https://example.com/',mainFrame:{framesInSubtree:[child,blank]},executeJavaScriptInIsolatedWorld:(id,scripts)=>{sent.push(['main',scripts[0].code]);return Promise.resolve();}};
  const ctx={ZOOM_JS:'INSTALL',settings:{hoverZoom:true}};vm.createContext(ctx);vm.runInContext(main.slice(main.indexOf('function applyHoverZoom('),main.indexOf('function setFeature(')),ctx);
- ctx.applyHoverZoom(wc);assert.deepEqual(sent.map(x=>x[0]),['main','child','blank']);assert(sent.every(x=>x[1]==='INSTALL'));sent.length=0;ctx.applyHoverZoom(wc,false);assert.equal(sent.length,3);assert(sent.every(x=>x[1].includes('z.off()')));
+ ctx.applyHoverZoom(wc);assert.deepEqual(sent.map(x=>x[0]),['main','child','blank']);assert(sent.every(x=>x[1].startsWith('INSTALL')&&x[1].includes('setBackgrounds(false)')));sent.length=0;ctx.applyHoverZoom(wc,false);assert.equal(sent.length,3);assert(sent.every(x=>x[1].includes('z.off()')));
  console.log('PASS: main/cross-origin/srcdoc frame install and disable');
 }

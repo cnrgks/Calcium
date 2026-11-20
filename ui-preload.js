@@ -24,7 +24,10 @@ contextBridge.exposeInMainWorld('browserApi', {
   onPromptClose: (fn) => ipcRenderer.on('prompt-close', () => fn()),
   onNewTabResults: (fn) => ipcRenderer.on('newtab-results', (_e, d) => fn(d)),
   onNewTabPrompt: (fn) => ipcRenderer.on('newtab-prompt', (_e, d) => fn(d)),
-  onSideReveal: (fn) => ipcRenderer.on('side-reveal', (_e, v) => fn(v))
+  onSideReveal: (fn) => ipcRenderer.on('side-reveal', (_e, v) => fn(v)),
+  onTabSearchOpen: (fn) => ipcRenderer.on('tab-search-open', () => fn()),
+  onTabSearchClose: (fn) => ipcRenderer.on('tab-search-close', () => fn()),
+  onPrivateAddressReady: (fn) => ipcRenderer.on('private-address-ready', () => fn())
 });
 
 // <browser-action-list> element for extension icons

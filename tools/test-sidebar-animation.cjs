@@ -4,7 +4,7 @@ const profile=process.env.CALCIUM_PROFILE;if(!profile)throw Error('Use run-elect
 process.env.CALCIUM_TEST_MODE='1';process.env.CALCIUM_TEST_DISPLAY='0';app.disableHardwareAcceleration();
 fs.writeFileSync(path.join(profile,'ayarlar.json'),JSON.stringify({firstRunDone:true,language:'tr',verticalTabs:true,verticalAutoHide:true}));
 const entry=path.resolve(__dirname,'..','main.js'),m=new Module(entry,module);m.filename=entry;m.paths=Module._nodeModulePaths(path.dirname(entry));
-m._compile(fs.readFileSync(entry,'utf8')+'\nmodule.exports.test={ready:mainBlockReady,windows:()=>windows,openSide,closeOverlay,newTab,activeTab,layout,openOverlay,sleepTabSelection};',entry);
+m._compile(fs.readFileSync(entry,'utf8')+'\nmodule.exports.test={ready:mainBlockReady,windows:()=>windows,openSide,closeOverlay,newTab,activeTab,layout,openOverlay,sleepTabSelection,selectTab,handleShortcut};',entry);
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 const until=async fn=>{for(let i=0;i<100;i++){if(await fn())return;await pause(50);}throw Error('Sidebar animation timeout');};
 (async()=>{
@@ -33,7 +33,7 @@ const until=async fn=>{for(let i=0;i<100;i++){if(await fn())return;await pause(5
  assert.equal(tab.view.getBounds().width,viewport.width,'page viewport stays unchanged');
  assert.equal(tab.view.getBounds().x+openWidth,8,'page origin stays unchanged');
  assert(w.win.contentView.children.indexOf(w.sidePageClip)>w.win.contentView.children.indexOf(w.ui),'uncovered page stays above UI for native input');
- api.closeOverlay(false);await pause(90);
+ api.closeOverlay(false); await pause(90);
  const closingWidth=w.sidePageClip.getBounds().x;
  assert(closingWidth<openWidth&&closingWidth>8,'closing uncovers the page progressively');
  assert(w.sidePageClip.children.includes(tab.view),'page remains interactive during closing');
@@ -41,6 +41,11 @@ const until=async fn=>{for(let i=0;i<100;i++){if(await fn())return;await pause(5
  await until(()=>w.ui.webContents.executeJavaScript('document.body.classList.contains("reveal")'));
  await pause(250);api.closeOverlay(false);
  await until(()=>!w.sideClosing);assert.equal(w.sidePageClip.children.length,0);assert.deepEqual(tab.view.getBounds(),viewport);
+ wc.emit('before-mouse-event',{}, {type:'mouseDown',button:'right'});
+ api.openSide();assert.equal(w.sidePageClip.children.length,0,'opening defers while the page holds right mouse');
+ wc.emit('before-mouse-event',{}, {type:'mouseUp',button:'right'});
+ api.openSide();assert(w.sidePageClip.children.includes(tab.view));
+ api.closeOverlay(false);await until(()=>!w.sideClosing);
  console.log('PASS: sidebar clipping follows animation, preserves viewport and keeps uncovered page interactive.');
  const other=api.newTab('about:blank');await until(()=>!other.view.webContents.isLoading());
  w.win.focus();other.view.webContents.focus();
@@ -83,6 +88,20 @@ const until=async fn=>{for(let i=0;i<100;i++){if(await fn())return;await pause(5
  assert(await w.ui.webContents.executeJavaScript('document.body.classList.contains("reveal")'),'leaving the sidebar preserves normal dismissal delay');
  await until(()=>w.ui.webContents.executeJavaScript('!document.body.classList.contains("reveal")'));
  assert(!w.sideKeyboardFocus,'sidebar keyboard hold does not return');
+ cursorInside=true;api.openSide();w.sideHoldUntil=Date.now()+5000;
+ await until(()=>w.ui.webContents.executeJavaScript('document.body.classList.contains("reveal")'));
+ const current=api.activeTab(),background=w.tabs.find(item=>item!==current);
+ api.selectTab({id:background.id,toggle:true});
+ assert(w.tabSelectionMode);
+ assert(api.handleShortcut({type:'keyDown',key:'Escape'}));
+ assert(!w.tabSelectionMode);
+ assert.deepEqual(w.selectedTabIds,[current.id]);
+ assert(!w.sideClosing,'Escape keeps the drawer open');
+ assert(await w.ui.webContents.executeJavaScript('document.body.classList.contains("reveal")'));
+ api.selectTab({id:background.id,toggle:true});
+ api.closeOverlay(false);
+ assert(!w.tabSelectionMode,'closing the drawer clears selection');
+ assert.deepEqual(w.selectedTabIds,[current.id]);
  } finally {screen.getCursorScreenPoint=cursor;}
  console.log('PASS: sleeping a tab releases sidebar focus and preserves normal cursor-based dismissal timing.');app.exit(0);
 })().catch(error=>{console.error(error);app.exit(1)});
