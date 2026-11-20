@@ -33,5 +33,15 @@ app.whenReady().then(async()=>{
    return {candidate:testYoutube(image,50,350),target:testHoverState().target,timer:testHoverState().timer,recommendations:!!testYoutube(document.querySelector('#preview'),320,270)};
  })()`);
  assert.equal(playback.candidate,null,'main playback thumbnail is excluded');assert.equal(playback.target,null);assert.equal(playback.timer,0,'playback schedules no zoom');assert(playback.recommendations,'recommendation preview still resolves beside the player');
+ const controls=await win.webContents.executeJavaScript(`(()=>{
+   const api=window[Symbol.for('calcium.zoom')],item=document.querySelector('#preview');
+   const hover=()=>item.dispatchEvent(new MouseEvent('mouseover',{bubbles:true,composed:true,clientX:320,clientY:270}));
+   const ctrl=hold=>window.dispatchEvent(new KeyboardEvent(hold?'keydown':'keyup',{key:'Control',ctrlKey:hold}));
+   const scheduled=()=>!!testHoverState().timer;
+   api.configure(false,false);hover();const disabled=scheduled();ctrl(true);const temporaryOn=scheduled();ctrl(false);const disabledAgain=scheduled();
+   api.configure(true,false);hover();const enabled=scheduled();ctrl(true);const temporaryOff=scheduled();ctrl(false);const enabledAgain=scheduled();
+   return [disabled,temporaryOn,disabledAgain,enabled,temporaryOff,enabledAgain];
+ })()`);
+ assert.deepStrictEqual(controls,[false,true,false,true,false,true],'holding Ctrl temporarily inverts both preview modes');
  win.destroy();console.log('PASS: panel scrollbar animation and nested hover image discovery');app.quit();
 }).catch(e=>{console.error(e);app.exit(1)});

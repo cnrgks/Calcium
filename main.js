@@ -1212,7 +1212,7 @@ function createView(tab) {
     tab.audible = e.audible;
     schedulePush();
   });
-  on('dom-ready', () => { if (settings.hoverZoom) applyHoverZoom(wc); });
+  on('dom-ready', () => applyHoverZoom(wc));
   // While volume boost is on, apply it to newly loaded pages and embedded players too
   on('did-frame-finish-load', (_e, isMain, pid, rid) => {
     if(!isMain){
@@ -1222,7 +1222,10 @@ function createView(tab) {
         frame.executeJavaScript(`(${install})(css=>{const sheet=new CSSStyleSheet();sheet.replaceSync(css);document.adoptedStyleSheets=[...document.adoptedStyleSheets,sheet];})`).catch(()=>{});
       }
     }
-    if (!isMain && settings.hoverZoom) applyHoverZoom(wc, true, webFrameMain.fromId(pid, rid));
+    if (!isMain) {
+      const frame = webFrameMain.fromId(pid, rid);
+      if (frame) applyHoverZoom(wc, settings.hoverZoom, frame);
+    }
     if ((tab.volume ?? 100) === 100) return;
     applyVolume(wc, isMain ? null : webFrameMain.fromId(pid, rid), tab.volume);
   });
@@ -1777,10 +1780,8 @@ function applyVolume(wc, frame, pct) {
 let ZOOM_JS = null;
 function applyHoverZoom(wc, on = settings.hoverZoom, frame = null) {
   if (!wc || wc.isDestroyed() || !/^https?:/i.test(wc.getURL())) return;
-  if (on && !ZOOM_JS) ZOOM_JS = localizeSrc(fs.readFileSync(path.join(__dirname, 'hoverzoom.js'), 'utf8'));
-  const code = on
-    ? ZOOM_JS + "\nwindow[Symbol.for('calcium.zoom')]?.setBackgrounds("+ (settings.hoverZoomBackgrounds === true) +");"
-    : "{ const z = window[Symbol.for('calcium.zoom')]; if (z) z.off(); }";
+  if (!ZOOM_JS) ZOOM_JS = localizeSrc(fs.readFileSync(path.join(__dirname, 'hoverzoom.js'), 'utf8'));
+  const code = ZOOM_JS + "\nwindow[Symbol.for('calcium.zoom')]?.configure("+ (on === true) +","+ (settings.hoverZoomBackgrounds === true) +");";
   const install = target => {
     if (!target || !/^(https?:|about:blank|about:srcdoc)/i.test(target.url || wc.getURL())) return;
     // WebFrameMain has no isolated-world execution API. No privileged bridge is exposed here.

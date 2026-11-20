@@ -11,6 +11,8 @@
   const VID_EXT = /\.(mp4|webm|gifv)(?:[?#]|$)/i;
   const DELAY = 220, PAD = 12;
   let useBackgrounds = true;
+  let enabled = true, holdingControl = false, pointerInside = false;
+  const shouldPreview = () => enabled !== holdingControl;
 
   // Large image URL from a thumbnail (common sites); null if unknown
   function upgrade(src) {
@@ -335,8 +337,11 @@
   bd.addEventListener('mousedown', (e) => { if (pinned && e.button === 0) { e.stopPropagation(); hide(); } });
 
   const onOver = (e) => {
+    pointerInside=true;
+    mx=e.clientX;my=e.clientY;
+    if(e.ctrlKey!==undefined)holdingControl=!!e.ctrlKey;
+    if (!shouldPreview()) { if(target||pinned)hide(); return; }
     if (pinned) return;
-    if (e.ctrlKey) { hide(); return; }
     const source = e.composedPath()[0] || e.target;
     if(source===host)return;
     if(youtubePlaybackAt(source,e.clientX,e.clientY)){hide();return;}
@@ -351,12 +356,15 @@
     timer = setTimeout(() => { timer = 0; if (sourceKey === p.url) show(p); }, DELAY);
   };
   const onMove = (e) => {
-    if (e.ctrlKey && !pinned) { hide(); return; }
+    pointerInside=true;
+    holdingControl=!!e.ctrlKey;
     mx=e.clientX; my=e.clientY;
+    if (!shouldPreview()) { if(target||pinned)hide(); return; }
     if (frame || pinned) return;
     const source=e.composedPath()[0] || e.target;
     frame=requestAnimationFrame(now => {
       frame=0;
+      if(!shouldPreview())return;
       if(youtubePlaybackAt(source,mx,my)){hide();return;}
       const bounds=target?.getBoundingClientRect();
       if (!bounds || mx<bounds.left || mx>=bounds.right || my<bounds.top || my>=bounds.bottom) {
@@ -368,6 +376,9 @@
     });
   };
   const onOut = (e) => {
+    if(!e.relatedTarget){
+      pointerInside=!!document.elementFromPoint(e.clientX,e.clientY);
+    }
     if (pinned || !target || (e.relatedTarget && target.contains(e.relatedTarget))) return;
     // Removing a preview node can report a null relatedTarget even though the
     // pointer is still over the same card.
@@ -379,14 +390,21 @@
     hide();
   };
   const typing = (el) => !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+  const onControl = (e) => {
+    if(e.key!=='Control'||holdingControl===e.ctrlKey)return;
+    holdingControl=e.ctrlKey;
+    if(!shouldPreview()){hide();return;}
+    const source=pointerInside&&document.elementFromPoint(mx,my);
+    if(source)onOver({composedPath:()=>[source],target:source,clientX:mx,clientY:my,ctrlKey:holdingControl});
+  };
   const onKey = (e) => {
+    if (e.key === 'Control') { onControl(e); return; }
     if (e.key === 'Escape') { if (media || pinned) { hide(); if (pinned) e.stopPropagation(); } return; }
     if (e.key.toLowerCase() === 's' && !e.ctrlKey && !e.altKey && !e.metaKey && !typing(e.target) && media && box.style.display === 'block') {
       e.preventDefault(); e.stopPropagation();
       if (!e.repeat && typeof window.calciumZoomDownload === 'function') window.calciumZoomDownload(media.currentSrc || media.src);
       return;
     }
-    if (e.key === 'Control') { hide(); return; }
     if ((e.key === 'z' || e.key === 'Z') && !e.ctrlKey && !e.altKey && !e.metaKey && !typing(e.target)) {
       if (pinned) { hide(); e.preventDefault(); e.stopPropagation(); return; }
       if (media || timer) { pin(); e.preventDefault(); e.stopPropagation(); }
@@ -394,15 +412,15 @@
   };
   const onDown = (e) => { if (!pinned) hide(); };
   const onWheel = () => { if (!pinned) hide(); };
-  const onBlur = () => { if (!pinned) hide(); };
+  const onBlur = () => { holdingControl=false; pointerInside=false; if (!pinned||!enabled) hide(); };
   const opts = { capture: true, passive: true };
   const events = [['mouseover', onOver], ['mousemove', onMove], ['mouseout', onOut], ['mousedown', onDown], ['wheel', onWheel]];
   const keyOpts = { capture: true, passive: false };
 
   const api = {
-    setBackgrounds(on) { if (useBackgrounds !== on) { useBackgrounds = on; hide(); } },
-    on() { if (active) return; active = true; for (const [n, f] of events) document.addEventListener(n, f, opts); window.addEventListener('keydown', onKey, keyOpts); window.addEventListener('blur', onBlur); },
-    off() { if (!active) return; active = false; for (const [n, f] of events) document.removeEventListener(n, f, opts); window.removeEventListener('keydown', onKey, keyOpts); window.removeEventListener('blur', onBlur); pinned && unpinUi(); hide(); host.remove(); }
+    configure(on, backgrounds) { if (enabled !== on || useBackgrounds !== backgrounds) { enabled = on; useBackgrounds = backgrounds; hide(); } },
+    on() { if (active) return; active = true; for (const [n, f] of events) document.addEventListener(n, f, opts); window.addEventListener('keydown', onKey, keyOpts); window.addEventListener('keyup', onControl, keyOpts); window.addEventListener('blur', onBlur); },
+    off() { if (!active) return; active = false; for (const [n, f] of events) document.removeEventListener(n, f, opts); window.removeEventListener('keydown', onKey, keyOpts); window.removeEventListener('keyup', onControl, keyOpts); window.removeEventListener('blur', onBlur); holdingControl=false; pointerInside=false; pinned && unpinUi(); hide(); host.remove(); }
   };
   Object.defineProperty(window, KEY, { value: api });
   api.on();
