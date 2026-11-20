@@ -1818,9 +1818,10 @@ function layoutHoverZoomNotice(owner){
 function showHoverZoomNotice(owner,on){
   if(!owner?.win||owner.win.isDestroyed())return;
   closeHoverZoomNotice(owner);
-  const {toolbar,accent,mode}=owner.incognito?incognitoTheme():themeVars();
+  const {toolbar,accent,mode}=effectiveTheme();
   const dark=mode==='dark'||mode==='system'&&nativeTheme.shouldUseDarkColors;
-  const color=on?accent:dark?'#a8abaf':'#5f6368';
+  const background=toolbar||(dark?'#3c3c3c':'#ffffff');
+  const color=on?(accent||(dark?'#a8c7fa':'#0b57d0')):(dark?'#a8abaf':'#5f6368');
   const view=owner.hoverZoomNotice=new WebContentsView({webPreferences:{session:owner.ses,sandbox:true,contextIsolation:true,nodeIntegration:false}});
   view.setBackgroundColor('#00000000');
   view.webContents.setWindowOpenHandler(()=>({action:'deny'}));
@@ -1828,7 +1829,7 @@ function showHoverZoomNotice(owner,on){
   const title=uiLang()==='en'?'Image preview':'Fotoğraf önizleme';
   const state=on?'ON':'OFF';
   const html=`<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>
-  body{margin:0;font:13px "Segoe UI",sans-serif;color:${dark?'#e3e3e3':'#1f1f1f'}} article{height:144px;box-sizing:border-box;display:grid;align-content:center;justify-items:center;gap:10px;background:${toolbar};border:1px solid ${color};border-radius:16px}svg{width:40px;height:40px;fill:none;stroke:${color};stroke-width:1.7}strong{color:${color};font-size:15px}
+  body{margin:0;font:13px "Segoe UI",sans-serif;color:${dark?'#e3e3e3':'#1f1f1f'}} article{height:144px;box-sizing:border-box;display:grid;align-content:center;justify-items:center;gap:10px;background:${background};border:1px solid ${color};border-radius:16px}svg{width:40px;height:40px;fill:none;stroke:${color};stroke-width:1.7}strong{color:${color};font-size:15px}
   </style><article role="status"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="9" r="1.5"/><path d="m4 17 5-4 3 2 4-4 5 5"/></svg><span>${title}</span><strong>${state}</strong></article>`;
   view.webContents.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent(html)).then(()=>{
     if(owner.hoverZoomNotice!==view||owner.win.isDestroyed())return;

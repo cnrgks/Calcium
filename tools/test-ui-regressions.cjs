@@ -67,6 +67,8 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));const until=async fn=>{for(let 
  await until(()=>downloadsAgain.isDestroyed());
  const outsideTasks=api.showTaskManager();await until(()=>outsideTasks.isFocused());
  w.win.focus();await until(()=>outsideTasks.isDestroyed());
+ api.settingsSet('pitchBlack',false);
+ api.settingsSet('theme','sistem');
  api.settingsSet('hoverZoom',false);
  await until(()=>w.hoverZoomNotice?.ready);
  assert.equal(await w.hoverZoomNotice.webContents.executeJavaScript("document.querySelector('strong').textContent"),'OFF');
