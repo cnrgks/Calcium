@@ -1329,7 +1329,7 @@ function openPage(url) {
   if(baseOf(url)===TASKS_URL){showTaskManager();return;}
   if (W && W.incognito && baseOf(url)!==SAVED_TABS_URL) {
     const n = lastWin(true);
-    if (n) { useWin(n); n.win.focus(); } else createWindow();
+    if (n) { useWin(n); n.win.focus(); } else openNormalWindow();
   }
   const ex = tabs.find((t) => baseOf(t.url) === baseOf(url));
   if (ex) { activateTab(ex.id); return; }
@@ -2889,7 +2889,7 @@ function clearHistoryAndDownloads() {
 // Ctrl+Shift+Delete and other entry points: the "Clear browsing data" dialog on the settings page (in a normal window)
 function clearData() { openSettingsAt('temizle'); }
 function openSettingsAt(hash) {
-  if (W && W.incognito) { const n = lastWin(true); if (n) { useWin(n); n.win.focus(); } else createWindow(); }
+  if (W && W.incognito) { const n = lastWin(true); if (n) { useWin(n); n.win.focus(); } else openNormalWindow(); }
   const ex = tabs.find((t) => baseOf(t.url) === SETTINGS_URL);
   if (ex) {
     activateTab(ex.id);
@@ -3864,9 +3864,16 @@ function closedWindow(w) {
   else saveSession();
 }
 
-// New window (Ctrl+N) and new incognito window (Ctrl+Shift+N): open with the new tab page
+function openNormalWindow() {
+  const saved = !lastWin(true) ? lastSessionData?.windows[0] : null;
+  createWindow();
+  if (!saved || !restoreWindow(saved)) newTab('');
+}
+
+// A new private window always starts with an empty tab.
 function newWindow(incognito) {
   leaveFullscreenForChrome();
+  if (!incognito) return openNormalWindow();
   const owner=createWindow({ incognito });
   newTab('');
   if(incognito){
@@ -3886,7 +3893,9 @@ function newWindow(incognito) {
 // (uBO ~15 events). The count is bounded and removed when the page closes; not a leak, just silencing the Node warning.
 app.on('web-contents-created', (_e, wc) => { if (wc.getType() === 'backgroundPage') wc.setMaxListeners(40); });
 app.on('second-instance', (_e, argv) => {
-  useWin(lastWin(true) || lastWin());
+  const normal = lastWin(true);
+  if (normal) useWin(normal);
+  else if (windows.length) openNormalWindow();
   if (!win) return;
   if (win.isMinimized()) win.restore();
   win.focus();

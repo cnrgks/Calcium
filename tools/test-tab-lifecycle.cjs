@@ -95,5 +95,17 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms)),until=async fn=>{for(let i=0;i<
  api.activateTab(video.id);w.win.setFullScreen(true);await until(()=>w.win.isFullScreen());
  video.view.webContents.emit('enter-html-full-screen');video.view.webContents.emit('leave-html-full-screen');
  assert(w.win.isFullScreen(),'leaving video fullscreen preserves pre-existing F11 fullscreen');w.win.setFullScreen(false);
+ const activeUrl=api.activeTab().url;
+ const publicUrls=w.tabs.map(t=>t.url).filter(url=>!url.includes("/newtab.html#"));
+ api.handleShortcut({key:'n',control:true,shift:true,type:'keyDown'});
+ const privateWindow=api.windows().find(owner=>owner.incognito);
+ assert(privateWindow);
+ w.win.close();await until(()=>!api.windows().includes(w));
+ api.newTab('https://private-session.example/');
+ api.handleShortcut({key:'n',control:true,type:'keyDown'});
+ const restored=api.windows().find(owner=>!owner.incognito);
+ assert.deepEqual(restored.tabs.map(t=>t.url),publicUrls);
+ assert.equal(api.activeTab().url,activeUrl);
+ assert(!restored.tabs.some(t=>t.url.includes('private-session.example')));
  console.log('PASS: native active-tab close during sidebar animation, bulk extension tab removal, delayed layout and sleep/wake retain valid views.');app.exit(0);
 })().catch(error=>{console.error(error);app.exit(1)});

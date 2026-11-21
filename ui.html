@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-0uKtOWrNEEVDaduNOy65UFxA4KBUXzyFlVdxYkb8SdU=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-ornTdgN93g088qlqqleQUSyY3OTDw8CZN9ZI3wucypI='; style-src 'unsafe-inline'; img-src https: http: data: crx: chrome-extension:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-0uKtOWrNEEVDaduNOy65UFxA4KBUXzyFlVdxYkb8SdU=' 'sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c=' 'sha256-wDkLDgw1U5LO3NZGPiQjzu9MHiouZGxRQ1WgrQWfqCo='; style-src 'unsafe-inline'; img-src https: http: data: crx: chrome-extension:">
 <script src="i18n.js" integrity="sha256-0uKtOWrNEEVDaduNOy65UFxA4KBUXzyFlVdxYkb8SdU="></script><script src="browser-font.js" integrity="sha256-LpARkaDhQmS9ge9lT5gLIqqQVnLU59w4GZmbo6oKH/c="></script>
 <title>Calcium</title>
 <style>
@@ -859,6 +859,7 @@ function render(s) {
     const accent=/^#[0-9a-f]{6}$/i.test(tab?.iconColor||'')?tab.iconColor:'#808080';drag.el.style.setProperty('--tab-accent',accent);if(drag.ghost)drag.ghost.style.setProperty('--tab-accent',accent);
     pending = s; return;
   }
+  const previousState = state;
   state = s;
   document.body.classList.toggle('onboarding',!!s.onboarding);
   document.body.classList.toggle('find', !!s.findOpen);
@@ -870,12 +871,17 @@ function render(s) {
   const tKey = s.activeId + '|' + JSON.stringify(visibleTabs) + '|' + JSON.stringify(s.selectedTabIds)+'|'+s.tabSelectionMode;
   if (tKey !== tabsKey) {
     tabsKey = tKey;
+    const list = $('vtabs'), pinned = $('pinnedtabs');
+    const ids = new Set(s.tabs.map(tab => tab.id));
+    const tabRemoved = s.vertical && previousState?.tabs.some(tab => !ids.has(tab.id));
+    const scrollTop = list.scrollTop, pinnedScrollTop = pinned.scrollTop;
     reconcileTabs($('pinnedtabs'),s.vertical?visibleTabs.filter(t=>t.pinned):[],s);
     reconcileTabs(tabsEl,visibleTabs.filter(t=>!s.vertical||!t.pinned),s);
-    if (s.vertical) { const on = tabsEl.querySelector('.tab.on'); const list = $('vtabs'); if (on && list) { const y = on.getBoundingClientRect().top - list.getBoundingClientRect().top + list.scrollTop; if (y < list.scrollTop) list.scrollTop = y; else if (y + on.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = y + on.offsetHeight - list.clientHeight; } }
+    if (s.vertical && !tabRemoved && previousState?.activeId !== s.activeId) { const on = tabsEl.querySelector('.tab.on'); if (on) { const y = on.getBoundingClientRect().top - list.getBoundingClientRect().top + list.scrollTop; if (y < list.scrollTop) list.scrollTop = y; else if (y + on.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = y + on.offsetHeight - list.clientHeight; } }
     if (drag) { const el = document.querySelector(`.tab[data-id="${drag.id}"]`); if (el) drag.el = el; }
     fitTabs();
     fitPinnedArea();
+    if(tabRemoved){list.scrollTop=scrollTop;pinned.scrollTop=pinnedScrollTop;}
   }
   $('back').disabled = !s.canBack;
   $('savedTabs').hidden = !s.savedTabsEnabled;

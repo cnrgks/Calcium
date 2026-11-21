@@ -4,7 +4,7 @@ const profile=process.env.CALCIUM_PROFILE;if(!profile)throw Error('Use run-elect
 process.env.CALCIUM_TEST_MODE='1';process.env.CALCIUM_TEST_DISPLAY='0';app.disableHardwareAcceleration();
 fs.writeFileSync(path.join(profile,'ayarlar.json'),JSON.stringify({firstRunDone:true,language:'tr',verticalTabs:true,verticalAutoHide:true}));
 const entry=path.resolve(__dirname,'..','main.js'),m=new Module(entry,module);m.filename=entry;m.paths=Module._nodeModulePaths(path.dirname(entry));
-m._compile(fs.readFileSync(entry,'utf8')+'\nmodule.exports.test={ready:mainBlockReady,windows:()=>windows,openSide,closeOverlay,newTab,activeTab,layout,openOverlay,sleepTabSelection,selectTab,handleShortcut};',entry);
+m._compile(fs.readFileSync(entry,'utf8')+'\nmodule.exports.test={ready:mainBlockReady,windows:()=>windows,openSide,closeOverlay,newTab,activeTab,layout,openOverlay,sleepTabSelection,selectTab,handleShortcut,closeTab};',entry);
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 const until=async fn=>{for(let i=0;i<100;i++){if(await fn())return;await pause(50);}throw Error('Sidebar animation timeout');};
 (async()=>{
@@ -27,6 +27,12 @@ const until=async fn=>{for(let i=0;i<100;i++){if(await fn())return;await pause(5
  const barFrames=await w.ui.webContents.executeJavaScript(`(async()=>{const samples=[];for(let i=0;i<5;i++){await new Promise(requestAnimationFrame);const panel=document.querySelector('#vtabs'),bar=panel.parentElement.querySelector('[data-calcium-scrollbar="panel"]'),r=panel.getBoundingClientRect();if(r.right>18&&r.right<230)samples.push({visible:bar&&getComputedStyle(bar).display!=='none',delta:bar?Math.abs(bar.getBoundingClientRect().right-r.right):999,parent:bar?.parentElement.id});}return samples})()`);
  assert(barFrames.length&&barFrames.every(s=>s.visible&&s.delta<2&&s.parent==='side'),JSON.stringify(barFrames));
  await pause(260);
+ const chrome=w.ui.webContents;
+ const scroll=await chrome.executeJavaScript('document.querySelector("#vtabs").scrollTop=300');
+ const removed=w.tabs.at(-1).id;
+ api.closeTab(removed);
+ await until(()=>chrome.executeJavaScript(`!document.querySelector('[data-id="${removed}"]')`));
+ assert.equal(await chrome.executeJavaScript('document.querySelector("#vtabs").scrollTop'),scroll);
  const openWidth=w.sidePageClip.getBounds().x;
  assert(openWidth>8,JSON.stringify(await w.ui.webContents.executeJavaScript('({classes:document.body.className,right:document.querySelector("#side").getBoundingClientRect().right,stateOpen:state?.sideOpen,frame:sideAnimationFrame})')));
  assert.equal(openWidth,await w.ui.webContents.executeJavaScript('Math.ceil(document.querySelector("#side").getBoundingClientRect().right)'),'native clip matches the painted sidebar edge');
